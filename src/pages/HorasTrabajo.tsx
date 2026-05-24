@@ -90,6 +90,7 @@ export function HorasTrabajoPage() {
             <button
               onClick={() => {
                 exportarExcelNormal(mes, anio, registros, settings.nombreUsuario, settings.diagrama.replace('_', ' '))
+                  .catch(e => { console.error('Error exportando Excel:', e); alert('Error al generar el Excel.') })
                 setShowExportMenu(false)
               }}
               className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap"
