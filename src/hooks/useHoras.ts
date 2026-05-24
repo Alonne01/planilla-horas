@@ -1,0 +1,53 @@
+import { useEffect, useState, useCallback } from 'react'
+import { db, type RegistroHoras } from '../db/database'
+import { periodoStart, periodoEnd } from '../lib/diagrama'
+
+export function useHoras(mes: number, anio: number) {
+  const [registros, setRegistros] = useState<RegistroHoras[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    const start = periodoStart(mes, anio).getTime()
+    const end = periodoEnd(mes, anio).getTime() + 86_400_000 // end of day 20
+    const rows = await db.registros
+      .where('fechaMs')
+      .between(start, end, true, true)
+      .sortBy('fechaMs')
+    setRegistros(rows)
+    setLoading(false)
+  }, [mes, anio])
+
+  useEffect(() => { reload() }, [reload])
+
+  const upsert = useCallback(async (reg: RegistroHoras) => {
+    await db.registros.put(reg)
+    await reload()
+  }, [reload])
+
+  const remove = useCallback(async (id: string) => {
+    await db.registros.delete(id)
+    await reload()
+  }, [reload])
+
+  /** All registers ever (for franco compensatorio counter) */
+  const getAllForCounter = useCallback(async () => {
+    return db.registros.toArray()
+  }, [])
+
+  return { registros, loading, reload, upsert, remove, getAllForCounter }
+}
+
+export function useFrancoCounter() {
+  const [disponibles, setDisponibles] = useState(0)
+
+  useEffect(() => {
+    db.registros.toArray().then(all => {
+      const ganados = all.filter(r => r.esFrancoTrabajado).length
+      const usados = all.filter(r => r.esFrancoCompensatorio).length
+      setDisponibles(ganados - usados)
+    })
+  }, [])
+
+  return disponibles
+}
