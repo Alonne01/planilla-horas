@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { db, type RegistroHoras } from '../db/database'
+import { db, shadowBackup, type RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd } from '../lib/diagrama'
 
 export function useHoras(mes: number, anio: number) {
@@ -22,11 +22,13 @@ export function useHoras(mes: number, anio: number) {
 
   const upsert = useCallback(async (reg: RegistroHoras) => {
     await db.registros.put(reg)
+    await shadowBackup()
     await reload()
   }, [reload])
 
   const remove = useCallback(async (id: string) => {
     await db.registros.delete(id)
+    await shadowBackup()
     await reload()
   }, [reload])
 

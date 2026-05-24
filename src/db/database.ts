@@ -1,5 +1,8 @@
 import Dexie, { type Table } from 'dexie'
 
+const SHADOW_KEY = 'planilla-shadow'
+const LAST_BACKUP_KEY = 'planilla-last-backup-ts'
+
 export interface RegistroHoras {
   id: string
   fechaMs: number
@@ -75,6 +78,59 @@ class PlanillaDB extends Dexie {
 
 export const db = new PlanillaDB()
 
+/** Write a full snapshot to localStorage as secondary safety copy */
+export async function shadowBackup(): Promise<void> {
+  try {
+    const [registros, settings] = await Promise.all([
+      db.registros.toArray(),
+      db.settings.toArray(),
+    ])
+    localStorage.setItem(SHADOW_KEY, JSON.stringify({ version: 1, registros, settings, ts: Date.now() }))
+  } catch {
+    // localStorage full or unavailable — non-fatal
+  }
+}
+
+/**
+ * On startup: if IndexedDB has no records but localStorage has a shadow copy,
+ * silently restore the data. Returns true if a recovery was performed.
+ */
+export async function restoreFromShadow(): Promise<boolean> {
+  try {
+    const raw = localStorage.getItem(SHADOW_KEY)
+    if (!raw) return false
+
+    const data = JSON.parse(raw)
+    if (!Array.isArray(data.registros) || data.registros.length === 0) return false
+
+    // Check + restore inside one transaction to avoid race conditions
+    let restored = false
+    await db.transaction('rw', db.registros, db.settings, async () => {
+      const count = await db.registros.count()
+      if (count > 0) return
+      await db.registros.bulkPut(data.registros)
+      if (Array.isArray(data.settings) && data.settings.length) {
+        await db.settings.bulkPut(data.settings)
+      }
+      restored = true
+    })
+    return restored
+  } catch {
+    return false
+  }
+}
+
+/** Returns ms since last manual backup export, or Infinity if never */
+export function msSinceLastBackup(): number {
+  const ts = localStorage.getItem(LAST_BACKUP_KEY)
+  return ts ? Date.now() - parseInt(ts, 10) : Infinity
+}
+
+/** Mark that a manual backup was just exported */
+export function markBackupDone(): void {
+  localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()))
+}
+
 /** Request persistent storage so the OS doesn't evict the DB */
 export async function requestPersistentStorage(): Promise<void> {
   if (navigator.storage?.persist) {
@@ -95,6 +151,7 @@ export async function getSettings(): Promise<AppSettings> {
 export async function saveSettings(partial: Partial<AppSettings>): Promise<void> {
   const current = await getSettings()
   await db.settings.put({ ...current, ...partial, id: 1 })
+  await shadowBackup()
 }
 
 /** Export all data as JSON string for backup */
@@ -118,4 +175,5 @@ export async function importBackupJSON(json: string): Promise<void> {
       await db.settings.bulkPut(data.settings)
     }
   })
+  await shadowBackup()
 }

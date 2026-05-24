@@ -1,11 +1,18 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSettings } from '../hooks/useSettings'
 import { DIAGRAMAS } from '../lib/diagrama'
-import { exportBackupJSON, importBackupJSON } from '../db/database'
+import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone } from '../db/database'
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
 export function SettingsPage() {
   const { settings, update, loaded } = useSettings()
   const [msg, setMsg] = useState('')
+  const [backupOverdue, setBackupOverdue] = useState(false)
+
+  useEffect(() => {
+    setBackupOverdue(msSinceLastBackup() > SEVEN_DAYS_MS)
+  }, [])
 
   function flash(m: string) { setMsg(m); setTimeout(() => setMsg(''), 3000) }
 
@@ -16,6 +23,8 @@ export function SettingsPage() {
     const a = document.createElement('a'); a.href = url
     a.download = `planilla-backup-${new Date().toISOString().slice(0, 10)}.json`
     a.click(); URL.revokeObjectURL(url)
+    markBackupDone()
+    setBackupOverdue(false)
     flash('Backup exportado ✓')
   }
 
@@ -42,6 +51,13 @@ export function SettingsPage() {
 
       {msg && (
         <div className="mx-4 mt-3 p-3 rounded-xl bg-emerald-900/40 text-emerald-300 text-sm">{msg}</div>
+      )}
+
+      {backupOverdue && !msg && (
+        <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-900/40 text-amber-300 text-sm flex items-start gap-2">
+          <span className="text-lg leading-none">⚠️</span>
+          <span>Hace más de 7 días que no exportás un backup. Recomendamos hacerlo ahora.</span>
+        </div>
       )}
 
       <div className="px-4 py-4 space-y-6">

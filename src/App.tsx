@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
-import { requestPersistentStorage } from "./db/database"
+import { restoreFromShadow } from "./db/database"
 import "./index.css"
 
 const SHOW_SALARY = import.meta.env.VITE_SHOW_SALARY === "true"
@@ -11,14 +11,37 @@ type Tab = "horas" | "settings" | "salary"
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("horas")
+  const [recovered, setRecovered] = useState(false)
+  const [persistDenied, setPersistDenied] = useState(false)
 
   useEffect(() => {
-    requestPersistentStorage()
+    async function init() {
+      const didRecover = await restoreFromShadow()
+      if (didRecover) setRecovered(true)
+
+      if (navigator.storage?.persist) {
+        const granted = await navigator.storage.persist()
+        if (!granted) setPersistDenied(true)
+      }
+    }
+    init()
   }, [])
 
   return (
     <div className="max-w-lg mx-auto min-h-screen relative">
       <div className="pb-16">
+        {recovered && (
+          <div className="mx-4 mt-3 p-3 rounded-xl bg-blue-900/40 text-blue-300 text-sm flex items-start gap-2">
+            <span className="text-lg leading-none">🔄</span>
+            <span>Datos recuperados automáticamente desde el respaldo local.</span>
+          </div>
+        )}
+        {persistDenied && !recovered && (
+          <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-900/40 text-amber-300 text-sm flex items-start gap-2">
+            <span className="text-lg leading-none">⚠️</span>
+            <span>El almacenamiento persistente no fue otorgado. Hacé backup periódicamente desde Configuración.</span>
+          </div>
+        )}
         {tab === "horas" && <HorasTrabajoPage />}
         {tab === "settings" && <SettingsPage />}
         {tab === "salary" && SHOW_SALARY && <ProyeccionSalarialPage />}
