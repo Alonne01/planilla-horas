@@ -123,10 +123,13 @@ export function SettingsPage() {
               <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
             </label>
             <p className="text-xs text-slate-500 px-1">
-              El backup guarda todos tus registros en un archivo JSON. Importar reemplaza TODOS los datos actuales.
+              Importar reemplaza TODOS los datos actuales.
             </p>
           </div>
         </Section>
+
+        {/* Advertencia de almacenamiento */}
+        <StorageWarningBanner />
       </div>
     </div>
   )
@@ -137,6 +140,126 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <div>
       <h2 className="text-xs font-bold uppercase text-slate-500 mb-3 tracking-wider">{title}</h2>
       <div className="space-y-3">{children}</div>
+    </div>
+  )
+}
+
+function StorageWarningBanner() {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+      {/* Header — always visible */}
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left"
+      >
+        <span className="text-lg">⚠️</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-amber-300">Consideraciones sobre tus datos</p>
+          <p className="text-xs text-slate-400 mt-0.5 truncate">
+            Almacenamiento local · Sin sincronización entre dispositivos
+          </p>
+        </div>
+        <span className="text-slate-500 text-xs ml-2">{expanded ? '▲' : '▼'}</span>
+      </button>
+
+      {/* Expandable body */}
+      {expanded && (
+        <div className="px-4 pb-4 space-y-4 border-t border-amber-500/20">
+          {/* Cómo se guardan */}
+          <div className="pt-3">
+            <p className="text-xs font-bold uppercase text-amber-400/70 tracking-wider mb-2">
+              Cómo se guardan los datos
+            </p>
+            <ul className="space-y-1.5 text-xs text-slate-300">
+              <li className="flex gap-2">
+                <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                <span><strong className="text-slate-200">Copia principal</strong> — IndexedDB en tu navegador/dispositivo.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                <span><strong className="text-slate-200">Copia sombra automática</strong> — respaldo en localStorage, actualizado en cada cambio.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                <span>Ambas copias son <strong className="text-slate-200">locales</strong>; no existe servidor ni sincronización externa.</span>
+              </li>
+            </ul>
+          </div>
+
+          {/* Escenarios de posible pérdida */}
+          <div>
+            <p className="text-xs font-bold uppercase text-red-400/70 tracking-wider mb-2">
+              Escenarios de posible pérdida
+            </p>
+            <ul className="space-y-1.5 text-xs text-slate-300">
+              <li className="flex gap-2">
+                <span className="text-red-400 mt-0.5 shrink-0">!</span>
+                <span><strong className="text-slate-200">"Borrar datos del sitio"</strong> en el navegador borra ambas copias simultáneamente.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-red-400 mt-0.5 shrink-0">!</span>
+                <span><strong className="text-slate-200">iOS Safari</strong>: si la app no se abre por 7+ días y el dispositivo tiene poco espacio, iOS puede eliminar automáticamente todo el almacenamiento del origen.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-red-400 mt-0.5 shrink-0">!</span>
+                <span><strong className="text-slate-200">Modo privado/incógnito</strong>: los datos se eliminan al cerrar el navegador.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-red-400 mt-0.5 shrink-0">!</span>
+                <span><strong className="text-slate-200">Reset de fábrica o cambio de dispositivo</strong>: los datos no se migran automáticamente.</span>
+              </li>
+            </ul>
+          </div>
+
+          {/* Limitaciones */}
+          <div>
+            <p className="text-xs font-bold uppercase text-slate-400/70 tracking-wider mb-2">
+              Limitaciones actuales
+            </p>
+            <ul className="space-y-1.5 text-xs text-slate-300">
+              <li className="flex gap-2">
+                <span className="text-slate-500 mt-0.5 shrink-0">–</span>
+                <span>Sin sincronización entre dispositivos.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-slate-500 mt-0.5 shrink-0">–</span>
+                <span>Sin recuperación automática ante limpieza total del navegador.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-slate-500 mt-0.5 shrink-0">–</span>
+                <span>Cuota de almacenamiento limitada por el navegador (~5 MB localStorage). El uso real estimado es &lt;200 KB/año, dentro del límite.</span>
+              </li>
+            </ul>
+          </div>
+
+          {/* Recomendaciones */}
+          <div className="bg-green-900/20 border border-green-500/25 rounded-xl px-3 py-2.5">
+            <p className="text-xs font-bold uppercase text-green-400/70 tracking-wider mb-2">
+              Recomendaciones
+            </p>
+            <ul className="space-y-1.5 text-xs text-slate-300">
+              <li className="flex gap-2">
+                <span className="text-green-400 mt-0.5 shrink-0">✓</span>
+                <span>Exportar backup JSON cada 7 días y guardarlo en Google Drive, iCloud u otra nube.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-green-400 mt-0.5 shrink-0">✓</span>
+                <span>Instalar la app desde "Agregar a pantalla de inicio" para mayor persistencia en iOS.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-green-400 mt-0.5 shrink-0">✓</span>
+                <span>No usar en modo privado/incógnito.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-green-400 mt-0.5 shrink-0">✓</span>
+                <span>Abrir la app al menos una vez por semana en iOS.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
