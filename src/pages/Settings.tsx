@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone } from '../db/database'
@@ -157,12 +158,12 @@ export function SettingsPage() {
         <Section title="Datos y backup">
           <div className="space-y-2">
             <button onClick={handleExportBackup}
-              className="w-full py-3 rounded-xl bg-slate-700 text-slate-200 text-sm font-medium">
-              💾 Exportar backup JSON
+              className="w-full py-3 rounded-xl bg-slate-700 text-slate-200 text-sm font-medium flex items-center justify-center gap-2">
+              <Download size={16} /> Exportar backup JSON
             </button>
             <label className="block">
-              <span className="w-full py-3 rounded-xl bg-slate-700 text-slate-200 text-sm font-medium flex items-center justify-center cursor-pointer">
-                📂 Importar backup JSON
+              <span className="w-full py-3 rounded-xl bg-slate-700 text-slate-200 text-sm font-medium flex items-center justify-center gap-2 cursor-pointer">
+                <FolderOpen size={16} /> Importar backup JSON
               </span>
               <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
             </label>
@@ -198,14 +199,14 @@ function StorageWarningBanner() {
         onClick={() => setExpanded(v => !v)}
         className="w-full flex items-center gap-3 px-4 py-3 text-left"
       >
-        <span className="text-lg">⚠️</span>
+        <span className="text-lg"><AlertTriangle size={18} className="text-amber-400" /></span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-amber-300">Consideraciones sobre tus datos</p>
           <p className="text-xs text-slate-400 mt-0.5 truncate">
             Almacenamiento local · Sin sincronización entre dispositivos
           </p>
         </div>
-        <span className="text-slate-500 text-xs ml-2">{expanded ? '▲' : '▼'}</span>
+        <span className="text-slate-500 ml-2">{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
       </button>
 
       {/* Expandable body */}
@@ -342,7 +343,7 @@ function ProyectosEditor({ proyectos, onChange }: { proyectos: string[]; onChang
         {proyectos.map(p => (
           <div key={p} className="flex items-center justify-between bg-slate-700/50 rounded-xl px-3 py-2">
             <span className="text-sm text-slate-200">{p}</span>
-            <button onClick={() => onChange(proyectos.filter(x => x !== p))} className="text-slate-500 hover:text-red-400 text-lg leading-none">✕</button>
+            <button onClick={() => onChange(proyectos.filter(x => x !== p))} className="text-slate-500 hover:text-red-400 p-0.5"><X size={15} /></button>
           </div>
         ))}
       </div>

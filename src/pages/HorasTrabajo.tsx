@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { FileText, FileBarChart, Upload, X } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
 import { RegistroDialog } from '../components/RegistroDialog'
@@ -93,18 +94,18 @@ export function HorasTrabajoPage() {
                   .catch(e => { console.error('Error exportando Excel:', e); alert('Error al generar el Excel.') })
                 setShowExportMenu(false)
               }}
-              className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap"
+              className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap flex items-center gap-2"
             >
-              📄 Normal (planilla)
+              <FileText size={15} /> Normal (planilla)
             </button>
             <button
               onClick={() => {
                 exportarExcelCompleto(mes, anio, registros, settings.nombreUsuario)
                 setShowExportMenu(false)
               }}
-              className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap"
+              className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap flex items-center gap-2"
             >
-              📊 Completo con horas
+              <FileBarChart size={15} /> Completo con horas
             </button>
           </div>
         )}
@@ -112,7 +113,7 @@ export function HorasTrabajoPage() {
           onClick={() => setShowExportMenu(v => !v)}
           className="w-14 h-14 rounded-full bg-blue-600 text-white text-2xl shadow-xl flex items-center justify-center active:scale-95 transition-transform"
         >
-          {showExportMenu ? '✕' : '⬆'}
+          {showExportMenu ? <X size={22} /> : <Upload size={22} />}
         </button>
       </div>
 

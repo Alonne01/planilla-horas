@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { v4 as uuid } from 'uuid'
+import { X, CalendarDays } from 'lucide-react'
 import type { RegistroHoras } from '../db/database'
 import { esFeriadoNacional } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
@@ -91,10 +92,12 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
           <div>
             <h2 className="text-lg font-bold text-white capitalize">{labelDia}</h2>
             {(esFeriadoHoy && !existing) && (
-              <span className="text-xs text-amber-400">📅 Feriado nacional</span>
+              <span className="text-xs text-amber-400 flex items-center gap-1">
+                <CalendarDays size={12} /> Feriado nacional
+              </span>
             )}
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1">✕</button>
+          <button onClick={onClose} className="text-slate-400 hover:text-white p-1"><X size={18} /></button>
         </div>
 
         {/* Lugar de trabajo */}
@@ -206,12 +209,44 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
   )
 }
 
+const MINUTE_OPTS = [0, 15, 30, 45]
+
 function TimeInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const parts = value ? value.split(':') : []
+  const curH = parts[0] !== undefined ? String(parseInt(parts[0], 10)) : ''
+  const curM = parts[1] !== undefined ? String(parseInt(parts[1], 10)) : ''
+
+  function emit(h: string, m: string) {
+    if (!h && !m) { onChange(''); return }
+    onChange(`${(h || '0').padStart(2, '0')}:${(m || '0').padStart(2, '0')}`)
+  }
+
   return (
     <div>
       <label className="text-xs text-slate-400 mb-1 block">{label}</label>
-      <input type="time" value={value} onChange={e => onChange(e.target.value)}
-        className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm" />
+      <div className="flex items-center gap-1">
+        <select
+          value={curH}
+          onChange={e => emit(e.target.value, curM)}
+          className="flex-1 bg-slate-700 text-white rounded-xl px-2 py-2 text-sm text-center"
+        >
+          <option value="">--</option>
+          {Array.from({ length: 24 }, (_, i) => (
+            <option key={i} value={String(i)}>{String(i).padStart(2, '0')}</option>
+          ))}
+        </select>
+        <span className="text-slate-500 text-sm">:</span>
+        <select
+          value={curM}
+          onChange={e => emit(curH, e.target.value)}
+          className="flex-1 bg-slate-700 text-white rounded-xl px-2 py-2 text-sm text-center"
+        >
+          <option value="">--</option>
+          {MINUTE_OPTS.map(m => (
+            <option key={m} value={String(m)}>{String(m).padStart(2, '0')}</option>
+          ))}
+        </select>
+      </div>
     </div>
   )
 }

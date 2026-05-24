@@ -1,6 +1,7 @@
 import type { RegistroHoras } from '../db/database'
 import { calcularHorasDia, esDiaNoTrabajado } from '../lib/calculo-horas'
 import { esFeriadoNacional } from '../lib/feriados'
+import { Palmtree, Banknote, CalendarDays, HeartPulse } from 'lucide-react'
 
 interface Props {
   fecha: Date
@@ -34,7 +35,7 @@ export function DayCard({ fecha, registro, onClick }: Props) {
   const isEmpty = !registro
 
   let label = ''
-  let badge = ''
+  let badgeIcon: React.ReactNode = null
   let horasStr = ''
   let subtipo = ''
 
@@ -42,12 +43,12 @@ export function DayCard({ fecha, registro, onClick }: Props) {
     const h = calcularHorasDia(registro!)
     const isDayOff = esDiaNoTrabajado(registro!)
 
-    if (registro!.esFrancoCompensatorio) { label = 'Franco Comp.'; badge = '🏖️' }
-    else if (registro!.esFrancoTrabajado) { label = 'Franco Trab.'; badge = '💰' }
-    else if (registro!.esFeriadoTrabajado) { label = 'Feriado Trab.'; badge = '💰' }
-    else if (registro!.esFeriado && isDayOff) { label = 'Feriado'; badge = '📅' }
-    else if (registro!.esAusenciaJustificada) { label = 'Ausencia'; badge = '🤒' }
-    else if (isDayOff) { label = 'Franco'; badge = '' }
+    if (registro!.esFrancoCompensatorio) { label = 'Franco Comp.'; badgeIcon = <Palmtree size={13} /> }
+    else if (registro!.esFrancoTrabajado) { label = 'Franco Trab.'; badgeIcon = <Banknote size={13} /> }
+    else if (registro!.esFeriadoTrabajado) { label = 'Feriado Trab.'; badgeIcon = <Banknote size={13} /> }
+    else if (registro!.esFeriado && isDayOff) { label = 'Feriado'; badgeIcon = <CalendarDays size={13} /> }
+    else if (registro!.esAusenciaJustificada) { label = 'Ausencia'; badgeIcon = <HeartPulse size={13} /> }
+    else if (isDayOff) { label = 'Franco' }
     else { label = registro!.lugarTrabajo }
 
     if (!isDayOff && h.horasTrabajadas > 0) {
@@ -90,8 +91,9 @@ export function DayCard({ fecha, registro, onClick }: Props) {
           </span>
         ) : (
           <>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-white">{badge} {label}</span>
+            <div className="flex items-center gap-1.5">
+              {badgeIcon && <span className="text-slate-300">{badgeIcon}</span>}
+              <span className="text-sm font-medium text-white">{label}</span>
               {!esDiaNoTrabajado(registro!) && registro!.lugarTrabajo !== 'Franco' && (
                 <span className={`text-xs px-2 py-0.5 rounded-full border ${lugarColor(registro!.lugarTrabajo)}`}>
                   {registro!.lugarTrabajo}

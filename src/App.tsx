@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { Clock, Settings2, Banknote, RefreshCw, AlertTriangle } from "lucide-react"
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
@@ -32,13 +33,13 @@ export default function App() {
       <div className="pb-16">
         {recovered && (
           <div className="mx-4 mt-3 p-3 rounded-xl bg-blue-900/40 text-blue-300 text-sm flex items-start gap-2">
-            <span className="text-lg leading-none">🔄</span>
+            <RefreshCw size={18} className="shrink-0 mt-0.5" />
             <span>Datos recuperados automáticamente desde el respaldo local.</span>
           </div>
         )}
         {persistDenied && !recovered && (
           <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-900/40 text-amber-300 text-sm flex items-start gap-2">
-            <span className="text-lg leading-none">⚠️</span>
+            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
             <span>El almacenamiento persistente no fue otorgado. Hacé backup periódicamente desde Configuración.</span>
           </div>
         )}
@@ -49,10 +50,10 @@ export default function App() {
 
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30">
         <div className="flex">
-          <NavTab icon="📋" label="Horas" active={tab === "horas"} onClick={() => setTab("horas")} />
-          <NavTab icon="⚙️" label="Config" active={tab === "settings"} onClick={() => setTab("settings")} />
+          <NavTab icon={<Clock size={22} />} label="Horas" active={tab === "horas"} onClick={() => setTab("horas")} />
+          <NavTab icon={<Settings2 size={22} />} label="Config" active={tab === "settings"} onClick={() => setTab("settings")} />
           {SHOW_SALARY && (
-            <NavTab icon="💰" label="Sueldo" active={tab === "salary"} onClick={() => setTab("salary")} />
+            <NavTab icon={<Banknote size={22} />} label="Sueldo" active={tab === "salary"} onClick={() => setTab("salary")} />
           )}
         </div>
       </nav>
@@ -60,13 +61,13 @@ export default function App() {
   )
 }
 
-function NavTab({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {
+function NavTab({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       className={"flex-1 flex flex-col items-center py-2 gap-0.5 transition-colors " + (active ? "text-blue-400" : "text-slate-500")}
     >
-      <span className="text-xl leading-none">{icon}</span>
+      <span className="leading-none">{icon}</span>
       <span className="text-xs">{label}</span>
     </button>
   )
