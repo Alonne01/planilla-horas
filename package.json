@@ -14,6 +14,7 @@
     "@types/uuid": "^10.0.0",
     "date-fns": "^4.3.0",
     "dexie": "^4.4.2",
+    "fflate": "^0.8.3",
     "lucide-react": "^1.16.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

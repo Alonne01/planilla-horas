@@ -1,11 +1,14 @@
 import type { RegistroHoras } from '../db/database'
 import { calcularHorasDia, esDiaNoTrabajado } from '../lib/calculo-horas'
 import { esFeriadoNacional } from '../lib/feriados'
+import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
 import { Palmtree, Banknote, CalendarDays, HeartPulse } from 'lucide-react'
 
 interface Props {
   fecha: Date
   registro?: RegistroHoras
+  diagrama?: DiagramaPatternKey
+  diagramaInicioMs?: number
   onClick: () => void
 }
 
@@ -28,9 +31,12 @@ function lugarColor(lugar: string): string {
   }
 }
 
-export function DayCard({ fecha, registro, onClick }: Props) {
+export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick }: Props) {
   const dow = fecha.getDay()
   const isWeekend = dow === 0 || dow === 6
+  const isFrancoByDiag = diagrama
+    ? esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs ?? 0)
+    : isWeekend
   const isFeriadoNacional = esFeriadoNacional(fecha.getTime())
   const isEmpty = !registro
 
@@ -61,7 +67,7 @@ export function DayCard({ fecha, registro, onClick }: Props) {
   }
 
   const borderColor = isEmpty
-    ? (isWeekend || isFeriadoNacional ? 'border-slate-700' : 'border-slate-600/50')
+    ? (isFrancoByDiag || isFeriadoNacional ? 'border-slate-700' : 'border-slate-600/50')
     : registro!.lugarTrabajo === 'Campo' ? 'border-emerald-600/40'
     : registro!.lugarTrabajo === 'Base' ? 'border-blue-600/40'
     : 'border-slate-600/30'
@@ -70,12 +76,12 @@ export function DayCard({ fecha, registro, onClick }: Props) {
     <button
       onClick={onClick}
       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border ${borderColor} 
-        ${isEmpty && !isWeekend ? 'bg-slate-800/30' : 'bg-slate-800/60'} 
+      ${isEmpty && !isFrancoByDiag ? 'bg-slate-800/30' : 'bg-slate-800/60'} 
         active:scale-[0.98] transition-transform text-left`}
     >
       {/* Day number */}
       <div className="w-10 flex-shrink-0 text-center">
-        <div className={`text-xs ${isWeekend || isFeriadoNacional ? 'text-amber-400' : 'text-slate-500'}`}>
+        <div className={`text-xs ${isFrancoByDiag || isFeriadoNacional ? 'text-amber-400' : 'text-slate-500'}`}>
           {DIAS_SHORT[dow]}
         </div>
         <div className={`text-lg font-bold leading-tight ${isEmpty ? 'text-slate-500' : 'text-white'}`}>
@@ -87,7 +93,7 @@ export function DayCard({ fecha, registro, onClick }: Props) {
       <div className="flex-1 min-w-0">
         {isEmpty ? (
           <span className="text-slate-600 text-sm">
-            {isWeekend ? 'Franco' : isFeriadoNacional ? 'Feriado' : 'Sin registro'}
+            {isFrancoByDiag ? 'Franco' : isFeriadoNacional ? 'Feriado' : 'Sin registro'}
           </span>
         ) : (
           <>

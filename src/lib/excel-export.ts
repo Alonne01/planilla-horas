@@ -1,6 +1,8 @@
 // Excel export — Normal mode (writes data into the original template_horas.xlsx)
 // Mirrors ExcelHorasGenerator.kt exactly: same cell positions, same logic, same rounding.
+// Uses fflate to preserve template images/drawings that SheetJS CE strips on write.
 import * as XLSX from 'xlsx'
+import { unzipSync, zipSync, strToU8 } from 'fflate'
 import type { RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd, MESES_ES } from './diagrama'
 
@@ -40,7 +42,6 @@ function escribirFila(
   const isWeekend = dow === 0 || dow === 6
 
   if (reg == null) {
-    // Lunes–Viernes: weekends auto-marked as franco
     const esLV = !diagramaLabel || diagramaLabel.toLowerCase().includes('lun')
     if (isWeekend && esLV) {
       sc(ws, rowIdx, 2, '-'); sc(ws, rowIdx, 3, ''); sc(ws, rowIdx, 4, ''); sc(ws, rowIdx, 5, '-')
@@ -56,7 +57,6 @@ function escribirFila(
   }
 
   if (reg.lugarTrabajo === 'Franco') {
-    // Feriado trabajado: lugarTrabajo='Franco' + esFeriadoTrabajado + has time entries
     const isFeriadoTrabajado = reg.esFeriadoTrabajado && reg.entradaInicioMs != null
     if (isFeriadoTrabajado) {
       const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
@@ -67,16 +67,15 @@ function escribirFila(
         sc(ws, rowIdx, 2, fmt(reg.entradaInicioMs)); sc(ws, rowIdx, 3, fmt(reg.salidaInicioMs))
         sc(ws, rowIdx, 4, fmt(reg.entradaFinMs)); sc(ws, rowIdx, 5, fmt(reg.salidaFinMs))
       }
-      // No deduction on holidays (Campo equiv)
       const h1 = calcHoras(reg.entradaInicioMs, reg.salidaInicioMs, 'Campo')
       const h2 = calcHoras(reg.entradaFinMs, reg.salidaFinMs, 'Campo')
       sc(ws, rowIdx, 6, h1 + h2)
       sc(ws, rowIdx, 7, reg.horasViaje > 0 ? 'SI' : 'NO')
-      sc(ws, rowIdx, 8, '')  // lugar empty for feriado trabajado
+      sc(ws, rowIdx, 8, '')
       sc(ws, rowIdx, 9, ''); sc(ws, rowIdx, 10, ''); sc(ws, rowIdx, 11, ''); sc(ws, rowIdx, 12, '')
-      sc(ws, rowIdx, 13, 'feriado trabajado')
+      const obsBase = reg.observaciones ?? ''
+      sc(ws, rowIdx, 13, obsBase ? `feriado trabajado - ${obsBase}` : 'feriado trabajado')
     } else {
-      // Day off: franco / feriado / ausencia / franco (comp.)
       const etiqueta = reg.esAusenciaJustificada ? 'ausencia just.'
         : reg.esFeriado ? 'feriado'
         : reg.esFrancoCompensatorio ? 'franco (comp.)'
@@ -107,10 +106,64 @@ function escribirFila(
   sc(ws, rowIdx, 10, reg.pernocte === 'Trailer' ? 'x' : '')
   sc(ws, rowIdx, 11, reg.pernocte === 'NO' ? 'x' : '')
   sc(ws, rowIdx, 12, reg.maneja ? 'x' : '')
+  // Obs: use observaciones directly (no project prefix — proyecto IS observaciones now)
   let obs = reg.observaciones ?? ''
-  if (reg.proyecto) obs = obs ? `${reg.proyecto} - ${obs}` : reg.proyecto
   if (reg.esFrancoTrabajado) obs = `franco trabajado${obs ? ' - ' + obs : ''}`
   sc(ws, rowIdx, 13, obs)
+}
+
+/**
+ * Patches the SheetJS output ZIP with media/drawings from the template ZIP,
+ * so the logo image is preserved in the exported file.
+ */
+async function patchWithTemplateMedia(templateBytes: Uint8Array, outputBytes: Uint8Array): Promise<Uint8Array> {
+  try {
+    const templateZip = unzipSync(templateBytes)
+    const outputZip = unzipSync(outputBytes)
+
+    // Copy all media files from template
+    for (const [path, data] of Object.entries(templateZip)) {
+      if (
+        path.startsWith('xl/media/') ||
+        path.startsWith('xl/drawings/') ||
+        path.startsWith('xl/worksheets/_rels/')
+      ) {
+        outputZip[path] = data
+      }
+    }
+
+    // Inject <drawing r:id="rId1"/> into sheet1.xml before </worksheet>
+    const sheetKey = 'xl/worksheets/sheet1.xml'
+    if (outputZip[sheetKey]) {
+      let sheetXml = new TextDecoder().decode(outputZip[sheetKey])
+      if (!sheetXml.includes('<drawing') && sheetXml.includes('</worksheet>')) {
+        sheetXml = sheetXml.replace(
+          '</worksheet>',
+          '<drawing r:id="rId1"/></worksheet>'
+        )
+        outputZip[sheetKey] = strToU8(sheetXml)
+      }
+    }
+
+    // Ensure sheet1.xml.rels has the drawing relationship if template had one
+    const relsKey = 'xl/worksheets/_rels/sheet1.xml.rels'
+    if (templateZip[relsKey] && outputZip[relsKey]) {
+      const templateRels = new TextDecoder().decode(templateZip[relsKey])
+      const drawingRel = templateRels.match(/<Relationship[^>]+drawing[^>]+\/>/)
+      if (drawingRel) {
+        let outputRels = new TextDecoder().decode(outputZip[relsKey])
+        if (!outputRels.includes('drawing')) {
+          outputRels = outputRels.replace('</Relationships>', `${drawingRel[0]}</Relationships>`)
+          outputZip[relsKey] = strToU8(outputRels)
+        }
+      }
+    }
+
+    return zipSync(outputZip, { level: 6 })
+  } catch {
+    // If patching fails, return original output
+    return outputBytes
+  }
 }
 
 export async function exportarExcelNormal(
@@ -122,16 +175,15 @@ export async function exportarExcelNormal(
 ): Promise<void> {
   const resp = await fetch(`${import.meta.env.BASE_URL}template_horas.xlsx`)
   if (!resp.ok) throw new Error(`No se pudo cargar el template: ${resp.status}`)
-  const workbook = XLSX.read(new Uint8Array(await resp.arrayBuffer()), { type: 'array' })
+  const templateBytes = new Uint8Array(await resp.arrayBuffer())
+
+  const workbook = XLSX.read(templateBytes, { type: 'array' })
   const ws = workbook.Sheets[workbook.SheetNames[0]]
 
   const mesAnterior = MESES_ES[mes === 0 ? 11 : mes - 1]
   const mesActual = MESES_ES[mes]
 
-  // Row 5 (idx 4), Col C (idx 2): employee name
   if (nombreUsuario) sc(ws, 4, 2, nombreUsuario)
-
-  // Row 7 (idx 6), Col C (idx 2): period   Col I (idx 8): diagrama
   sc(ws, 6, 2, `${mesAnterior.toLowerCase()}-${mesActual.toLowerCase()} ${anio}`)
   if (diagramaLabel) sc(ws, 6, 8, `Diagrama:    ${diagramaLabel}`)
 
@@ -140,7 +192,7 @@ export async function exportarExcelNormal(
     return [`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`, r]
   }))
 
-  let dataRowIdx = 11  // data starts at row 12 in the template (0-indexed = 11)
+  let dataRowIdx = 11
   const cur = new Date(periodoStart(mes, anio))
   const end = periodoEnd(mes, anio)
   while (cur <= end) {
@@ -149,11 +201,23 @@ export async function exportarExcelNormal(
     cur.setDate(cur.getDate() + 1)
   }
 
-  // Clear leftover rows from template (months shorter than 31 days)
   for (let i = dataRowIdx; i < 11 + 31; i++) {
     for (let c = 1; c <= 13; c++) sc(ws, i, c, '')
   }
 
+  // Write to buffer (not file) so we can patch media
+  const outputBytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as Uint8Array
+  const patched = await patchWithTemplateMedia(templateBytes, new Uint8Array(outputBytes))
+
+  // Trigger download
+  const blob = new Blob([patched.buffer as ArrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
   const safeName = (nombreUsuario || 'Planilla').replace(/[/\\:*?"<>|]/g, '_')
-  XLSX.writeFile(workbook, `Planilla de horas ${safeName} (${mesAnterior} - ${mesActual} - ${anio}).xlsx`)
+  a.href = url
+  a.download = `Planilla de horas ${safeName} (${mesAnterior} - ${mesActual} - ${anio}).xlsx`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }

@@ -45,8 +45,13 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
   const [pernocte, setPernocte] = useState<Pernocte>(existing?.pernocte ?? 'NO')
   const [maneja, setManeja] = useState(existing?.maneja ?? false)
   const [horasViaje, setHorasViaje] = useState(String(existing?.horasViaje ?? ''))
-  const [obs, setObs] = useState(existing?.observaciones ?? '')
-  const [proyecto, setProyecto] = useState(existing?.proyecto ?? '')
+  // Merged field: proyecto/observaciones
+  const [proyectoObs, setProyectoObs] = useState(
+    existing?.observaciones ||
+    (existing?.proyecto && existing?.observaciones
+      ? `${existing.proyecto} - ${existing.observaciones}`
+      : existing?.proyecto ?? '')
+  )
   const [esFeriado, setEsFeriado] = useState(existing?.esFeriado ?? esFeriadoHoy)
   const [esFeriadoTrabajado, setEsFeriadoTrabajado] = useState(existing?.esFeriadoTrabajado ?? false)
   const [esFrancoTrabajado, setEsFrancoTrabajado] = useState(existing?.esFrancoTrabajado ?? false)
@@ -67,8 +72,8 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
       pernocte,
       maneja,
       horasViaje: parseFloat(horasViaje) || 0,
-      observaciones: obs,
-      proyecto,
+      observaciones: proyectoObs,
+      proyecto: proyectoObs,
       esFeriado: esFeriado || esFeriadoTrabajado,
       esFeriadoTrabajado,
       esFrancoCompensatorio: esFrancoComp,
@@ -167,17 +172,10 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
             </>
           )}
 
-          {/* Proyecto */}
+          {/* Proyecto / Observaciones */}
           <div>
-            <label className="text-xs text-slate-400 mb-1 block">Proyecto</label>
-            <ProjectInput value={proyecto} onChange={setProyecto} suggestions={proyectosFrecuentes} />
-          </div>
-
-          {/* Observaciones */}
-          <div>
-            <label className="text-xs text-slate-400 mb-1 block">Observaciones</label>
-            <textarea rows={2} value={obs} onChange={e => setObs(e.target.value)}
-              className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm resize-none" />
+            <label className="text-xs text-slate-400 mb-1 block">Proyecto / Observaciones</label>
+            <ProjectInput value={proyectoObs} onChange={setProyectoObs} suggestions={proyectosFrecuentes} />
           </div>
         </div>
 

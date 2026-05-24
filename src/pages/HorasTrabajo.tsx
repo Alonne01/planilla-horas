@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react'
-import { FileText, FileBarChart, Upload, X } from 'lucide-react'
+import { FileText, FileBarChart, Upload, X, LayoutGrid, List } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
 import { RegistroDialog } from '../components/RegistroDialog'
 import { DayCard } from '../components/DayCard'
+import { CalendarGrid } from '../components/CalendarGrid'
 import { ResumenBar } from '../components/ResumenBar'
 import { calcularResumenPeriodo } from '../lib/calculo-horas'
-import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, periodoStart, periodoEnd } from '../lib/diagrama'
+import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd } from '../lib/diagrama'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
 import type { RegistroHoras } from '../db/database'
@@ -20,6 +21,7 @@ export function HorasTrabajoPage() {
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar')
 
   const dias = useMemo(() => diasDelPeriodo(mes, anio), [mes, anio])
 
@@ -47,6 +49,8 @@ export function HorasTrabajoPage() {
     setMes(m); setAnio(a)
   }
 
+  const diagramaLabel = DIAGRAMAS.find(d => d.key === settings.diagrama)?.label ?? settings.diagrama
+
   const periodoStartStr = periodoStart(mes, anio).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
   const periodoEndStr = periodoEnd(mes, anio).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
 
@@ -60,29 +64,50 @@ export function HorasTrabajoPage() {
             <div className="text-base font-bold text-white">{MESES_ES[mes]} {anio}</div>
             <div className="text-xs text-slate-500">{periodoStartStr} – {periodoEndStr}</div>
           </div>
-          <button onClick={() => cambiarMes(1)} className="p-2 text-slate-400 active:text-white">›</button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setViewMode(v => v === 'calendar' ? 'list' : 'calendar')}
+              className="p-2 text-slate-400 active:text-white"
+              title={viewMode === 'calendar' ? 'Ver lista' : 'Ver calendario'}
+            >
+              {viewMode === 'calendar' ? <List size={18} /> : <LayoutGrid size={18} />}
+            </button>
+            <button onClick={() => cambiarMes(1)} className="p-2 text-slate-400 active:text-white">›</button>
+          </div>
         </div>
       </div>
 
       {/* Resumen */}
       {!loading && <ResumenBar resumen={resumen} francosDisponibles={francosDisponibles} />}
 
-      {/* Day list */}
-      <div className="px-4 space-y-1.5">
-        {loading ? (
-          <div className="text-center text-slate-500 py-12">Cargando…</div>
-        ) : dias.map(d => {
-          const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-          return (
-            <DayCard
-              key={key}
-              fecha={d}
-              registro={byDay.get(key)}
-              onClick={() => setSelectedDate(d)}
-            />
-          )
-        })}
-      </div>
+      {/* Day view */}
+      {loading ? (
+        <div className="text-center text-slate-500 py-12">Cargando…</div>
+      ) : viewMode === 'calendar' ? (
+        <CalendarGrid
+          dias={dias}
+          byDay={byDay}
+          diagrama={settings.diagrama}
+          diagramaInicioMs={settings.diagramaInicioMs}
+          onSelectDate={setSelectedDate}
+        />
+      ) : (
+        <div className="px-4 space-y-1.5">
+          {dias.map(d => {
+            const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+            return (
+              <DayCard
+                key={key}
+                fecha={d}
+                registro={byDay.get(key)}
+                diagrama={settings.diagrama}
+                diagramaInicioMs={settings.diagramaInicioMs}
+                onClick={() => setSelectedDate(d)}
+              />
+            )
+          })}
+        </div>
+      )}
 
       {/* Export FAB */}
       <div className="fixed bottom-6 right-4 z-20">
@@ -90,7 +115,7 @@ export function HorasTrabajoPage() {
           <div className="mb-2 flex flex-col gap-2 items-end">
             <button
               onClick={() => {
-                exportarExcelNormal(mes, anio, registros, settings.nombreUsuario, settings.diagrama.replace('_', ' '))
+                exportarExcelNormal(mes, anio, registros, settings.nombreUsuario, diagramaLabel)
                   .catch(e => { console.error('Error exportando Excel:', e); alert('Error al generar el Excel.') })
                 setShowExportMenu(false)
               }}
