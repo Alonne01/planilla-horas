@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { v4 as uuid } from 'uuid'
-import { X, CalendarDays } from 'lucide-react'
+import { X, CalendarDays, Clock } from 'lucide-react'
 import type { RegistroHoras } from '../db/database'
 import { esFeriadoNacional } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
@@ -32,6 +32,18 @@ function msToTime(ms: number | null | undefined): string {
 
 type LugarTrabajo = 'Base' | 'Campo' | 'Franco'
 type Pernocte = 'NO' | 'Hotel' | 'Trailer'
+/** Mutually-exclusive sub-states for "Comp/Feriado/Aus" days */
+type SubFranco = 'COMP' | 'TRABAJADO' | 'FERIADO' | 'AUSENCIA' | null
+
+function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
+  if (!existing || existing.lugarTrabajo !== 'Franco') return null
+  if (existing.esFrancoTrabajado) return 'TRABAJADO'
+  if (existing.esFeriadoTrabajado) return 'TRABAJADO'  // legacy: feriado worked on franco day
+  if (existing.esFrancoCompensatorio) return 'COMP'
+  if (existing.esAusenciaJustificada) return 'AUSENCIA'
+  if (existing.esFeriado) return 'FERIADO'
+  return null
+}
 
 export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama, diagramaInicioMs, onSave, onDelete, onClose }: Props) {
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
@@ -45,20 +57,16 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
   const [pernocte, setPernocte] = useState<Pernocte>(existing?.pernocte ?? 'NO')
   const [maneja, setManeja] = useState(existing?.maneja ?? false)
   const [horasViaje, setHorasViaje] = useState(String(existing?.horasViaje ?? ''))
-  // Merged field: proyecto/observaciones
   const [proyectoObs, setProyectoObs] = useState(
-    existing?.observaciones ||
-    (existing?.proyecto && existing?.observaciones
+    existing?.proyecto && existing?.observaciones && existing.proyecto !== existing.observaciones
       ? `${existing.proyecto} - ${existing.observaciones}`
-      : existing?.proyecto ?? '')
+      : existing?.observaciones || existing?.proyecto || ''
   )
-  const [esFeriado, setEsFeriado] = useState(existing?.esFeriado ?? esFeriadoHoy)
   const [esFeriadoTrabajado, setEsFeriadoTrabajado] = useState(existing?.esFeriadoTrabajado ?? false)
-  const [esFrancoTrabajado, setEsFrancoTrabajado] = useState(existing?.esFrancoTrabajado ?? false)
-  const [esFrancoComp, setEsFrancoComp] = useState(existing?.esFrancoCompensatorio ?? false)
-  const [esAusencia, setEsAusencia] = useState(existing?.esAusenciaJustificada ?? false)
+  const [subFranco, setSubFranco] = useState<SubFranco>(getInitialSubFranco(existing))
 
-  const isDayOff = lugar === 'Franco' && !esFrancoTrabajado && !esFeriadoTrabajado
+  // A day is "off" (no times) when lugar=Franco UNLESS sub=TRABAJADO
+  const isDayOff = lugar === 'Franco' && subFranco !== 'TRABAJADO'
 
   function handleSave() {
     const reg: RegistroHoras = {
@@ -74,11 +82,11 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
       horasViaje: parseFloat(horasViaje) || 0,
       observaciones: proyectoObs,
       proyecto: proyectoObs,
-      esFeriado: esFeriado || esFeriadoTrabajado,
+      esFeriado: esFeriadoHoy || esFeriadoTrabajado || (lugar === 'Franco' && subFranco === 'FERIADO'),
       esFeriadoTrabajado,
-      esFrancoCompensatorio: esFrancoComp,
-      esFrancoTrabajado,
-      esAusenciaJustificada: esAusencia,
+      esFrancoCompensatorio: subFranco === 'COMP',
+      esFrancoTrabajado: subFranco === 'TRABAJADO',
+      esAusenciaJustificada: subFranco === 'AUSENCIA',
       fechaCreacion: existing?.fechaCreacion ?? Date.now(),
     }
     onSave(reg)
@@ -89,97 +97,116 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onClick={onClose}>
       <div
-        className="w-full max-w-md bg-slate-800 rounded-t-2xl sm:rounded-2xl p-4 pb-8 sm:pb-4 max-h-[92vh] overflow-y-auto"
+        className="w-full max-w-md bg-slate-800 rounded-t-2xl sm:rounded-2xl p-5 pb-8 sm:pb-5 max-h-[92vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-5">
           <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-0.5">Editar Registro</p>
             <h2 className="text-lg font-bold text-white capitalize">{labelDia}</h2>
-            {(esFeriadoHoy && !existing) && (
-              <span className="text-xs text-amber-400 flex items-center gap-1">
+            {esFeriadoHoy && (
+              <span className="text-xs text-amber-400 flex items-center gap-1 mt-0.5">
                 <CalendarDays size={12} /> Feriado nacional
               </span>
             )}
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1"><X size={18} /></button>
+          <button onClick={onClose} className="text-slate-400 hover:text-white p-2"><X size={20} /></button>
         </div>
 
-        {/* Lugar de trabajo */}
-        <label className="block text-xs text-slate-400 mb-1">Lugar de trabajo</label>
-        <div className="flex gap-2 mb-4">
-          {(['Base', 'Campo', 'Franco'] as LugarTrabajo[]).map(l => (
-            <button
-              key={l}
-              onClick={() => setLugar(l)}
-              className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${lugar === l ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
-            >{l}</button>
-          ))}
-        </div>
-
-        {/* Franco sub-flags */}
-        {lugar === 'Franco' && (
-          <div className="bg-slate-700/50 rounded-xl p-3 mb-4 space-y-2">
-            <Toggle label="Franco Compensatorio" value={esFrancoComp} onChange={v => { setEsFrancoComp(v); if (v) { setEsFrancoTrabajado(false); setEsAusencia(false) } }} />
-            <Toggle label="Franco Trabajado (paga 100%)" value={esFrancoTrabajado} onChange={v => { setEsFrancoTrabajado(v); if (v) { setEsFrancoComp(false); setEsAusencia(false) } }} />
-            <Toggle label="Ausencia Justificada (no paga)" value={esAusencia} onChange={v => { setEsAusencia(v); if (v) { setEsFrancoComp(false); setEsFrancoTrabajado(false) } }} />
-            <Toggle label="Feriado (ausencia justificada)" value={esFeriado && !esFeriadoTrabajado} onChange={v => { setEsFeriado(v); if (v) setEsFeriadoTrabajado(false) }} />
-          </div>
-        )}
-
-        {/* Feriado trabajado (any location) */}
-        {lugar !== 'Franco' && (
-          <div className="mb-4">
-            <Toggle label="Feriado trabajado (paga 100%)" value={esFeriadoTrabajado} onChange={v => { setEsFeriadoTrabajado(v); setEsFeriado(v) }} />
-          </div>
-        )}
-
-        {/* Times (hide for day-off) */}
+        {/* ── Turno (times) ── shown unless day-off */}
         {!isDayOff && (
-          <>
-            <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="mb-5">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Turno</p>
+            <div className="grid grid-cols-2 gap-3">
               <TimeInput label="Entrada" value={e1} onChange={setE1} />
               <TimeInput label="Salida" value={s1} onChange={setS1} />
             </div>
-            <p className="text-xs text-slate-500 mb-2">2° turno (opcional)</p>
-            <div className="grid grid-cols-2 gap-3 mb-4">
+            <p className="text-xs text-slate-500 mt-3 mb-2">2° turno (opcional)</p>
+            <div className="grid grid-cols-2 gap-3">
               <TimeInput label="Entrada 2" value={e2} onChange={setE2} />
               <TimeInput label="Salida 2" value={s2} onChange={setS2} />
             </div>
-          </>
+          </div>
         )}
 
-        {/* Extra */}
-        <div className="space-y-3 mb-4">
-          {!isDayOff && (
-            <>
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-slate-300">Pernocte</label>
-                <div className="flex gap-2">
-                  {(['NO', 'Hotel', 'Trailer'] as Pernocte[]).map(p => (
-                    <button key={p} onClick={() => setPernocte(p)}
-                      className={`px-3 py-1 rounded-lg text-xs font-medium ${pernocte === p ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{p}</button>
-                  ))}
-                </div>
-              </div>
-              <Toggle label="Maneja" value={maneja} onChange={setManeja} />
-              <div className="flex items-center gap-3">
-                <label className="text-sm text-slate-300 flex-1">Horas de viaje</label>
-                <input type="number" min="0" max="24" step="0.5"
-                  value={horasViaje} onChange={e => setHorasViaje(e.target.value)}
-                  className="w-20 bg-slate-700 text-white rounded-lg px-2 py-1 text-sm text-center" />
-              </div>
-            </>
-          )}
-
-          {/* Proyecto / Observaciones */}
-          <div>
-            <label className="text-xs text-slate-400 mb-1 block">Proyecto / Observaciones</label>
-            <ProjectInput value={proyectoObs} onChange={setProyectoObs} suggestions={proyectosFrecuentes} />
+        {/* ── Lugar de Trabajo ── */}
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Lugar de Trabajo</p>
+          <div className="flex gap-2">
+            {(['Base', 'Campo'] as LugarTrabajo[]).map(l => (
+              <button key={l} onClick={() => setLugar(l)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${lugar === l ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                {l}
+              </button>
+            ))}
+            <button onClick={() => setLugar('Franco')}
+              className={`flex-1 py-2.5 rounded-xl text-xs font-medium transition-colors ${lugar === 'Franco' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+              Comp/Feriado/Aus
+            </button>
           </div>
         </div>
 
-        {/* Actions */}
+        {/* ── Sub-flags for Comp/Feriado/Aus (exclusive chips) ── */}
+        {lugar === 'Franco' && (
+          <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
+            <p className="text-xs text-slate-400 mb-2">Tipo de ausencia</p>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ['COMP', 'Compensatorio'],
+                ['TRABAJADO', 'Franco Trab. (100%)'],
+                ['FERIADO', 'Feriado (ausencia)'],
+                ['AUSENCIA', 'Ausencia Just.'],
+              ] as [SubFranco, string][]).map(([key, label]) => (
+                <button
+                  key={key!}
+                  onClick={() => setSubFranco(subFranco === key ? null : key)}
+                  className={`py-2 rounded-lg text-xs font-medium text-center transition-colors ${subFranco === key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Feriado (100%) toggle — for Base/Campo ── */}
+        {lugar !== 'Franco' && (
+          <div className="mb-4">
+            <Toggle label="Feriado (100%)" value={esFeriadoTrabajado} onChange={setEsFeriadoTrabajado} />
+          </div>
+        )}
+
+        {/* ── Pernocte / Maneja / Horas viaje — only when working ── */}
+        {!isDayOff && (
+          <div className="space-y-3 mb-4">
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Pernocte</p>
+              <div className="flex gap-2">
+                {(['NO', 'Hotel', 'Trailer'] as Pernocte[]).map(p => (
+                  <button key={p} onClick={() => setPernocte(p)}
+                    className={`flex-1 py-2 rounded-xl text-sm font-medium ${pernocte === p ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Toggle label="Manejó este día" value={maneja} onChange={setManeja} />
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-slate-300 flex-1">Horas de viaje</label>
+              <input type="number" min="0" max="24" step="0.5"
+                value={horasViaje} onChange={e => setHorasViaje(e.target.value)}
+                className="w-20 bg-slate-700 text-white rounded-lg px-2 py-1.5 text-sm text-center" />
+            </div>
+          </div>
+        )}
+
+        {/* ── Proyecto / Observaciones ── */}
+        <div className="mb-5">
+          <label className="text-xs text-slate-400 mb-1 block">Proyecto / Observaciones</label>
+          <ProjectInput value={proyectoObs} onChange={setProyectoObs} suggestions={proyectosFrecuentes} />
+        </div>
+
+        {/* ── Actions ── */}
         <div className="flex gap-2">
           {existing && onDelete && (
             <button onClick={() => { onDelete(existing.id); onClose() }}
@@ -207,43 +234,20 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
   )
 }
 
-const MINUTE_OPTS = [0, 15, 30, 45]
-
 function TimeInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  const parts = value ? value.split(':') : []
-  const curH = parts[0] !== undefined ? String(parseInt(parts[0], 10)) : ''
-  const curM = parts[1] !== undefined ? String(parseInt(parts[1], 10)) : ''
-
-  function emit(h: string, m: string) {
-    if (!h && !m) { onChange(''); return }
-    onChange(`${(h || '0').padStart(2, '0')}:${(m || '0').padStart(2, '0')}`)
-  }
-
   return (
-    <div>
-      <label className="text-xs text-slate-400 mb-1 block">{label}</label>
-      <div className="flex items-center gap-1">
-        <select
-          value={curH}
-          onChange={e => emit(e.target.value, curM)}
-          className="flex-1 bg-slate-700 text-white rounded-xl px-2 py-2 text-sm text-center"
-        >
-          <option value="">--</option>
-          {Array.from({ length: 24 }, (_, i) => (
-            <option key={i} value={String(i)}>{String(i).padStart(2, '0')}</option>
-          ))}
-        </select>
-        <span className="text-slate-500 text-sm">:</span>
-        <select
-          value={curM}
-          onChange={e => emit(curH, e.target.value)}
-          className="flex-1 bg-slate-700 text-white rounded-xl px-2 py-2 text-sm text-center"
-        >
-          <option value="">--</option>
-          {MINUTE_OPTS.map(m => (
-            <option key={m} value={String(m)}>{String(m).padStart(2, '0')}</option>
-          ))}
-        </select>
+    <div className="flex-1">
+      <label className="text-xs text-slate-400 mb-1.5 block">{label}</label>
+      <div className="relative">
+        <input
+          type="time"
+          step="900"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className="w-full bg-slate-700 text-white rounded-xl px-4 py-3 text-base font-mono
+                     [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
+        />
+        <Clock size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
       </div>
     </div>
   )
