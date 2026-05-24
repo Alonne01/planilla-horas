@@ -1,20 +1,54 @@
 import { useState, useEffect } from 'react'
 import { useSettings } from '../hooks/useSettings'
-import { DIAGRAMAS } from '../lib/diagrama'
+import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone } from '../db/database'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
 export function SettingsPage() {
   const { settings, update, loaded } = useSettings()
-  const [msg, setMsg] = useState('')
+  const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
   const [backupOverdue, setBackupOverdue] = useState(false)
+
+  // Local form state — only written to DB on explicit "Guardar"
+  const [nombre, setNombre] = useState('')
+  const [diagrama, setDiagrama] = useState<DiagramaPatternKey>('LUNES_VIERNES')
+  const [diagramaFecha, setDiagramaFecha] = useState('')
+  const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
     setBackupOverdue(msSinceLastBackup() > SEVEN_DAYS_MS)
   }, [])
 
-  function flash(m: string) { setMsg(m); setTimeout(() => setMsg(''), 3000) }
+  // Sync local state once settings load from DB
+  useEffect(() => {
+    if (!loaded) return
+    setNombre(settings.nombreUsuario)
+    setDiagrama(settings.diagrama)
+    setDiagramaFecha(
+      settings.diagramaInicioMs ? new Date(settings.diagramaInicioMs).toISOString().slice(0, 10) : ''
+    )
+    setDirty(false)
+  }, [loaded]) // intentionally only on mount
+
+  function flash(text: string, type: 'ok' | 'err' = 'ok') {
+    setMsg({ text, type })
+    setTimeout(() => setMsg(null), 3000)
+  }
+
+  async function handleGuardar() {
+    try {
+      await update({
+        nombreUsuario: nombre,
+        diagrama,
+        diagramaInicioMs: diagramaFecha ? new Date(diagramaFecha).getTime() : 0,
+      })
+      setDirty(false)
+      flash('Configuración guardada ✓')
+    } catch {
+      flash('Error al guardar. Intentá de nuevo.', 'err')
+    }
+  }
 
   async function handleExportBackup() {
     const json = await exportBackupJSON()
@@ -36,7 +70,7 @@ export function SettingsPage() {
       await importBackupJSON(text)
       flash('Backup importado ✓')
     } catch {
-      flash('Error: archivo inválido')
+      flash('Error: archivo inválido', 'err')
     }
     e.target.value = ''
   }
@@ -50,12 +84,13 @@ export function SettingsPage() {
       </div>
 
       {msg && (
-        <div className="mx-4 mt-3 p-3 rounded-xl bg-emerald-900/40 text-emerald-300 text-sm">{msg}</div>
+        <div className={`mx-4 mt-3 p-3 rounded-xl text-sm ${msg.type === 'ok' ? 'bg-emerald-900/40 text-emerald-300' : 'bg-red-900/40 text-red-300'}`}>
+          {msg.text}
+        </div>
       )}
 
       {backupOverdue && !msg && (
         <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-900/40 text-amber-300 text-sm flex items-start gap-2">
-          <span className="text-lg leading-none">⚠️</span>
           <span>Hace más de 7 días que no exportás un backup. Recomendamos hacerlo ahora.</span>
         </div>
       )}
@@ -66,8 +101,8 @@ export function SettingsPage() {
           <Field label="Nombre completo">
             <input
               type="text"
-              value={settings.nombreUsuario}
-              onChange={e => update({ nombreUsuario: e.target.value })}
+              value={nombre}
+              onChange={e => { setNombre(e.target.value); setDirty(true) }}
               className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
               placeholder="Ej: García Martín"
             />
@@ -80,8 +115,8 @@ export function SettingsPage() {
             {DIAGRAMAS.map(d => (
               <button
                 key={d.key}
-                onClick={() => update({ diagrama: d.key })}
-                className={`py-3 px-4 rounded-xl text-sm font-medium text-left transition-colors ${settings.diagrama === d.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                onClick={() => { setDiagrama(d.key); setDirty(true) }}
+                className={`py-3 px-4 rounded-xl text-sm font-medium text-left transition-colors ${diagrama === d.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
               >
                 <div className="font-bold">{d.label}</div>
                 <div className="text-xs opacity-70 mt-0.5">{d.diasTrabajo} trabajo · {d.diasFranco} franco</div>
@@ -89,17 +124,26 @@ export function SettingsPage() {
             ))}
           </div>
 
-          {settings.diagrama !== 'LUNES_VIERNES' && (
+          {diagrama !== 'LUNES_VIERNES' && (
             <Field label="Fecha inicio de diagrama">
               <input
                 type="date"
-                value={settings.diagramaInicioMs ? new Date(settings.diagramaInicioMs).toISOString().slice(0, 10) : ''}
-                onChange={e => update({ diagramaInicioMs: e.target.value ? new Date(e.target.value).getTime() : 0 })}
+                value={diagramaFecha}
+                onChange={e => { setDiagramaFecha(e.target.value); setDirty(true) }}
                 className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
               />
             </Field>
           )}
         </Section>
+
+        {/* Guardar button */}
+        <button
+          onClick={handleGuardar}
+          disabled={!dirty}
+          className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${dirty ? 'bg-blue-600 text-white active:bg-blue-700' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}
+        >
+          {dirty ? 'Guardar cambios' : 'Sin cambios pendientes'}
+        </button>
 
         {/* Proyectos frecuentes */}
         <Section title="Proyectos frecuentes">
