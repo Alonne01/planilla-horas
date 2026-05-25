@@ -52,8 +52,6 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
   const [lugar, setLugar] = useState<LugarTrabajo>(existing?.lugarTrabajo ?? (esFrancoHoy ? 'Franco' : 'Base'))
   const [e1, setE1] = useState(msToTime(existing?.entradaInicioMs))
   const [s1, setS1] = useState(msToTime(existing?.salidaInicioMs))
-  const [e2, setE2] = useState(msToTime(existing?.entradaFinMs))
-  const [s2, setS2] = useState(msToTime(existing?.salidaFinMs))
   const [pernocte, setPernocte] = useState<Pernocte>(existing?.pernocte ?? 'NO')
   const [maneja, setManeja] = useState(existing?.maneja ?? false)
   const [horasViaje, setHorasViaje] = useState(String(existing?.horasViaje ?? ''))
@@ -65,8 +63,10 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
   const [esFeriadoTrabajado, setEsFeriadoTrabajado] = useState(existing?.esFeriadoTrabajado ?? false)
   const [subFranco, setSubFranco] = useState<SubFranco>(getInitialSubFranco(existing))
 
-  // A day is "off" (no times) when lugar=Franco UNLESS sub=TRABAJADO
-  const isDayOff = lugar === 'Franco' && subFranco !== 'TRABAJADO'
+  // Franco + both Entrada AND Salida entered → auto-detected as "Franco Trabajado" (100%)
+  const isFrancoWorked = lugar === 'Franco' && !!(e1 && s1)
+  // A day is "off" (no times saved) when Franco with no times entered
+  const isDayOff = lugar === 'Franco' && !isFrancoWorked
 
   function handleSave() {
     const reg: RegistroHoras = {
@@ -74,19 +74,19 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
       fechaMs: fecha.getTime(),
       entradaInicioMs: isDayOff ? null : timeToMs(fecha, e1),
       salidaInicioMs: isDayOff ? null : timeToMs(fecha, s1),
-      entradaFinMs: isDayOff ? null : (e2 ? timeToMs(fecha, e2) : null),
-      salidaFinMs: isDayOff ? null : (s2 ? timeToMs(fecha, s2) : null),
+      entradaFinMs: existing?.entradaFinMs ?? null,
+      salidaFinMs: existing?.salidaFinMs ?? null,
       lugarTrabajo: lugar,
-      pernocte,
-      maneja,
-      horasViaje: parseFloat(horasViaje) || 0,
+      pernocte: lugar === 'Base' ? 'NO' : pernocte,
+      maneja: lugar === 'Base' ? false : maneja,
+      horasViaje: lugar === 'Base' ? 0 : (parseFloat(horasViaje) || 0),
       observaciones: proyectoObs,
       proyecto: proyectoObs,
-      esFeriado: esFeriadoHoy || esFeriadoTrabajado || (lugar === 'Franco' && subFranco === 'FERIADO'),
+      esFeriado: esFeriadoHoy || esFeriadoTrabajado || (!isFrancoWorked && lugar === 'Franco' && subFranco === 'FERIADO'),
       esFeriadoTrabajado,
-      esFrancoCompensatorio: subFranco === 'COMP',
-      esFrancoTrabajado: subFranco === 'TRABAJADO',
-      esAusenciaJustificada: subFranco === 'AUSENCIA',
+      esFrancoCompensatorio: !isFrancoWorked && subFranco === 'COMP',
+      esFrancoTrabajado: isFrancoWorked,
+      esAusenciaJustificada: !isFrancoWorked && subFranco === 'AUSENCIA',
       fechaCreacion: existing?.fechaCreacion ?? Date.now(),
     }
     onSave(reg)
@@ -114,21 +114,14 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
           <button onClick={onClose} className="text-slate-400 hover:text-white p-2"><X size={20} /></button>
         </div>
 
-        {/* ── Turno (times) ── shown unless day-off */}
-        {!isDayOff && (
-          <div className="mb-5">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Turno</p>
-            <div className="grid grid-cols-2 gap-3">
-              <TimeInput label="Entrada" value={e1} onChange={setE1} />
-              <TimeInput label="Salida" value={s1} onChange={setS1} />
-            </div>
-            <p className="text-xs text-slate-500 mt-3 mb-2">2° turno (opcional)</p>
-            <div className="grid grid-cols-2 gap-3">
-              <TimeInput label="Entrada 2" value={e2} onChange={setE2} />
-              <TimeInput label="Salida 2" value={s2} onChange={setS2} />
-            </div>
+        {/* ── Turno (times) ── always shown; on Franco days, entering times auto-marks as Trabajado */}
+        <div className="mb-5">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Turno</p>
+          <div className="grid grid-cols-2 gap-3">
+            <TimeInput label="Entrada" value={e1} onChange={setE1} />
+            <TimeInput label="Salida" value={s1} onChange={setS1} />
           </div>
-        )}
+        </div>
 
         {/* ── Lugar de Trabajo ── */}
         <div className="mb-4">
@@ -147,14 +140,13 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
           </div>
         </div>
 
-        {/* ── Sub-flags for Comp/Feriado/Aus (exclusive chips) ── */}
-        {lugar === 'Franco' && (
+        {/* ── Sub-flags for Comp/Feriado/Aus — only when Franco and no times entered ── */}
+        {lugar === 'Franco' && !isFrancoWorked && (
           <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
             <p className="text-xs text-slate-400 mb-2">Tipo de ausencia</p>
             <div className="grid grid-cols-2 gap-2">
               {([
                 ['COMP', 'Compensatorio'],
-                ['TRABAJADO', 'Franco Trab. (100%)'],
                 ['FERIADO', 'Feriado (ausencia)'],
                 ['AUSENCIA', 'Ausencia Just.'],
               ] as [SubFranco, string][]).map(([key, label]) => (
@@ -176,8 +168,8 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
           </div>
         )}
 
-        {/* ── Pernocte / Maneja / Horas viaje — only when working ── */}
-        {!isDayOff && (
+        {/* ── Pernocte / Maneja / Horas viaje — Campo and Franco trabajado only ── */}
+        {!isDayOff && lugar !== 'Base' && (
           <div className="space-y-3 mb-4">
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Pernocte</p>
