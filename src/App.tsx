@@ -35,6 +35,12 @@ export default function App() {
   const [emptyDb, setEmptyDb] = useState(false)
   const restoreRef = useRef<HTMLInputElement>(null)
 
+  // iOS Safari can silently erase PWA storage after 7 days of inactivity
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const isIOSBrowser = (/iphone|ipad|ipod/i.test(ua) ||
+    (ua.includes('Mac') && 'ontouchend' in document)) &&
+    !window.matchMedia('(display-mode: standalone)').matches
+
   useEffect(() => {
     async function init() {
       const didRecover = await restoreFromShadow()
@@ -115,6 +121,15 @@ export default function App() {
           <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-900/40 text-amber-300 text-sm flex items-start gap-2">
             <AlertTriangle size={18} className="shrink-0 mt-0.5" />
             <span>El almacenamiento persistente no fue otorgado. Hacé backup periódicamente desde Configuración.</span>
+          </div>
+        )}
+        {isIOSBrowser && !recovered && (
+          <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-900/40 text-amber-300 text-sm flex items-start gap-2">
+            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold mb-0.5">Safari puede borrar tus datos</p>
+              <p className="text-xs text-amber-200/80">En iOS, Safari elimina los datos de la app si no la usás por 7 días o si hay poco espacio. Para evitarlo, <span className="font-semibold">instalá la app</span> desde Config → Instalar app, o hacé backups periódicos.</p>
+            </div>
           </div>
         )}
         {autoBackupDue && (

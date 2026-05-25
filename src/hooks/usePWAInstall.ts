@@ -20,7 +20,10 @@ if (typeof window !== 'undefined') {
 export function usePWAInstall() {
   const [, tick] = useState(0)
   const [isInstalled, setIsInstalled] = useState(false)
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !(window as any).MSStream
+  // iPad in desktop-mode reports "Macintosh" UA — detect via touch capability
+  const isIOS = (/iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.userAgent.includes('Mac') && 'ontouchend' in document)) &&
+    !(window as any).MSStream
 
   useEffect(() => {
     if (window.matchMedia('(display-mode: standalone)').matches) {
