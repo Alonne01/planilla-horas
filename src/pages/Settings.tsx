@@ -6,6 +6,16 @@ import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone }
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
+function localDateStr(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function parseDateLocal(dateStr: string): number {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(y, m - 1, d).getTime()
+}
+
 export function SettingsPage() {
   const { settings, update, loaded } = useSettings()
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
@@ -27,7 +37,7 @@ export function SettingsPage() {
     setNombre(settings.nombreUsuario)
     setDiagrama(settings.diagrama)
     setDiagramaFecha(
-      settings.diagramaInicioMs ? new Date(settings.diagramaInicioMs).toISOString().slice(0, 10) : ''
+      settings.diagramaInicioMs ? localDateStr(settings.diagramaInicioMs) : ''
     )
     setDirty(false)
   }, [loaded]) // intentionally only on mount
@@ -42,7 +52,7 @@ export function SettingsPage() {
       await update({
         nombreUsuario: nombre,
         diagrama,
-        diagramaInicioMs: diagramaFecha ? new Date(diagramaFecha).getTime() : 0,
+        diagramaInicioMs: diagramaFecha ? parseDateLocal(diagramaFecha) : 0,
       })
       setDirty(false)
       flash('Configuración guardada ✓')

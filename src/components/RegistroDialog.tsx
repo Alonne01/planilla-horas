@@ -238,7 +238,7 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
         </div>
 
         {/* ── Actions ── */}
-        <div className="flex gap-2">
+        <div className="sticky bottom-0 bg-slate-800 pt-3 flex gap-2">
           {existing && onDelete && (
             <button onClick={() => { onDelete(existing.id); onClose() }}
               className="px-4 py-3 rounded-xl bg-red-600/20 text-red-400 text-sm font-medium">
@@ -328,7 +328,7 @@ function ProjectInput({ value, onChange, suggestions }: { value: string; onChang
         onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
         className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm" />
       {open && filtered.length > 0 && (
-        <div className="absolute z-10 w-full mt-1 bg-slate-700 rounded-xl overflow-hidden shadow-xl">
+        <div className="absolute z-10 w-full bottom-full mb-1 bg-slate-700 rounded-xl overflow-hidden shadow-xl max-h-48 overflow-y-auto">
           {filtered.map(s => (
             <button key={s} onMouseDown={() => { onChange(s); setOpen(false) }}
               className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-600">
