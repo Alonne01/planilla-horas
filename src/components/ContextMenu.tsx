@@ -46,18 +46,16 @@ export function ContextMenu({ x, y, date, hasData, onCopyPrevious, onCopyToAll, 
         </div>
         <button
           onPointerDown={e => { e.stopPropagation(); onCopyPrevious(); onClose() }}
-          className="w-full text-left px-4 py-3 text-sm text-white active:bg-slate-700 flex items-center gap-3"
+          className="w-full text-left px-4 py-3 text-sm text-white active:bg-slate-700"
         >
-          <span className="text-base">📋</span>
-          <span>Copiar día anterior</span>
+          Copiar día anterior
         </button>
         {hasData && (
           <button
             onPointerDown={e => { e.stopPropagation(); onCopyToAll(); onClose() }}
-            className="w-full text-left px-4 py-3 text-sm text-white active:bg-slate-700 flex items-center gap-3 border-t border-slate-700/50"
+            className="w-full text-left px-4 py-3 text-sm text-white active:bg-slate-700 border-t border-slate-700/50"
           >
-            <span className="text-base">🗂️</span>
-            <span>Copiar a días hábiles</span>
+            Copiar a días hábiles
           </button>
         )}
       </div>
