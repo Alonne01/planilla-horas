@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
+import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone } from '../db/database'
 
@@ -156,6 +157,9 @@ export function SettingsPage() {
           {dirty ? 'Guardar cambios' : 'Sin cambios pendientes'}
         </button>
 
+        {/* Instalar app */}
+        <InstallSection />
+
         {/* Proyectos frecuentes */}
         <Section title="Proyectos frecuentes">
           <ProyectosEditor
@@ -187,6 +191,33 @@ export function SettingsPage() {
         <StorageWarningBanner />
       </div>
     </div>
+  )
+}
+
+function InstallSection() {
+  const { canInstall, install, isInstalled, isIOS } = usePWAInstall()
+
+  if (isInstalled || (!canInstall && !isIOS)) return null
+
+  return (
+    <Section title="Instalar app">
+      {canInstall ? (
+        <button
+          onClick={install}
+          className="w-full py-3 rounded-xl bg-blue-600 text-white text-sm font-bold flex items-center justify-center gap-2 active:bg-blue-700 transition-colors"
+        >
+          <Smartphone size={16} /> Instalar en este dispositivo
+        </button>
+      ) : (
+        <div className="bg-slate-700/50 rounded-xl p-3 text-sm text-slate-300 space-y-2">
+          <p className="font-semibold text-white flex items-center gap-2">
+            <Smartphone size={15} className="text-blue-400" /> Agregar a pantalla de inicio
+          </p>
+          <p>1. Tocá el ícono de <span className="text-blue-300 font-medium">Compartir</span> (cuadrado con flecha ↑) en la barra de Safari</p>
+          <p>2. Elegí <span className="text-blue-300 font-medium">"Agregar a pantalla de inicio"</span></p>
+        </div>
+      )}
+    </Section>
   )
 }
 
