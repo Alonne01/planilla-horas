@@ -1,226 +1,276 @@
 // Excel export — Normal mode (writes data into the original template_horas.xlsx)
-// Uses fflate to preserve template images/drawings that SheetJS CE strips on write.
-// Template stores times as DECIMAL HOURS (e.g. 8.5 = 08:30) in columns C-F with
-// format "0.00", and column G has a formula =IFERROR((D-C)+(F-E) [Base -1h], 0).
-import * as XLSX from 'xlsx'
+//
+// Approach: direct XML manipulation of the template ZIP.
+// SheetJS CE regenerates xl/styles.xml from scratch on write, destroying all custom
+// cell formatting. By keeping the template ZIP intact and only modifying sheet1.xml
+// in place, we preserve every border, fill, number format, and drawing reference.
+//
+// Template stores times as DECIMAL HOURS (e.g. 8.5 = 08:30) in columns C–F.
+// Column G has an IFERROR formula that calculates worked hours automatically.
+// Column A has cross-workbook refs that must be cleared (='' styled empty cell).
+
 import { unzipSync, zipSync, strToU8 } from 'fflate'
 import type { RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd, MESES_ES } from './diagrama'
 
-/** ms timestamp → decimal hours (e.g. 08:30 → 8.5) */
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function xmlEsc(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function dateToExcelSerial(d: Date): number {
+  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000) + 25569
+}
+
 function msToDecimalHours(ms: number | null | undefined): number | null {
   if (!ms) return null
   const d = new Date(ms)
   return d.getHours() + d.getMinutes() / 60
 }
 
-/** JS Date → Excel serial (days since Dec 30, 1899, matching Excel's epoch+bug) */
-function dateToExcelSerial(d: Date): number {
-  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000) + 25569
+// ─── Cell XML builders ─────────────────────────────────────────────────────────
+// s = style index from template (preserved verbatim — never regenerated)
+
+/** Styled empty cell (no value) */
+const cEmpty = (r: string, s: number) => `<c r="${r}" s="${s}"/>`
+
+/** Numeric cell */
+const cNum = (r: string, s: number, v: number) => `<c r="${r}" s="${s}"><v>${v}</v></c>`
+
+/** Inline-string cell; empty value → styled empty cell (avoids updating sharedStrings.xml) */
+function cStr(r: string, s: number, v: string): string {
+  if (!v) return cEmpty(r, s)
+  return `<c r="${r}" s="${s}" t="inlineStr"><is><t>${xmlEsc(v)}</t></is></c>`
 }
 
-/** Grab the existing cell's style index so we can preserve template formatting */
-function getS(ws: XLSX.WorkSheet, r: number, c: number): unknown {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (ws[XLSX.utils.encode_cell({ r, c })] as any)?.s
-}
-
-/** Write string cell, preserving existing cell style */
-function scStr(ws: XLSX.WorkSheet, r: number, c: number, v: string) {
-  const s = getS(ws, r, c)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cell: any = { v, t: 's' }
-  if (s != null) cell.s = s
-  ws[XLSX.utils.encode_cell({ r, c })] = cell
-}
-
-/** Write numeric cell, preserving existing cell style AND setting z for number/date display */
-function scNum(ws: XLSX.WorkSheet, r: number, c: number, v: number, z?: string) {
-  const s = getS(ws, r, c)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cell: any = { v, t: 'n' }
-  if (s != null) cell.s = s
-  if (z) cell.z = z   // Always set z — needed for SheetJS to render cell.w correctly
-  ws[XLSX.utils.encode_cell({ r, c })] = cell
-}
-
-/** Write time cell as decimal hours, preserving existing cell style */
-function scTime(ws: XLSX.WorkSheet, r: number, c: number, ms: number | null | undefined) {
+/** Time cell → decimal hours; null/undefined → empty */
+function cTime(r: string, s: number, ms: number | null | undefined): string {
   const dec = msToDecimalHours(ms)
-  if (dec != null) scNum(ws, r, c, dec, '0.00')
-  else scStr(ws, r, c, '')
+  return dec != null ? cNum(r, s, dec) : cEmpty(r, s)
 }
 
-/** Write header cells (string or number), preserving existing cell style */
-function sc(ws: XLSX.WorkSheet, r: number, c: number, v: string | number) {
-  const s = getS(ws, r, c)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cell: any = typeof v === 'number' ? { v, t: 'n' } : { v, t: 's' }
-  if (s != null) cell.s = s
-  ws[XLSX.utils.encode_cell({ r, c })] = cell
-}
+// ─── Template style indices (determined by inspecting the template ZIP) ────────
+//
+// Row 12 (first data row) has a heavier top border — different style indices.
+// Rows 13-42 share a repeating visual band style.
+//
+//  Col: A   B   C   D   E   F   (G=formula, preserved)  H   I   J   K   L   M   N
+const S12 = { A:3, B:34, C:35, D:36, E:36, F:35, H:38, I:38, J:38, K:38, L:38, M:39, N:40 } as const
+const SN  = { A:3, B:41, C:42, D:43, E:43, F:42, H:45, I:45, J:45, K:45, L:45, M:46, N:47 } as const
 
-function escribirFila(
-  ws: XLSX.WorkSheet,
-  rowIdx: number,
+// ─── Row cell builder ──────────────────────────────────────────────────────────
+// Returns [cellsBeforeG, cellsAfterG] so the caller can splice in the template G cell.
+
+function buildRowParts(
+  rowNum: number,
   dia: Date,
   reg: RegistroHoras | undefined,
   diagramaLabel: string,
-) {
-  // Clear column A cross-workbook reference (='[1]ALMEIRA LUIS'!AXX → #REF!)
-  scStr(ws, rowIdx, 0, '')
-  // Write date as Excel serial with Spanish date format (displays as "21-may")
-  scNum(ws, rowIdx, 1, dateToExcelSerial(dia), '[$-40A]dd\\-mmm')
+): [string, string] {
+  const s = rowNum === 12 ? S12 : SN
+  const n = rowNum
+
+  const cellA = cEmpty(`A${n}`, s.A)             // always clear cross-workbook ref
+  const cellB = cNum(`B${n}`, s.B, dateToExcelSerial(dia))
 
   const dow = dia.getDay()
   const isWeekend = dow === 0 || dow === 6
 
+  // ── No registro ────────────────────────────────────────────────────────────
   if (reg == null) {
     const esLV = !diagramaLabel || diagramaLabel.toLowerCase().includes('lun')
     if (isWeekend && esLV) {
-      // LV weekend = franco; '-' in C/F triggers IFERROR in G → 0
-      scStr(ws, rowIdx, 2, '-'); scStr(ws, rowIdx, 3, ''); scStr(ws, rowIdx, 4, ''); scStr(ws, rowIdx, 5, '-')
-      // col 6 (G): formula preserved — skip write
-      scStr(ws, rowIdx, 7, '-'); scStr(ws, rowIdx, 8, '')
-      scStr(ws, rowIdx, 9, '-'); scStr(ws, rowIdx, 10, '-'); scStr(ws, rowIdx, 11, '-'); scStr(ws, rowIdx, 12, '-')
-      scStr(ws, rowIdx, 13, 'franco')
-    } else {
-      scStr(ws, rowIdx, 2, ''); scStr(ws, rowIdx, 3, ''); scStr(ws, rowIdx, 4, ''); scStr(ws, rowIdx, 5, '')
-      for (let c = 7; c <= 13; c++) scStr(ws, rowIdx, c, '')
+      return [
+        [cellA, cellB, cStr(`C${n}`, s.C, '-'), cEmpty(`D${n}`, s.D), cEmpty(`E${n}`, s.E), cStr(`F${n}`, s.F, '-')].join(''),
+        [cStr(`H${n}`, s.H, '-'), cEmpty(`I${n}`, s.I),
+          cStr(`J${n}`, s.J, '-'), cStr(`K${n}`, s.K, '-'), cStr(`L${n}`, s.L, '-'), cStr(`M${n}`, s.M, '-'),
+          cStr(`N${n}`, s.N, 'franco')].join(''),
+      ]
     }
-    return
+    return [
+      [cellA, cellB, cEmpty(`C${n}`, s.C), cEmpty(`D${n}`, s.D), cEmpty(`E${n}`, s.E), cEmpty(`F${n}`, s.F)].join(''),
+      [cEmpty(`H${n}`, s.H), cEmpty(`I${n}`, s.I), cEmpty(`J${n}`, s.J),
+        cEmpty(`K${n}`, s.K), cEmpty(`L${n}`, s.L), cEmpty(`M${n}`, s.M), cEmpty(`N${n}`, s.N)].join(''),
+    ]
   }
 
+  // ── Franco / absence ───────────────────────────────────────────────────────
   if (reg.lugarTrabajo === 'Franco') {
-    const isFeriadoTrabajado = reg.esFeriadoTrabajado && reg.entradaInicioMs != null
-    const isFrancoTrabajadoLegacy = reg.esFrancoTrabajado && reg.entradaInicioMs != null
-    if (isFeriadoTrabajado || isFrancoTrabajadoLegacy) {
+    const hasWork = reg.entradaInicioMs != null
+    const isFrancoTrab = reg.esFrancoTrabajado && hasWork
+    const isFeriadoTrab = reg.esFeriadoTrabajado && hasWork
+
+    if (isFrancoTrab || isFeriadoTrab) {
       const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
-      if (!hasTurno2) {
-        scTime(ws, rowIdx, 2, reg.entradaInicioMs); scStr(ws, rowIdx, 3, '')
-        scStr(ws, rowIdx, 4, ''); scTime(ws, rowIdx, 5, reg.salidaInicioMs)
-      } else {
-        scTime(ws, rowIdx, 2, reg.entradaInicioMs); scTime(ws, rowIdx, 3, reg.salidaInicioMs)
-        scTime(ws, rowIdx, 4, reg.entradaFinMs); scTime(ws, rowIdx, 5, reg.salidaFinMs)
-      }
-      // G formula calculates automatically (al 100% = Campo-like, no -1h deduction)
-      scStr(ws, rowIdx, 7, reg.horasViaje > 0 ? 'SI' : 'NO')
-      scStr(ws, rowIdx, 8, '')
-      scStr(ws, rowIdx, 9, ''); scStr(ws, rowIdx, 10, ''); scStr(ws, rowIdx, 11, ''); scStr(ws, rowIdx, 12, '')
+      const [cC, cD, cE, cF] = hasTurno2
+        ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cTime(`D${n}`, s.D, reg.salidaInicioMs),
+           cTime(`E${n}`, s.E, reg.entradaFinMs),    cTime(`F${n}`, s.F, reg.salidaFinMs)]
+        : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cEmpty(`D${n}`, s.D),
+           cEmpty(`E${n}`, s.E),                     cTime(`F${n}`, s.F, reg.salidaInicioMs)]
       const obsBase = reg.observaciones ?? ''
-      scStr(ws, rowIdx, 13, isFrancoTrabajadoLegacy
+      const obs = isFrancoTrab
         ? `franco trabajado${obsBase ? ' - ' + obsBase : ''}`
-        : (obsBase ? `feriado trabajado - ${obsBase}` : 'feriado trabajado'))
-    } else {
-      const etiqueta = reg.esAusenciaJustificada ? 'ausencia just.'
-        : reg.esFeriado ? 'feriado'
-        : reg.esFrancoCompensatorio ? 'franco (comp.)'
-        : 'franco'
-      scStr(ws, rowIdx, 2, '-'); scStr(ws, rowIdx, 3, ''); scStr(ws, rowIdx, 4, ''); scStr(ws, rowIdx, 5, '-')
-      // G formula: IFERROR catches '-' string operands → returns 0
-      scStr(ws, rowIdx, 7, '-'); scStr(ws, rowIdx, 8, '')
-      scStr(ws, rowIdx, 9, '-'); scStr(ws, rowIdx, 10, '-'); scStr(ws, rowIdx, 11, '-'); scStr(ws, rowIdx, 12, '-')
-      scStr(ws, rowIdx, 13, etiqueta + (reg.observaciones ? ` - ${reg.observaciones}` : ''))
+        : (obsBase ? `feriado trabajado - ${obsBase}` : 'feriado trabajado')
+      return [
+        [cellA, cellB, cC, cD, cE, cF].join(''),
+        [cStr(`H${n}`, s.H, reg.horasViaje > 0 ? 'SI' : 'NO'), cEmpty(`I${n}`, s.I),
+          cEmpty(`J${n}`, s.J), cEmpty(`K${n}`, s.K), cEmpty(`L${n}`, s.L), cEmpty(`M${n}`, s.M),
+          cStr(`N${n}`, s.N, obs)].join(''),
+      ]
     }
-    return
+
+    const etiqueta = reg.esAusenciaJustificada ? 'ausencia just.'
+      : reg.esFeriado ? 'feriado'
+      : reg.esFrancoCompensatorio ? 'franco (comp.)'
+      : 'franco'
+    return [
+      [cellA, cellB, cStr(`C${n}`, s.C, '-'), cEmpty(`D${n}`, s.D), cEmpty(`E${n}`, s.E), cStr(`F${n}`, s.F, '-')].join(''),
+      [cStr(`H${n}`, s.H, '-'), cEmpty(`I${n}`, s.I),
+        cStr(`J${n}`, s.J, '-'), cStr(`K${n}`, s.K, '-'), cStr(`L${n}`, s.L, '-'), cStr(`M${n}`, s.M, '-'),
+        cStr(`N${n}`, s.N, etiqueta + (reg.observaciones ? ` - ${reg.observaciones}` : ''))].join(''),
+    ]
   }
 
-  // Normal workday (Base or Campo)
+  // ── Normal workday (Base / Campo) ──────────────────────────────────────────
   const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
-  if (!hasTurno2) {
-    scTime(ws, rowIdx, 2, reg.entradaInicioMs); scStr(ws, rowIdx, 3, '')
-    scStr(ws, rowIdx, 4, ''); scTime(ws, rowIdx, 5, reg.salidaInicioMs)
-  } else {
-    scTime(ws, rowIdx, 2, reg.entradaInicioMs); scTime(ws, rowIdx, 3, reg.salidaInicioMs)
-    scTime(ws, rowIdx, 4, reg.entradaFinMs); scTime(ws, rowIdx, 5, reg.salidaFinMs)
-  }
-  // G formula: =IFERROR(IF(IF(I="Base",(D-C)+(F-E)-1,(D-C)+(F-E))>16,16,...),0)
-  // Calculates automatically from decimal hour values we wrote above — do NOT overwrite.
-  scStr(ws, rowIdx, 7, reg.horasViaje > 0 ? 'SI' : 'NO')
-  scStr(ws, rowIdx, 8, reg.lugarTrabajo)
-  scStr(ws, rowIdx, 9, reg.pernocte === 'Hotel' ? 'x' : '')
-  scStr(ws, rowIdx, 10, reg.pernocte === 'Trailer' ? 'x' : '')
-  scStr(ws, rowIdx, 11, reg.pernocte === 'NO' ? 'x' : '')
-  scStr(ws, rowIdx, 12, reg.maneja ? 'x' : '')
+  const [cC, cD, cE, cF] = hasTurno2
+    ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cTime(`D${n}`, s.D, reg.salidaInicioMs),
+       cTime(`E${n}`, s.E, reg.entradaFinMs),    cTime(`F${n}`, s.F, reg.salidaFinMs)]
+    : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cEmpty(`D${n}`, s.D),
+       cEmpty(`E${n}`, s.E),                     cTime(`F${n}`, s.F, reg.salidaInicioMs)]
   let obs = reg.observaciones ?? ''
   if (reg.esFrancoTrabajado) obs = `franco trabajado${obs ? ' - ' + obs : ''}`
-  scStr(ws, rowIdx, 13, obs)
+
+  return [
+    [cellA, cellB, cC, cD, cE, cF].join(''),
+    [cStr(`H${n}`, s.H, reg.horasViaje > 0 ? 'SI' : 'NO'),
+      cStr(`I${n}`, s.I, reg.lugarTrabajo),
+      cStr(`J${n}`, s.J, reg.pernocte === 'Hotel' ? 'x' : ''),
+      cStr(`K${n}`, s.K, reg.pernocte === 'Trailer' ? 'x' : ''),
+      cStr(`L${n}`, s.L, reg.pernocte === 'NO' ? 'x' : ''),
+      cStr(`M${n}`, s.M, reg.maneja ? 'x' : ''),
+      cStr(`N${n}`, s.N, obs)].join(''),
+  ]
+}
+
+// ─── Sheet XML manipulation ────────────────────────────────────────────────────
+
+/**
+ * Replaces a single cell element in the sheet XML.
+ * Handles both self-closing <c ... /> and content form <c ...>...</c>.
+ */
+function replaceCellXml(xml: string, addr: string, newCell: string): string {
+  const re = new RegExp(
+    `<c r="${addr}"(?:\\s[^>]*)?\\/>`
+    + `|<c r="${addr}"(?:\\s[^>]*)?>(?:[^<]|<(?!\\/c>))*<\\/c>`,
+  )
+  return xml.includes(`r="${addr}"`) ? xml.replace(re, newCell) : xml
 }
 
 /**
- * Patches the SheetJS output ZIP with media/drawings/styles from the template ZIP,
- * so the logo image and cell formatting are preserved in the exported file.
+ * Replaces all data rows (12–42) and the two header cells in the sheet XML.
+ * Every other entry in the ZIP (styles.xml, drawings, media, rels, etc.) is
+ * left completely untouched — this is what preserves the cell formatting.
  */
-async function patchWithTemplateMedia(templateBytes: Uint8Array, outputBytes: Uint8Array): Promise<Uint8Array> {
-  try {
-    const templateZip = unzipSync(templateBytes)
-    const outputZip = unzipSync(outputBytes)
+function writeSheetData(
+  sheetXml: string,
+  mes: number,
+  anio: number,
+  registros: RegistroHoras[],
+  nombreUsuario: string,
+  diagramaLabel: string,
+): string {
+  const mesAnterior = MESES_ES[mes === 0 ? 11 : mes - 1]
+  const mesActual = MESES_ES[mes]
 
-    // Copy visual assets from template (media and drawings only; styles handled by SheetJS)
-    for (const [path, data] of Object.entries(templateZip)) {
-      if (
-        path.startsWith('xl/media/') ||
-        path.startsWith('xl/drawings/')
-      ) {
-        outputZip[path] = data
-      }
-    }
-
-    // Merge worksheet rels: add drawing relationship without overwriting SheetJS rels
-    const relsKey = 'xl/worksheets/_rels/sheet1.xml.rels'
-    if (templateZip[relsKey]) {
-      const templateRels = new TextDecoder().decode(templateZip[relsKey])
-      const drawingRel = templateRels.match(/<Relationship[^>]+drawing[^>]+\/>/)
-      if (drawingRel) {
-        // Use rId99 to avoid conflicting with any SheetJS-generated rIds
-        const safeRel = drawingRel[0].replace(/Id="[^"]*"/, 'Id="rId99"')
-        if (outputZip[relsKey]) {
-          let outputRels = new TextDecoder().decode(outputZip[relsKey])
-          if (!outputRels.includes('drawing')) {
-            outputRels = outputRels.replace('</Relationships>', `${safeRel}</Relationships>`)
-            outputZip[relsKey] = strToU8(outputRels)
-          }
-        } else {
-          outputZip[relsKey] = strToU8(
-            `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${safeRel}</Relationships>`
-          )
-        }
-      }
-    }
-
-    // Inject <drawing r:id="rId99"/> into sheet1.xml before </worksheet>
-    const sheetKey = 'xl/worksheets/sheet1.xml'
-    if (outputZip[sheetKey]) {
-      let sheetXml = new TextDecoder().decode(outputZip[sheetKey])
-      if (!sheetXml.includes('<drawing') && sheetXml.includes('</worksheet>')) {
-        sheetXml = sheetXml.replace(
-          '</worksheet>',
-          '<drawing r:id="rId99"/></worksheet>'
-        )
-        outputZip[sheetKey] = strToU8(sheetXml)
-      }
-    }
-
-    // Patch [Content_Types].xml: add Override entries for drawings (Excel requires these)
-    const ctKey = '[Content_Types].xml'
-    if (templateZip[ctKey] && outputZip[ctKey]) {
-      const templateCT = new TextDecoder().decode(templateZip[ctKey])
-      let outputCT = new TextDecoder().decode(outputZip[ctKey])
-      const overrideMatches = [...templateCT.matchAll(/<Override[^>]*\/xl\/drawings\/[^>]*\/>/g)]
-      for (const m of overrideMatches) {
-        if (!outputCT.includes('/xl/drawings/')) {
-          outputCT = outputCT.replace('</Types>', `${m[0]}</Types>`)
-        }
-      }
-      outputZip[ctKey] = strToU8(outputCT)
-    }
-
-    return zipSync(outputZip, { level: 6 })
-  } catch {
-    // If patching fails, return original output
-    return outputBytes
+  // Header cells (style indices from template inspection)
+  sheetXml = replaceCellXml(sheetXml, 'C5', cStr('C5', 7, nombreUsuario))
+  sheetXml = replaceCellXml(sheetXml, 'C7', cStr('C7', 10, `${mesAnterior.toLowerCase()}-${mesActual.toLowerCase()} ${anio}`))
+  if (diagramaLabel) {
+    sheetXml = replaceCellXml(sheetXml, 'I7', cStr('I7', 8, `Diagrama:    ${diagramaLabel}`))
   }
+
+  // Build day lookup
+  const byDay = new Map<string, RegistroHoras>()
+  for (const r of registros) {
+    const d = new Date(r.fechaMs)
+    byDay.set(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`, r)
+  }
+
+  // Data rows 12–42
+  const cur = new Date(periodoStart(mes, anio))
+  const endDate = periodoEnd(mes, anio)
+  let rowNum = 12
+
+  while (cur <= endDate && rowNum <= 42) {
+    const dia = new Date(cur)
+    const reg = byDay.get(`${dia.getFullYear()}-${dia.getMonth()}-${dia.getDate()}`)
+    sheetXml = replaceDataRow(sheetXml, rowNum, dia, reg, diagramaLabel)
+    cur.setDate(cur.getDate() + 1)
+    rowNum++
+  }
+
+  // Clear remaining rows for short months
+  while (rowNum <= 42) {
+    sheetXml = clearDataRow(sheetXml, rowNum)
+    rowNum++
+  }
+
+  return sheetXml
 }
+
+/** Replace one data row, preserving the opening tag attributes and G formula cell. */
+function replaceDataRow(
+  xml: string,
+  rowNum: number,
+  dia: Date,
+  reg: RegistroHoras | undefined,
+  diagramaLabel: string,
+): string {
+  const rowRe = new RegExp(`(<row(?:[^>]*\\s)?r="${rowNum}"[^>]*>)([\\s\\S]*?)(<\\/row>)`)
+  const m = xml.match(rowRe)
+  if (!m) return xml
+
+  const openTag = m[1]
+  const originalContent = m[2]
+  const closeTag = m[3]
+
+  // Extract the G formula cell verbatim from the template row
+  const gMatch = originalContent.match(/<c r="G\d+"[^>]*>[\s\S]*?<\/c>/)
+  const gCell = gMatch ? gMatch[0] : ''
+
+  const [before, after] = buildRowParts(rowNum, dia, reg, diagramaLabel)
+  return xml.replace(rowRe, `${openTag}${before}${gCell}${after}${closeTag}`)
+}
+
+/** Clear a data row (short-month overflow): empty styled cells, G formula preserved. */
+function clearDataRow(xml: string, rowNum: number): string {
+  const rowRe = new RegExp(`(<row(?:[^>]*\\s)?r="${rowNum}"[^>]*>)([\\s\\S]*?)(<\\/row>)`)
+  const m = xml.match(rowRe)
+  if (!m) return xml
+
+  const openTag = m[1]
+  const originalContent = m[2]
+  const closeTag = m[3]
+
+  const gMatch = originalContent.match(/<c r="G\d+"[^>]*>[\s\S]*?<\/c>/)
+  const gCell = gMatch ? gMatch[0] : ''
+
+  const s = rowNum === 12 ? S12 : SN
+  const n = rowNum
+  const before = [cEmpty(`A${n}`, s.A), cEmpty(`B${n}`, s.B), cEmpty(`C${n}`, s.C),
+                  cEmpty(`D${n}`, s.D), cEmpty(`E${n}`, s.E), cEmpty(`F${n}`, s.F)].join('')
+  const after  = [cEmpty(`H${n}`, s.H), cEmpty(`I${n}`, s.I), cEmpty(`J${n}`, s.J),
+                  cEmpty(`K${n}`, s.K), cEmpty(`L${n}`, s.L), cEmpty(`M${n}`, s.M), cEmpty(`N${n}`, s.N)].join('')
+
+  return xml.replace(rowRe, `${openTag}${before}${gCell}${after}${closeTag}`)
+}
+
+// ─── Main export ───────────────────────────────────────────────────────────────
 
 export async function exportarExcelNormal(
   mes: number,
@@ -233,45 +283,20 @@ export async function exportarExcelNormal(
   if (!resp.ok) throw new Error(`No se pudo cargar el template: ${resp.status}`)
   const templateBytes = new Uint8Array(await resp.arrayBuffer())
 
-  const workbook = XLSX.read(templateBytes, { type: 'array', cellStyles: true })
-  const ws = workbook.Sheets[workbook.SheetNames[0]]
+  // Unzip template, patch sheet1.xml only, keep all other entries intact
+  const zip = unzipSync(templateBytes)
+  const sheetKey = 'xl/worksheets/sheet1.xml'
+  const originalXml = new TextDecoder().decode(zip[sheetKey])
+  const modifiedXml = writeSheetData(originalXml, mes, anio, registros, nombreUsuario, diagramaLabel)
+  zip[sheetKey] = strToU8(modifiedXml)
+
+  const outputBytes = zipSync(zip, { level: 6 })
 
   const mesAnterior = MESES_ES[mes === 0 ? 11 : mes - 1]
   const mesActual = MESES_ES[mes]
-
-  // Always overwrite — clears the template's default "Vazquez Nicolas"
-  sc(ws, 4, 2, nombreUsuario)
-  sc(ws, 6, 2, `${mesAnterior.toLowerCase()}-${mesActual.toLowerCase()} ${anio}`)
-  if (diagramaLabel) sc(ws, 6, 8, `Diagrama:    ${diagramaLabel}`)
-
-  const byDay = new Map(registros.map(r => {
-    const d = new Date(r.fechaMs)
-    return [`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`, r]
-  }))
-
-  let dataRowIdx = 11
-  const cur = new Date(periodoStart(mes, anio))
-  const end = periodoEnd(mes, anio)
-  while (cur <= end) {
-    escribirFila(ws, dataRowIdx, new Date(cur), byDay.get(`${cur.getFullYear()}-${cur.getMonth()}-${cur.getDate()}`), diagramaLabel)
-    dataRowIdx++
-    cur.setDate(cur.getDate() + 1)
-  }
-
-  for (let i = dataRowIdx; i < 11 + 31; i++) {
-    scStr(ws, i, 0, '') // Clear column A cross-workbook ref
-    for (let c = 1; c <= 13; c++) {
-      if (c === 6) continue // Skip G — preserve formula, returns 0 for empty rows
-      scStr(ws, i, c, '')
-    }
-  }
-
-  // Write to buffer (not file) so we can patch media
-  const outputBytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as Uint8Array
-  const patched = await patchWithTemplateMedia(templateBytes, new Uint8Array(outputBytes))
-
-  // Trigger download
-  const blob = new Blob([patched.buffer as ArrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const blob = new Blob([outputBytes.buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   const safeName = (nombreUsuario || 'Planilla').replace(/[/\\:*?"<>|]/g, '_')
