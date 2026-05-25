@@ -3,10 +3,12 @@
 
 import type { RegistroHoras } from '../db/database'
 
-/** Minutes between two timestamps; null-safe → 0 */
+/** Minutes between two timestamps; null-safe → 0; handles overnight (b < a) */
 function minutesBetween(a: number | null | undefined, b: number | null | undefined): number {
-  if (!a || !b || b <= a) return 0
-  return (b - a) / 60_000
+  if (!a || !b) return 0
+  let diff = b - a
+  if (diff < 0) diff += 24 * 60 * 60 * 1000 // overnight shift (e.g. 20:00 → 08:00 next day)
+  return diff / 60_000
 }
 
 /** Effective worked hours for a single shift window, applying lunch deduction for Base */

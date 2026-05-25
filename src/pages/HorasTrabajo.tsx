@@ -102,6 +102,7 @@ export function HorasTrabajoPage() {
       if (dayKey(d) === dayKey(sourceDate)) return false
       if (esFrancoPorDiagrama(d.getTime(), settings.diagrama, settings.diagramaInicioMs)) return false
       if (esFeriadoNacional(d.getTime())) return false
+      if (byDay.has(dayKey(d))) return false  // don't overwrite days that already have data
       return true
     })
     if (targets.length === 0) { alert('No hay días hábiles para copiar.'); return }

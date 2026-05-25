@@ -53,6 +53,19 @@ function cTime(r: string, s: number, ms: number | null | undefined): string {
   return dec != null ? cNum(r, s, dec) : cEmpty(r, s)
 }
 
+/**
+ * Salida cell with overnight adjustment.
+ * If salidaMs decimal hours < entradaMs decimal hours, it's a cross-midnight shift → add 24.
+ * Example: entrada 20:00 (dec=20), salida 08:00 (dec=8) → stored as 32 so Excel formula F-C = 32-20 = 12.
+ */
+function cSalida(r: string, s: number, entradaMs: number | null | undefined, salidaMs: number | null | undefined): string {
+  const e = msToDecimalHours(entradaMs)
+  const raw = msToDecimalHours(salidaMs)
+  if (raw == null) return cEmpty(r, s)
+  const dec = (e != null && raw < e) ? raw + 24 : raw
+  return cNum(r, s, dec)
+}
+
 // ─── Template style indices (determined by inspecting the template ZIP) ────────
 //
 // Row 12 (first data row) has a heavier top border — different style indices.
@@ -107,10 +120,10 @@ function buildRowParts(
     if (isFrancoTrab || isFeriadoTrab) {
       const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
       const [cC, cD, cE, cF] = hasTurno2
-        ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cTime(`D${n}`, s.D, reg.salidaInicioMs),
-           cTime(`E${n}`, s.E, reg.entradaFinMs),    cTime(`F${n}`, s.F, reg.salidaFinMs)]
+        ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
+           cTime(`E${n}`, s.E, reg.entradaFinMs),    cSalida(`F${n}`, s.F, reg.entradaFinMs, reg.salidaFinMs)]
         : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cEmpty(`D${n}`, s.D),
-           cEmpty(`E${n}`, s.E),                     cTime(`F${n}`, s.F, reg.salidaInicioMs)]
+           cEmpty(`E${n}`, s.E),                     cSalida(`F${n}`, s.F, reg.entradaInicioMs, reg.salidaInicioMs)]
       const obsBase = reg.observaciones ?? ''
       const obs = isFrancoTrab
         ? `franco trabajado${obsBase ? ' - ' + obsBase : ''}`
@@ -138,10 +151,10 @@ function buildRowParts(
   // ── Normal workday (Base / Campo) ──────────────────────────────────────────
   const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
   const [cC, cD, cE, cF] = hasTurno2
-    ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cTime(`D${n}`, s.D, reg.salidaInicioMs),
-       cTime(`E${n}`, s.E, reg.entradaFinMs),    cTime(`F${n}`, s.F, reg.salidaFinMs)]
+    ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
+       cTime(`E${n}`, s.E, reg.entradaFinMs),    cSalida(`F${n}`, s.F, reg.entradaFinMs, reg.salidaFinMs)]
     : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cEmpty(`D${n}`, s.D),
-       cEmpty(`E${n}`, s.E),                     cTime(`F${n}`, s.F, reg.salidaInicioMs)]
+       cEmpty(`E${n}`, s.E),                     cSalida(`F${n}`, s.F, reg.entradaInicioMs, reg.salidaInicioMs)]
   let obs = reg.observaciones ?? ''
   if (reg.esFrancoTrabajado) obs = `franco trabajado${obs ? ' - ' + obs : ''}`
 

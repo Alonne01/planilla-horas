@@ -238,7 +238,8 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
         </div>
 
         {/* ── Actions ── */}
-        <div className="sticky bottom-0 bg-slate-800 pt-3 flex gap-2">
+        <div className="sticky bottom-0 bg-slate-800 pt-3 flex gap-2"
+          style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}>
           {existing && onDelete && (
             <button onClick={() => { onDelete(existing.id); onClose() }}
               className="px-4 py-3 rounded-xl bg-red-600/20 text-red-400 text-sm font-medium">
