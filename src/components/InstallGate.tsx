@@ -1,5 +1,5 @@
 import { usePWAInstall } from '../hooks/usePWAInstall'
-import { Smartphone, Share, MoreVertical, Monitor } from 'lucide-react'
+import { Smartphone, Share, MoreVertical, Monitor, ShieldCheck, Zap, AlertTriangle } from 'lucide-react'
 
 interface Props {
   onSkip: () => void
@@ -29,9 +29,9 @@ export function InstallGate({ onSkip }: Props) {
       {/* Why install */}
       <div className="w-full max-w-sm bg-slate-800 rounded-2xl p-4 mb-6 space-y-2">
         <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">¿Por qué instalar?</p>
-        <Row icon="🔒" text="Tus datos no se borran automáticamente" />
-        <Row icon="⚡" text="Carga más rápido, funciona sin internet" />
-        <Row icon="📱" text="Acceso directo desde tu pantalla de inicio" />
+        <Row icon={<ShieldCheck size={16} className="text-emerald-400" />} text="Tus datos no se borran automáticamente" />
+        <Row icon={<Zap size={16} className="text-yellow-400" />} text="Carga más rápido, funciona sin internet" />
+        <Row icon={<Smartphone size={16} className="text-blue-400" />} text="Acceso directo desde tu pantalla de inicio" />
       </div>
 
       {/* Install action */}
@@ -63,14 +63,19 @@ export function InstallGate({ onSkip }: Props) {
       >
         Continuar sin instalar →
       </button>
+
+      {/* Credits */}
+      <p className="mt-6 text-xs text-slate-700 text-center select-none">
+        Planilla de Horas · by Nicolás Vázquez
+      </p>
     </div>
   )
 }
 
-function Row({ icon, text }: { icon: string; text: string }) {
+function Row({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
     <div className="flex items-center gap-3 text-sm text-slate-300">
-      <span className="text-base">{icon}</span>
+      <span className="shrink-0">{icon}</span>
       <span>{text}</span>
     </div>
   )
@@ -102,9 +107,10 @@ function IOSGuide() {
       <Step n={3}>
         Tocá <strong className="text-white">"Agregar"</strong> en la esquina superior derecha
       </Step>
-      <p className="text-xs text-amber-300/80 pt-1">
-        ⚠️ Debés usar <strong>Safari</strong>. Chrome e Firefox en iOS no permiten instalar PWAs.
-      </p>
+      <div className="flex items-center gap-2 text-amber-300/80 pt-1 text-xs">
+        <AlertTriangle size={13} className="shrink-0" />
+        <span>Debés usar <strong>Safari</strong>. Chrome e Firefox en iOS no permiten instalar PWAs.</span>
+      </div>
     </StepBox>
   )
 }
@@ -175,8 +181,7 @@ function DesktopGuide() {
         <Monitor size={15} className="text-blue-400" /> Instalar en PC
       </p>
       <Step n={1}>
-        Buscá el ícono <strong className="text-white">⊕</strong> o{' '}
-        <strong className="text-white">💻</strong> en la barra de dirección de Chrome/Edge
+        Buscá el ícono <strong className="text-white">⊕</strong> en la barra de dirección de Chrome/Edge
       </Step>
       <Step n={2}>
         Hacé clic en <strong className="text-white">"Instalar"</strong> o{' '}
