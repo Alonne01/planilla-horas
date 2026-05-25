@@ -58,8 +58,13 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
   const [e1, setE1] = useState(msToTime(existing?.entradaInicioMs))
   const [s1, setS1] = useState(msToTime(existing?.salidaInicioMs))
   const [pernocte, setPernocte] = useState<Pernocte>(existing?.pernocte ?? 'NO')
+  const [horasViaje, setHorasViaje] = useState((existing?.horasViaje ?? 0) > 0)
   const [maneja, setManeja] = useState(existing?.maneja ?? false)
-  const [horasViaje, setHorasViaje] = useState(String(existing?.horasViaje ?? ''))
+
+  function handleSetManeja(v: boolean) {
+    setManeja(v)
+    if (v) setHorasViaje(true)
+  }
   const [proyectoObs, setProyectoObs] = useState(
     existing?.proyecto && existing?.observaciones && existing.proyecto !== existing.observaciones
       ? `${existing.proyecto} - ${existing.observaciones}`
@@ -91,7 +96,7 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
       lugarTrabajo: (isDayOff ? 'Franco' : lugar) as LugarTrabajo,
       pernocte: (isDayOff || lugar === 'Base') ? 'NO' : pernocte,
       maneja: (isDayOff || lugar === 'Base') ? false : maneja,
-      horasViaje: (isDayOff || lugar === 'Base') ? 0 : (parseFloat(horasViaje) || 0),
+      horasViaje: (isDayOff || lugar === 'Base') ? 0 : (horasViaje ? 1 : 0),
       observaciones: proyectoObs,
       proyecto: proyectoObs,
       esFeriado: esFeriadoHoy || isFeriadoWorked || (isDayOff && subFranco === 'FERIADO'),
@@ -221,13 +226,8 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
                 ))}
               </div>
             </div>
-            <Toggle label="Manejó este día" value={maneja} onChange={setManeja} />
-            <div className="flex items-center gap-3">
-              <label className="text-sm text-slate-300 flex-1">Horas de viaje</label>
-              <input type="number" min="0" max="24" step="0.5"
-                value={horasViaje} onChange={e => setHorasViaje(e.target.value)}
-                className="w-20 bg-slate-700 text-white rounded-lg px-2 py-1.5 text-sm text-center" />
-            </div>
+            <Toggle label="Manejó este día" value={maneja} onChange={handleSetManeja} />
+            <Toggle label="Horas de viaje" value={horasViaje} onChange={setHorasViaje} />
           </div>
         )}
 
