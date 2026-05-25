@@ -3,8 +3,14 @@ import { Clock, Settings2, Banknote, RefreshCw, AlertTriangle, Download, FolderO
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
+import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, pruneOldRegistros, migrateHorasViaje } from "./db/database"
 import "./index.css"
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true
+}
 
 const SHOW_SALARY = import.meta.env.VITE_SHOW_SALARY === "true"
 const AUTO_BACKUP_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000 // 2 days
@@ -33,6 +39,7 @@ export default function App() {
   const [autoBackupDue, setAutoBackupDue] = useState(false)
   const [autoBackupDone, setAutoBackupDone] = useState(false)
   const [emptyDb, setEmptyDb] = useState(false)
+  const [gateSkipped, setGateSkipped] = useState(false)
   const restoreRef = useRef<HTMLInputElement>(null)
 
   // iOS Safari can silently erase PWA storage after 7 days of inactivity
@@ -105,6 +112,11 @@ export default function App() {
       alert('Error: archivo de backup inválido')
     }
     e.target.value = ''
+  }
+
+  // Show install gate if not running as installed PWA — after all hooks
+  if (!isStandalone() && !gateSkipped) {
+    return <InstallGate onSkip={() => setGateSkipped(true)} />
   }
 
   return (
