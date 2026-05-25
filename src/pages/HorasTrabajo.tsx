@@ -60,11 +60,27 @@ export function HorasTrabajoPage() {
   }
 
   function cloneForDate(source: RegistroHoras, target: Date): RegistroHoras {
+    const targetMs = new Date(target.getFullYear(), target.getMonth(), target.getDate(), 12, 0, 0).getTime()
+    const isFranco = esFrancoPorDiagrama(targetMs, settings.diagrama, settings.diagramaInicioMs)
+    const isFeriado = esFeriadoNacional(targetMs)
+    const hasWork = source.entradaInicioMs !== null || source.salidaInicioMs !== null
+
+    // If source was unworked franco copied to a regular day, default lugar to Campo
+    let lugarTrabajo = source.lugarTrabajo
+    if (lugarTrabajo === 'Franco' && !isFranco) lugarTrabajo = 'Campo'
+    if (isFranco && !hasWork) lugarTrabajo = 'Franco'
+
     return {
       ...source,
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      fechaMs: new Date(target.getFullYear(), target.getMonth(), target.getDate(), 12, 0, 0).getTime(),
+      fechaMs: targetMs,
       fechaCreacion: Date.now(),
+      lugarTrabajo,
+      esFrancoTrabajado: isFranco && hasWork,
+      esFeriado: isFeriado && !hasWork,
+      esFeriadoTrabajado: isFeriado && hasWork,
+      esFrancoCompensatorio: false,
+      esAusenciaJustificada: false,
     }
   }
 
