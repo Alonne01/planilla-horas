@@ -19,28 +19,45 @@ function dateToExcelSerial(d: Date): number {
   return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000) + 25569
 }
 
-/** Write string cell */
-function scStr(ws: XLSX.WorkSheet, r: number, c: number, v: string) {
-  ws[XLSX.utils.encode_cell({ r, c })] = { v, t: 's' }
+/** Grab the existing cell's style index so we can preserve template formatting */
+function getS(ws: XLSX.WorkSheet, r: number, c: number): unknown {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (ws[XLSX.utils.encode_cell({ r, c })] as any)?.s
 }
 
-/** Write numeric cell, optionally with a number format string */
-function scNum(ws: XLSX.WorkSheet, r: number, c: number, v: number, z?: string) {
-  const cell: XLSX.CellObject = { v, t: 'n' }
-  if (z) cell.z = z
+/** Write string cell, preserving existing cell style */
+function scStr(ws: XLSX.WorkSheet, r: number, c: number, v: string) {
+  const s = getS(ws, r, c)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cell: any = { v, t: 's' }
+  if (s != null) cell.s = s
   ws[XLSX.utils.encode_cell({ r, c })] = cell
 }
 
-/** Write time cell as decimal hours with "0.00" format, or empty string if null */
+/** Write numeric cell, preserving existing cell style AND setting z for number/date display */
+function scNum(ws: XLSX.WorkSheet, r: number, c: number, v: number, z?: string) {
+  const s = getS(ws, r, c)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cell: any = { v, t: 'n' }
+  if (s != null) cell.s = s
+  if (z) cell.z = z   // Always set z — needed for SheetJS to render cell.w correctly
+  ws[XLSX.utils.encode_cell({ r, c })] = cell
+}
+
+/** Write time cell as decimal hours, preserving existing cell style */
 function scTime(ws: XLSX.WorkSheet, r: number, c: number, ms: number | null | undefined) {
   const dec = msToDecimalHours(ms)
   if (dec != null) scNum(ws, r, c, dec, '0.00')
   else scStr(ws, r, c, '')
 }
 
-/** Write header cells (string or number, no special format) */
+/** Write header cells (string or number), preserving existing cell style */
 function sc(ws: XLSX.WorkSheet, r: number, c: number, v: string | number) {
-  ws[XLSX.utils.encode_cell({ r, c })] = typeof v === 'number' ? { v, t: 'n' } : { v, t: 's' }
+  const s = getS(ws, r, c)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cell: any = typeof v === 'number' ? { v, t: 'n' } : { v, t: 's' }
+  if (s != null) cell.s = s
+  ws[XLSX.utils.encode_cell({ r, c })] = cell
 }
 
 function escribirFila(
@@ -131,50 +148,71 @@ function escribirFila(
 }
 
 /**
- * Patches the SheetJS output ZIP with media/drawings from the template ZIP,
- * so the logo image is preserved in the exported file.
+ * Patches the SheetJS output ZIP with media/drawings/styles from the template ZIP,
+ * so the logo image and cell formatting are preserved in the exported file.
  */
 async function patchWithTemplateMedia(templateBytes: Uint8Array, outputBytes: Uint8Array): Promise<Uint8Array> {
   try {
     const templateZip = unzipSync(templateBytes)
     const outputZip = unzipSync(outputBytes)
 
-    // Copy all media files from template
+    // Copy visual assets from template (media and drawings only; styles handled by SheetJS)
     for (const [path, data] of Object.entries(templateZip)) {
       if (
         path.startsWith('xl/media/') ||
-        path.startsWith('xl/drawings/') ||
-        path.startsWith('xl/worksheets/_rels/')
+        path.startsWith('xl/drawings/')
       ) {
         outputZip[path] = data
       }
     }
 
-    // Inject <drawing r:id="rId1"/> into sheet1.xml before </worksheet>
+    // Merge worksheet rels: add drawing relationship without overwriting SheetJS rels
+    const relsKey = 'xl/worksheets/_rels/sheet1.xml.rels'
+    if (templateZip[relsKey]) {
+      const templateRels = new TextDecoder().decode(templateZip[relsKey])
+      const drawingRel = templateRels.match(/<Relationship[^>]+drawing[^>]+\/>/)
+      if (drawingRel) {
+        // Use rId99 to avoid conflicting with any SheetJS-generated rIds
+        const safeRel = drawingRel[0].replace(/Id="[^"]*"/, 'Id="rId99"')
+        if (outputZip[relsKey]) {
+          let outputRels = new TextDecoder().decode(outputZip[relsKey])
+          if (!outputRels.includes('drawing')) {
+            outputRels = outputRels.replace('</Relationships>', `${safeRel}</Relationships>`)
+            outputZip[relsKey] = strToU8(outputRels)
+          }
+        } else {
+          outputZip[relsKey] = strToU8(
+            `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${safeRel}</Relationships>`
+          )
+        }
+      }
+    }
+
+    // Inject <drawing r:id="rId99"/> into sheet1.xml before </worksheet>
     const sheetKey = 'xl/worksheets/sheet1.xml'
     if (outputZip[sheetKey]) {
       let sheetXml = new TextDecoder().decode(outputZip[sheetKey])
       if (!sheetXml.includes('<drawing') && sheetXml.includes('</worksheet>')) {
         sheetXml = sheetXml.replace(
           '</worksheet>',
-          '<drawing r:id="rId1"/></worksheet>'
+          '<drawing r:id="rId99"/></worksheet>'
         )
         outputZip[sheetKey] = strToU8(sheetXml)
       }
     }
 
-    // Ensure sheet1.xml.rels has the drawing relationship if template had one
-    const relsKey = 'xl/worksheets/_rels/sheet1.xml.rels'
-    if (templateZip[relsKey] && outputZip[relsKey]) {
-      const templateRels = new TextDecoder().decode(templateZip[relsKey])
-      const drawingRel = templateRels.match(/<Relationship[^>]+drawing[^>]+\/>/)
-      if (drawingRel) {
-        let outputRels = new TextDecoder().decode(outputZip[relsKey])
-        if (!outputRels.includes('drawing')) {
-          outputRels = outputRels.replace('</Relationships>', `${drawingRel[0]}</Relationships>`)
-          outputZip[relsKey] = strToU8(outputRels)
+    // Patch [Content_Types].xml: add Override entries for drawings (Excel requires these)
+    const ctKey = '[Content_Types].xml'
+    if (templateZip[ctKey] && outputZip[ctKey]) {
+      const templateCT = new TextDecoder().decode(templateZip[ctKey])
+      let outputCT = new TextDecoder().decode(outputZip[ctKey])
+      const overrideMatches = [...templateCT.matchAll(/<Override[^>]*\/xl\/drawings\/[^>]*\/>/g)]
+      for (const m of overrideMatches) {
+        if (!outputCT.includes('/xl/drawings/')) {
+          outputCT = outputCT.replace('</Types>', `${m[0]}</Types>`)
         }
       }
+      outputZip[ctKey] = strToU8(outputCT)
     }
 
     return zipSync(outputZip, { level: 6 })
@@ -195,13 +233,14 @@ export async function exportarExcelNormal(
   if (!resp.ok) throw new Error(`No se pudo cargar el template: ${resp.status}`)
   const templateBytes = new Uint8Array(await resp.arrayBuffer())
 
-  const workbook = XLSX.read(templateBytes, { type: 'array' })
+  const workbook = XLSX.read(templateBytes, { type: 'array', cellStyles: true })
   const ws = workbook.Sheets[workbook.SheetNames[0]]
 
   const mesAnterior = MESES_ES[mes === 0 ? 11 : mes - 1]
   const mesActual = MESES_ES[mes]
 
-  if (nombreUsuario) sc(ws, 4, 2, nombreUsuario)
+  // Always overwrite — clears the template's default "Vazquez Nicolas"
+  sc(ws, 4, 2, nombreUsuario)
   sc(ws, 6, 2, `${mesAnterior.toLowerCase()}-${mesActual.toLowerCase()} ${anio}`)
   if (diagramaLabel) sc(ws, 6, 8, `Diagrama:    ${diagramaLabel}`)
 
