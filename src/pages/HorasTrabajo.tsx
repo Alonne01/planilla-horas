@@ -109,8 +109,8 @@ export function HorasTrabajoPage() {
         </div>
       )}
 
-      {/* Export FAB */}
-      <div className="fixed bottom-6 right-4 z-20">
+      {/* Export FAB — above the bottom nav (z-30, ~52px) */}
+      <div className="fixed bottom-20 right-4 z-40">
         {showExportMenu && (
           <div className="mb-2 flex flex-col gap-2 items-end">
             <button

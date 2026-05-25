@@ -165,8 +165,8 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
           </div>
         </div>
 
-        {/* ── Tipo de ausencia — only when no times entered ── */}
-        {isDayOff && (
+        {/* ── Tipo de ausencia — only when no times entered AND not a scheduled franco day ── */}
+        {isDayOff && !esFrancoHoy && (
           <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
             <p className="text-xs text-slate-400 mb-2">Tipo de ausencia</p>
             <div className="grid grid-cols-3 gap-2">
@@ -247,7 +247,7 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
     <div className="flex items-center justify-between">
       <span className="text-sm text-slate-300">{label}</span>
       <button onClick={() => onChange(!value)}
-        className={`w-12 h-6 rounded-full transition-colors relative ${value ? 'bg-blue-600' : 'bg-slate-600'}`}>
+        className={`w-12 h-6 rounded-full transition-colors relative overflow-hidden flex-shrink-0 ${value ? 'bg-blue-600' : 'bg-slate-600'}`}>
         <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${value ? 'translate-x-7' : 'translate-x-1'}`} />
       </button>
     </div>
