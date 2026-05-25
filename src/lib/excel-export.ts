@@ -119,9 +119,15 @@ function buildRowParts(
 
     if (isFrancoTrab || isFeriadoTrab) {
       const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
+      const isOvernightFT = !hasTurno2 &&
+        reg.entradaInicioMs != null && reg.salidaInicioMs != null &&
+        msToDecimalHours(reg.salidaInicioMs)! < msToDecimalHours(reg.entradaInicioMs)!
       const [cC, cD, cE, cF] = hasTurno2
         ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
            cTime(`E${n}`, s.E, reg.entradaFinMs),    cSalida(`F${n}`, s.F, reg.entradaFinMs, reg.salidaFinMs)]
+        : isOvernightFT
+        ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cNum(`D${n}`, s.D, 24),
+           cNum(`E${n}`, s.E, 0),                    cTime(`F${n}`, s.F, reg.salidaInicioMs)]
         : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cEmpty(`D${n}`, s.D),
            cEmpty(`E${n}`, s.E),                     cSalida(`F${n}`, s.F, reg.entradaInicioMs, reg.salidaInicioMs)]
       const obsBase = reg.observaciones ?? ''
@@ -150,9 +156,18 @@ function buildRowParts(
 
   // ── Normal workday (Base / Campo) ──────────────────────────────────────────
   const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
+  // Overnight single-turno: split into [entrada→24] + [0→salida] so cells
+  // read as "20 | 24" and "0 | 08". Template formula (D-C)+(F-E) still gives
+  // correct total: (24-20)+(8-0)=12 for a 20:00→08:00 shift.
+  const isOvernight = !hasTurno2 &&
+    reg.entradaInicioMs != null && reg.salidaInicioMs != null &&
+    msToDecimalHours(reg.salidaInicioMs)! < msToDecimalHours(reg.entradaInicioMs)!
   const [cC, cD, cE, cF] = hasTurno2
     ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
        cTime(`E${n}`, s.E, reg.entradaFinMs),    cSalida(`F${n}`, s.F, reg.entradaFinMs, reg.salidaFinMs)]
+    : isOvernight
+    ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cNum(`D${n}`, s.D, 24),
+       cNum(`E${n}`, s.E, 0),                    cTime(`F${n}`, s.F, reg.salidaInicioMs)]
     : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cEmpty(`D${n}`, s.D),
        cEmpty(`E${n}`, s.E),                     cSalida(`F${n}`, s.F, reg.entradaInicioMs, reg.salidaInicioMs)]
   let obs = reg.observaciones ?? ''
@@ -302,6 +317,11 @@ export async function exportarExcelNormal(
   const originalXml = new TextDecoder().decode(zip[sheetKey])
   const modifiedXml = writeSheetData(originalXml, mes, anio, registros, nombreUsuario, diagramaLabel)
   zip[sheetKey] = strToU8(modifiedXml)
+
+  // Drop the stale calculation chain — Excel regenerates it on open.
+  // Without this, Excel detects a mismatch between the chain and the modified
+  // cells and shows the "We found a problem" repair dialog.
+  delete zip['xl/calcChain.xml']
 
   const outputBytes = zipSync(zip, { level: 6 })
 
