@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { v4 as uuid } from 'uuid'
 import { X, CalendarDays, Clock } from 'lucide-react'
 import { TimeDrumPicker } from './TimeDrumPicker'
@@ -104,12 +104,25 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
     onSave(reg)
   }
 
+  const closingRef = useRef(false)
+  const [isClosing, setIsClosing] = useState(false)
+
+  function handleClose() {
+    if (closingRef.current) return
+    closingRef.current = true
+    setIsClosing(true)
+    setTimeout(onClose, 230)
+  }
+
   const labelDia = fecha.toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long' })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onClick={onClose}>
+    <div
+      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 ${isClosing ? 'animate-[backdrop-fade-out_230ms_ease_both]' : 'animate-[backdrop-fade-in_200ms_ease_both]'}`}
+      onClick={handleClose}
+    >
       <div
-        className="w-full max-w-md bg-slate-800 rounded-t-2xl sm:rounded-2xl p-5 pb-8 sm:pb-5 max-h-[92vh] overflow-y-auto"
+        className={`w-full max-w-md bg-slate-800 rounded-t-2xl sm:rounded-2xl p-5 pb-8 sm:pb-5 max-h-[92vh] overflow-y-auto ${isClosing ? 'animate-[dialog-slide-out_230ms_ease_both]' : 'animate-[dialog-slide-in_220ms_ease_both]'}`}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -128,7 +141,7 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
               </span>
             )}
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-2"><X size={20} /></button>
+          <button onClick={handleClose} className="text-slate-400 hover:text-white p-2"><X size={20} /></button>
         </div>
 
         {/* ── Turno ── */}
@@ -232,7 +245,7 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
               Eliminar
             </button>
           )}
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">Cancelar</button>
+          <button onClick={handleClose} className="flex-1 py-3 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">Cancelar</button>
           <button onClick={handleSave} disabled={isPartialEntry}
             className={`flex-1 py-3 rounded-xl text-sm font-bold transition-colors ${isPartialEntry ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
             Guardar

@@ -23,6 +23,8 @@ export function HorasTrabajoPage() {
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar')
 
+  const [calAnimKey, setCalAnimKey] = useState(`${mes}-${anio}-init`)
+
   const dias = useMemo(() => diasDelPeriodo(mes, anio), [mes, anio])
 
   const byDay = useMemo(() => {
@@ -47,6 +49,7 @@ export function HorasTrabajoPage() {
     if (m > 11) { m = 0; a++ }
     if (m < 0) { m = 11; a-- }
     setMes(m); setAnio(a)
+    setCalAnimKey(`${m}-${a}-${delta > 0 ? 'fwd' : 'bwd'}`)
   }
 
   const diagramaLabel = DIAGRAMAS.find(d => d.key === settings.diagrama)?.label ?? settings.diagrama
@@ -83,29 +86,36 @@ export function HorasTrabajoPage() {
       {/* Day view */}
       {loading ? (
         <div className="text-center text-slate-500 py-12">Cargando…</div>
-      ) : viewMode === 'calendar' ? (
-        <CalendarGrid
-          dias={dias}
-          byDay={byDay}
-          diagrama={settings.diagrama}
-          diagramaInicioMs={settings.diagramaInicioMs}
-          onSelectDate={setSelectedDate}
-        />
       ) : (
-        <div className="px-4 space-y-1.5">
-          {dias.map(d => {
-            const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-            return (
-              <DayCard
-                key={key}
-                fecha={d}
-                registro={byDay.get(key)}
-                diagrama={settings.diagrama}
-                diagramaInicioMs={settings.diagramaInicioMs}
-                onClick={() => setSelectedDate(d)}
-              />
-            )
-          })}
+        <div
+          key={calAnimKey}
+          className={calAnimKey.endsWith('fwd') ? 'animate-[cal-slide-right_220ms_ease_both]' : calAnimKey.endsWith('bwd') ? 'animate-[cal-slide-left_220ms_ease_both]' : ''}
+        >
+          {viewMode === 'calendar' ? (
+            <CalendarGrid
+              dias={dias}
+              byDay={byDay}
+              diagrama={settings.diagrama}
+              diagramaInicioMs={settings.diagramaInicioMs}
+              onSelectDate={setSelectedDate}
+            />
+          ) : (
+            <div className="px-4 space-y-1.5">
+              {dias.map(d => {
+                const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+                return (
+                  <DayCard
+                    key={key}
+                    fecha={d}
+                    registro={byDay.get(key)}
+                    diagrama={settings.diagrama}
+                    diagramaInicioMs={settings.diagramaInicioMs}
+                    onClick={() => setSelectedDate(d)}
+                  />
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 

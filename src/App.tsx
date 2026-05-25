@@ -9,6 +9,21 @@ import "./index.css"
 const SHOW_SALARY = import.meta.env.VITE_SHOW_SALARY === "true"
 
 type Tab = "horas" | "settings" | "salary"
+const TAB_ORDER: Tab[] = ["horas", "settings", "salary"]
+
+function goToTab(next: Tab, current: Tab, setter: (t: Tab) => void) {
+  if (next === current) return
+  const isBack = TAB_ORDER.indexOf(next) < TAB_ORDER.indexOf(current)
+  if ("startViewTransition" in document) {
+    if (isBack) document.documentElement.classList.add("vt-back")
+    else document.documentElement.classList.remove("vt-back")
+    const t = (document as any).startViewTransition(() => setter(next))
+    t.finished?.then(() => document.documentElement.classList.remove("vt-back"))
+               ?.catch(() => document.documentElement.classList.remove("vt-back"))
+  } else {
+    setter(next)
+  }
+}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("horas")
@@ -30,7 +45,7 @@ export default function App() {
 
   return (
     <div className="max-w-lg mx-auto min-h-screen relative">
-      <div className="pb-16">
+      <div className="pb-16 vt-page-content">
         {recovered && (
           <div className="mx-4 mt-3 p-3 rounded-xl bg-blue-900/40 text-blue-300 text-sm flex items-start gap-2">
             <RefreshCw size={18} className="shrink-0 mt-0.5" />
@@ -50,10 +65,10 @@ export default function App() {
 
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30">
         <div className="flex">
-          <NavTab icon={<Clock size={22} />} label="Horas" active={tab === "horas"} onClick={() => setTab("horas")} />
-          <NavTab icon={<Settings2 size={22} />} label="Config" active={tab === "settings"} onClick={() => setTab("settings")} />
+          <NavTab icon={<Clock size={22} />} label="Horas" active={tab === "horas"} onClick={() => goToTab("horas", tab, setTab)} />
+          <NavTab icon={<Settings2 size={22} />} label="Config" active={tab === "settings"} onClick={() => goToTab("settings", tab, setTab)} />
           {SHOW_SALARY && (
-            <NavTab icon={<Banknote size={22} />} label="Sueldo" active={tab === "salary"} onClick={() => setTab("salary")} />
+            <NavTab icon={<Banknote size={22} />} label="Sueldo" active={tab === "salary"} onClick={() => goToTab("salary", tab, setTab)} />
           )}
         </div>
       </nav>

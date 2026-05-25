@@ -15,3 +15,30 @@ input, select, textarea {
   font-size: 16px !important; /* prevents iOS zoom on focus */
 }
 
+/* ─── View Transitions (tab navigation) ─── */
+.vt-page-content { view-transition-name: page-content; }
+
+/* Suppress default root cross-fade when using named transitions */
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; }
+
+@keyframes vt-slide-right-in  { from { opacity: 0; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+@keyframes vt-slide-right-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-32px); } }
+@keyframes vt-slide-left-in   { from { opacity: 0; transform: translateX(-32px); } to { opacity: 1; transform: none; } }
+@keyframes vt-slide-left-out  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(32px); } }
+
+::view-transition-old(page-content) { animation: 180ms ease both vt-slide-right-out; }
+::view-transition-new(page-content) { animation: 200ms ease both vt-slide-right-in; }
+html.vt-back ::view-transition-old(page-content) { animation: 180ms ease both vt-slide-left-out; }
+html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt-slide-left-in; }
+
+/* ─── Dialog (RegistroDialog) ─── */
+@keyframes dialog-slide-in  { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: none; } }
+@keyframes dialog-slide-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(100%); } }
+@keyframes backdrop-fade-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes backdrop-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* ─── Calendar month slide ─── */
+@keyframes cal-slide-right { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes cal-slide-left  { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+
