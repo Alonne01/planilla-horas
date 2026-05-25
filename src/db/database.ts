@@ -204,3 +204,16 @@ export async function pruneOldRegistros(): Promise<number> {
   if (deleted > 0) await shadowBackup()
   return deleted
 }
+
+/**
+ * One-time migration: the old toggle stored horasViaje=1 (boolean),
+ * the new code stores horasViaje=2 (actual hours).
+ * Upgrade any record with exactly 1 → 2.
+ */
+export async function migrateHorasViaje(): Promise<number> {
+  const toMigrate = await db.registros.filter(r => r.horasViaje === 1).toArray()
+  if (toMigrate.length === 0) return 0
+  await db.registros.bulkPut(toMigrate.map(r => ({ ...r, horasViaje: 2 })))
+  await shadowBackup()
+  return toMigrate.length
+}
