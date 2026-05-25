@@ -58,7 +58,8 @@ function escribirFila(
 
   if (reg.lugarTrabajo === 'Franco') {
     const isFeriadoTrabajado = reg.esFeriadoTrabajado && reg.entradaInicioMs != null
-    if (isFeriadoTrabajado) {
+    const isFrancoTrabajadoLegacy = reg.esFrancoTrabajado && reg.entradaInicioMs != null
+    if (isFeriadoTrabajado || isFrancoTrabajadoLegacy) {
       const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
       if (!hasTurno2) {
         sc(ws, rowIdx, 2, fmt(reg.entradaInicioMs)); sc(ws, rowIdx, 3, '')
@@ -74,7 +75,9 @@ function escribirFila(
       sc(ws, rowIdx, 8, '')
       sc(ws, rowIdx, 9, ''); sc(ws, rowIdx, 10, ''); sc(ws, rowIdx, 11, ''); sc(ws, rowIdx, 12, '')
       const obsBase = reg.observaciones ?? ''
-      sc(ws, rowIdx, 13, obsBase ? `feriado trabajado - ${obsBase}` : 'feriado trabajado')
+      sc(ws, rowIdx, 13, isFrancoTrabajadoLegacy
+        ? `franco trabajado${obsBase ? ' - ' + obsBase : ''}`
+        : (obsBase ? `feriado trabajado - ${obsBase}` : 'feriado trabajado'))
     } else {
       const etiqueta = reg.esAusenciaJustificada ? 'ausencia just.'
         : reg.esFeriado ? 'feriado'

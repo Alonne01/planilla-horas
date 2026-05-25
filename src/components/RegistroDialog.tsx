@@ -36,9 +36,11 @@ type Pernocte = 'NO' | 'Hotel' | 'Trailer'
 type SubFranco = 'COMP' | 'TRABAJADO' | 'FERIADO' | 'AUSENCIA' | null
 
 function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
-  if (!existing || existing.lugarTrabajo !== 'Franco') return null
+  // Handle both old format (lugarTrabajo='Franco') and new format (esFrancoTrabajado + lugar=Base/Campo)
+  const isFrancoType = existing?.lugarTrabajo === 'Franco' || existing?.esFrancoTrabajado
+  if (!existing || !isFrancoType) return null
   if (existing.esFrancoTrabajado) return 'TRABAJADO'
-  if (existing.esFeriadoTrabajado) return 'TRABAJADO'  // legacy: feriado worked on franco day
+  if (existing.esFeriadoTrabajado) return 'TRABAJADO'
   if (existing.esFrancoCompensatorio) return 'COMP'
   if (existing.esAusenciaJustificada) return 'AUSENCIA'
   if (existing.esFeriado) return 'FERIADO'
@@ -49,7 +51,19 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
   const esFeriadoHoy = esFeriadoNacional(fecha.getTime())
 
-  const [lugar, setLugar] = useState<LugarTrabajo>(existing?.lugarTrabajo ?? (esFrancoHoy ? 'Franco' : 'Base'))
+  // Show 'Franco' button for any franco-type record (including new format where lugarTrabajo=Base/Campo)
+  const [lugar, setLugar] = useState<LugarTrabajo>(
+    existing?.esFrancoTrabajado || existing?.esFrancoCompensatorio ||
+    existing?.esAusenciaJustificada || existing?.lugarTrabajo === 'Franco'
+      ? 'Franco'
+      : existing?.lugarTrabajo ?? (esFrancoHoy ? 'Franco' : 'Base')
+  )
+  const [lugarFranco, setLugarFranco] = useState<'Base' | 'Campo'>(
+    existing?.esFrancoTrabajado &&
+    (existing.lugarTrabajo === 'Base' || existing.lugarTrabajo === 'Campo')
+      ? existing.lugarTrabajo
+      : 'Campo'
+  )
   const [e1, setE1] = useState(msToTime(existing?.entradaInicioMs))
   const [s1, setS1] = useState(msToTime(existing?.salidaInicioMs))
   const [pernocte, setPernocte] = useState<Pernocte>(existing?.pernocte ?? 'NO')
@@ -65,10 +79,17 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
 
   // Franco + both Entrada AND Salida entered → auto-detected as "Franco Trabajado" (100%)
   const isFrancoWorked = lugar === 'Franco' && !!(e1 && s1)
+  // Effective lugar: use lugarFranco when worked on franco day, otherwise 'Franco' for absences
+  const efectiveLugar: 'Base' | 'Campo' | 'Franco' = isFrancoWorked ? lugarFranco : lugar
   // A day is "off" (no times saved) when Franco with no times entered
-  const isDayOff = lugar === 'Franco' && !isFrancoWorked
+  const isDayOff = efectiveLugar === 'Franco'
 
   function handleSave() {
+    // Auto-detect feriado trabajado for national holidays when times are entered
+    const saveEsFeriadoTrabajado = esFeriadoHoy
+      ? !!(e1 && s1) && !isDayOff
+      : esFeriadoTrabajado
+
     const reg: RegistroHoras = {
       id: existing?.id ?? uuid(),
       fechaMs: fecha.getTime(),
@@ -76,14 +97,14 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
       salidaInicioMs: isDayOff ? null : timeToMs(fecha, s1),
       entradaFinMs: existing?.entradaFinMs ?? null,
       salidaFinMs: existing?.salidaFinMs ?? null,
-      lugarTrabajo: lugar,
-      pernocte: lugar === 'Base' ? 'NO' : pernocte,
-      maneja: lugar === 'Base' ? false : maneja,
-      horasViaje: lugar === 'Base' ? 0 : (parseFloat(horasViaje) || 0),
+      lugarTrabajo: efectiveLugar,
+      pernocte: efectiveLugar === 'Base' ? 'NO' : pernocte,
+      maneja: efectiveLugar === 'Base' ? false : maneja,
+      horasViaje: efectiveLugar === 'Base' ? 0 : (parseFloat(horasViaje) || 0),
       observaciones: proyectoObs,
       proyecto: proyectoObs,
-      esFeriado: esFeriadoHoy || esFeriadoTrabajado || (!isFrancoWorked && lugar === 'Franco' && subFranco === 'FERIADO'),
-      esFeriadoTrabajado,
+      esFeriado: esFeriadoHoy || saveEsFeriadoTrabajado || (!isFrancoWorked && lugar === 'Franco' && subFranco === 'FERIADO'),
+      esFeriadoTrabajado: saveEsFeriadoTrabajado,
       esFrancoCompensatorio: !isFrancoWorked && subFranco === 'COMP',
       esFrancoTrabajado: isFrancoWorked,
       esAusenciaJustificada: !isFrancoWorked && subFranco === 'AUSENCIA',
@@ -161,15 +182,37 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
           </div>
         )}
 
-        {/* ── Feriado (100%) toggle — for Base/Campo ── */}
-        {lugar !== 'Franco' && (
-          <div className="mb-4">
-            <Toggle label="Feriado (100%)" value={esFeriadoTrabajado} onChange={setEsFeriadoTrabajado} />
+        {/* ── Lugar worked on franco day (Base or Campo) ── */}
+        {isFrancoWorked && (
+          <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
+            <p className="text-xs text-slate-400 mb-2">¿Trabajó en?</p>
+            <div className="flex gap-2">
+              {(['Campo', 'Base'] as const).map(l => (
+                <button key={l} onClick={() => setLugarFranco(l)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${lugarFranco === l ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-amber-400 mt-2">Franco trabajado — horas al 100%</p>
           </div>
         )}
 
-        {/* ── Pernocte / Maneja / Horas viaje — Campo and Franco trabajado only ── */}
-        {!isDayOff && lugar !== 'Base' && (
+        {/* ── Feriado (100%) toggle — for Base/Campo; auto-detected for national holidays ── */}
+        {lugar !== 'Franco' && (
+          <div className="mb-4">
+            {esFeriadoHoy && e1 && s1 ? (
+              <p className="text-xs text-amber-400 flex items-center gap-1">
+                <CalendarDays size={12} /> Feriado nacional trabajado — horas al 100% (auto)
+              </p>
+            ) : (
+              <Toggle label="Feriado (100%)" value={esFeriadoTrabajado} onChange={setEsFeriadoTrabajado} />
+            )}
+          </div>
+        )}
+
+        {/* ── Pernocte / Maneja / Horas viaje — Campo and Franco trabajado at Campo only ── */}
+        {!isDayOff && efectiveLugar !== 'Base' && (
           <div className="space-y-3 mb-4">
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Pernocte</p>

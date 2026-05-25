@@ -71,10 +71,10 @@ export function calcularHorasDia(reg: RegistroHoras): Pick<ResumenDia, 'horasTra
     return { horasTrabajadas: total, horasNormales: 0, horasAl50: 0, horasAl100: total }
   }
 
-  // Regular workday tiering
-  const normales = Math.min(total, 8)
-  const al50 = total > 8 ? Math.min(total - 8, 2) : 0
-  const al100 = total > 10 ? total - 10 : 0
+  // Regular workday tiering: 0–12h normal, >12h at 50%, never 100%
+  const normales = Math.min(total, 12)
+  const al50 = total > 12 ? total - 12 : 0
+  const al100 = 0
 
   return { horasTrabajadas: total, horasNormales: normales, horasAl50: al50, horasAl100: al100 }
 }
