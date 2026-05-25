@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { v4 as uuid } from 'uuid'
 import { X, CalendarDays, Clock } from 'lucide-react'
+import { TimeDrumPicker } from './TimeDrumPicker'
 import type { RegistroHoras } from '../db/database'
 import { esFeriadoNacional } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
@@ -269,7 +270,22 @@ function snapTo15(timeStr: string): string {
   return `${String(finalHour).padStart(2, '0')}:${String(finalMin).padStart(2, '0')}`
 }
 
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(pointer: coarse)')
+    const handler = (e: MediaQueryListEvent) => setMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  return mobile
+}
+
 function TimeInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const isMobile = useIsMobile()
+  if (isMobile) return <TimeDrumPicker label={label} value={value} onChange={onChange} />
   return (
     <div className="flex-1">
       <label className="text-xs text-slate-400 mb-1.5 block">{label}</label>

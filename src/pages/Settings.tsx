@@ -105,7 +105,7 @@ export function SettingsPage() {
               value={nombre}
               onChange={e => { setNombre(e.target.value); setDirty(true) }}
               className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
-              placeholder="Ej: García Martín"
+              placeholder="Ej: Juan Topo"
             />
           </Field>
         </Section>

@@ -17,8 +17,8 @@ function horasEfectivasTurno(
 ): number {
   const raw = minutesBetween(entrada, salida)
   if (raw <= 0) return 0
-  // Base: deduct 30 min for shifts ≥ 4h (lunch break convention)
-  const deduccion = lugar === 'Base' && raw >= 240 ? 30 : 0
+  // Base: deduct 60 min for shifts ≥ 4h (lunch break convention)
+  const deduccion = lugar === 'Base' && raw >= 240 ? 60 : 0
   return Math.max(0, raw - deduccion) / 60
 }
 
