@@ -189,3 +189,18 @@ export async function importBackupJSON(json: string): Promise<void> {
   })
   await shadowBackup()
 }
+
+/** Delete all hour records and sync shadow backup. Settings are preserved. */
+export async function clearAllRegistros(): Promise<void> {
+  await db.registros.clear()
+  await shadowBackup()
+}
+
+/** Delete records older than 6 months. Returns count of deleted records. */
+export async function pruneOldRegistros(): Promise<number> {
+  const now = new Date()
+  const cutoffMs = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate()).getTime()
+  const deleted = await db.registros.where('fechaMs').below(cutoffMs).delete()
+  if (deleted > 0) await shadowBackup()
+  return deleted
+}

@@ -3,7 +3,7 @@ import { Clock, Settings2, Banknote, RefreshCw, AlertTriangle, Download, FolderO
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
-import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone } from "./db/database"
+import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, pruneOldRegistros } from "./db/database"
 import "./index.css"
 
 const SHOW_SALARY = import.meta.env.VITE_SHOW_SALARY === "true"
@@ -39,6 +39,9 @@ export default function App() {
     async function init() {
       const didRecover = await restoreFromShadow()
       if (didRecover) setRecovered(true)
+
+      // Silently prune records older than 6 months
+      try { await pruneOldRegistros() } catch { /* non-fatal */ }
 
       if (navigator.storage?.persist) {
         const granted = await navigator.storage.persist()

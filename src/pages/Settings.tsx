@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2 } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
-import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone } from '../db/database'
+import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros } from '../db/database'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -21,6 +21,7 @@ export function SettingsPage() {
   const { settings, update, loaded } = useSettings()
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
   const [backupOverdue, setBackupOverdue] = useState(false)
+  const [deleteStep, setDeleteStep] = useState<0 | 1 | 2>(0)
 
   // Local form state — only written to DB on explicit "Guardar"
   const [nombre, setNombre] = useState('')
@@ -85,6 +86,17 @@ export function SettingsPage() {
       flash('Error: archivo inválido', 'err')
     }
     e.target.value = ''
+  }
+
+  async function handleClearAll() {
+    try {
+      await clearAllRegistros()
+      setDeleteStep(0)
+      flash('Planilla borrada. Todos los registros fueron eliminados.')
+    } catch {
+      setDeleteStep(0)
+      flash('Error al borrar. Intentá de nuevo.', 'err')
+    }
   }
 
   if (!loaded) return <div className="text-center text-slate-500 py-12">Cargando…</div>
@@ -189,6 +201,54 @@ export function SettingsPage() {
 
         {/* Advertencia de almacenamiento */}
         <StorageWarningBanner />
+
+        {/* Zona de peligro */}
+        <Section title="Zona de peligro">
+          {deleteStep === 0 && (
+            <button
+              onClick={() => setDeleteStep(1)}
+              className="w-full py-3 rounded-xl bg-red-900/20 text-red-400 border border-red-800/40 text-sm font-medium flex items-center justify-center gap-2 active:bg-red-900/40 transition-colors"
+            >
+              <Trash2 size={16} /> Borrar planilla
+            </button>
+          )}
+
+          {deleteStep === 1 && (
+            <div className="rounded-xl border border-red-800/50 bg-red-900/20 p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-300 flex items-center gap-2">
+                <AlertTriangle size={15} /> ¿Borrar toda la planilla?
+              </p>
+              <p className="text-xs text-slate-400">Se eliminarán todos los registros de horas. Esta acción no se puede deshacer.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setDeleteStep(0)} className="flex-1 py-2.5 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">
+                  Cancelar
+                </button>
+                <button onClick={() => setDeleteStep(2)} className="flex-1 py-2.5 rounded-xl bg-red-700/60 text-red-200 text-sm font-medium border border-red-600/40">
+                  Sí, borrar →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {deleteStep === 2 && (
+            <div className="rounded-xl border border-red-600/70 bg-red-900/30 p-4 space-y-3">
+              <p className="text-sm font-bold text-red-300 flex items-center gap-2">
+                <AlertTriangle size={15} /> Última confirmación
+              </p>
+              <p className="text-xs text-slate-300">Todos los registros se borrarán definitivamente. No hay forma de recuperarlos si no tenés un backup.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setDeleteStep(0)} className="flex-1 py-2.5 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">
+                  Cancelar
+                </button>
+                <button onClick={handleClearAll} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold active:bg-red-700 transition-colors">
+                  Borrar definitivamente
+                </button>
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs text-slate-600 px-1">Los registros con más de 6 meses se eliminan automáticamente al abrir la app.</p>
+        </Section>
       </div>
     </div>
   )
