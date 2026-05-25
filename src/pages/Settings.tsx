@@ -257,7 +257,9 @@ export function SettingsPage() {
 function InstallSection() {
   const { canInstall, install, isInstalled, isIOS } = usePWAInstall()
 
-  if (isInstalled || (!canInstall && !isIOS)) return null
+  if (isInstalled) return null
+
+  const isAndroid = /android/i.test(navigator.userAgent)
 
   return (
     <Section title="Instalar app">
@@ -268,13 +270,29 @@ function InstallSection() {
         >
           <Smartphone size={16} /> Instalar en este dispositivo
         </button>
-      ) : (
+      ) : isIOS ? (
         <div className="bg-slate-700/50 rounded-xl p-3 text-sm text-slate-300 space-y-2">
           <p className="font-semibold text-white flex items-center gap-2">
             <Smartphone size={15} className="text-blue-400" /> Agregar a pantalla de inicio
           </p>
           <p>1. Tocá el ícono de <span className="text-blue-300 font-medium">Compartir</span> (cuadrado con flecha ↑) en la barra de Safari</p>
           <p>2. Elegí <span className="text-blue-300 font-medium">"Agregar a pantalla de inicio"</span></p>
+        </div>
+      ) : isAndroid ? (
+        <div className="bg-slate-700/50 rounded-xl p-3 text-sm text-slate-300 space-y-2">
+          <p className="font-semibold text-white flex items-center gap-2">
+            <Smartphone size={15} className="text-blue-400" /> Agregar a pantalla de inicio
+          </p>
+          <p>1. Tocá el menú <span className="text-blue-300 font-medium">⋮</span> de Chrome (tres puntos arriba a la derecha)</p>
+          <p>2. Elegí <span className="text-blue-300 font-medium">"Agregar a pantalla de inicio"</span></p>
+          <p className="text-xs text-slate-500">Si no aparece esa opción, recargá la página un par de veces.</p>
+        </div>
+      ) : (
+        <div className="bg-slate-700/50 rounded-xl p-3 text-sm text-slate-300 space-y-2">
+          <p className="font-semibold text-white flex items-center gap-2">
+            <Smartphone size={15} className="text-blue-400" /> Instalar en PC
+          </p>
+          <p>Buscá el ícono <span className="text-blue-300 font-medium">⊕</span> en la barra de dirección de Chrome, o andá al menú → <span className="text-blue-300 font-medium">"Guardar e instalar"</span></p>
         </div>
       )}
     </Section>
