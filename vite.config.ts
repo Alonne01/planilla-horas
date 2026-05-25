@@ -16,15 +16,13 @@ export default defineConfig({
         name: 'Planilla de Horas',
         short_name: 'Planilla',
         description: 'Registro de horas trabajadas',
-        theme_color: '#1e40af',
+        theme_color: '#08af9e',
         background_color: '#0f172a',
         display: 'standalone',
         orientation: 'portrait',
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
-          { src: 'icons/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' },
-          { src: 'icons/icon-512.svg', sizes: '512x512', type: 'image/svg+xml' },
         ],
       },
       workbox: {
