@@ -5,9 +5,11 @@ import { useSettings } from '../hooks/useSettings'
 import { RegistroDialog } from '../components/RegistroDialog'
 import { DayCard } from '../components/DayCard'
 import { CalendarGrid } from '../components/CalendarGrid'
+import { ContextMenu } from '../components/ContextMenu'
 import { ResumenBar } from '../components/ResumenBar'
 import { calcularResumenPeriodo } from '../lib/calculo-horas'
-import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd } from '../lib/diagrama'
+import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd, esFrancoPorDiagrama } from '../lib/diagrama'
+import { esFeriadoNacional } from '../lib/feriados'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
 import type { RegistroHoras } from '../db/database'
@@ -22,6 +24,7 @@ export function HorasTrabajoPage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar')
+  const [contextMenu, setContextMenu] = useState<{ date: Date; x: number; y: number } | null>(null)
 
   const [calAnimKey, setCalAnimKey] = useState(`${mes}-${anio}-init`)
 
@@ -50,6 +53,46 @@ export function HorasTrabajoPage() {
     if (m < 0) { m = 11; a-- }
     setMes(m); setAnio(a)
     setCalAnimKey(`${m}-${a}-${delta > 0 ? 'fwd' : 'bwd'}`)
+  }
+
+  function dayKey(d: Date) {
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+  }
+
+  function cloneForDate(source: RegistroHoras, target: Date): RegistroHoras {
+    return {
+      ...source,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      fechaMs: new Date(target.getFullYear(), target.getMonth(), target.getDate(), 12, 0, 0).getTime(),
+      fechaCreacion: Date.now(),
+    }
+  }
+
+  async function copyPreviousDay(targetDate: Date) {
+    // Find most recent day before targetDate that has a registro
+    const targetMs = targetDate.getTime()
+    const sorted = registros.filter(r => r.fechaMs < targetMs).sort((a, b) => b.fechaMs - a.fechaMs)
+    if (sorted.length === 0) { alert('No hay días anteriores con registro para copiar.'); return }
+    await upsert(cloneForDate(sorted[0], targetDate))
+  }
+
+  async function copyToAllWorkingDays(sourceDate: Date) {
+    const source = byDay.get(dayKey(sourceDate))
+    if (!source) { alert('El día seleccionado no tiene datos para copiar.'); return }
+    const targets = dias.filter(d => {
+      if (dayKey(d) === dayKey(sourceDate)) return false
+      if (esFrancoPorDiagrama(d.getTime(), settings.diagrama, settings.diagramaInicioMs)) return false
+      if (esFeriadoNacional(d.getTime())) return false
+      return true
+    })
+    if (targets.length === 0) { alert('No hay días hábiles para copiar.'); return }
+    for (const d of targets) {
+      await upsert(cloneForDate(source, d))
+    }
+  }
+
+  function openContext(date: Date, x: number, y: number) {
+    setContextMenu({ date, x, y })
   }
 
   const diagramaLabel = DIAGRAMAS.find(d => d.key === settings.diagrama)?.label ?? settings.diagrama
@@ -98,7 +141,8 @@ export function HorasTrabajoPage() {
               diagrama={settings.diagrama}
               diagramaInicioMs={settings.diagramaInicioMs}
               onSelectDate={setSelectedDate}
-            />
+                onContext={openContext}
+              />
           ) : (
             <div className="px-4 space-y-1.5">
               {dias.map(d => {
@@ -111,6 +155,7 @@ export function HorasTrabajoPage() {
                     diagrama={settings.diagrama}
                     diagramaInicioMs={settings.diagramaInicioMs}
                     onClick={() => setSelectedDate(d)}
+                    onContext={openContext}
                   />
                 )
               })}
@@ -169,6 +214,19 @@ export function HorasTrabajoPage() {
       {/* Overlay dismiss export menu */}
       {showExportMenu && (
         <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
+      )}
+
+      {/* Context menu (long press / right click) */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          date={contextMenu.date}
+          hasData={byDay.has(dayKey(contextMenu.date))}
+          onCopyPrevious={() => copyPreviousDay(contextMenu.date)}
+          onCopyToAll={() => copyToAllWorkingDays(contextMenu.date)}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   )

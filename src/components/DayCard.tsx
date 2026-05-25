@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import type { RegistroHoras } from '../db/database'
 import { calcularHorasDia, esDiaNoTrabajado } from '../lib/calculo-horas'
 import { esFeriadoNacional } from '../lib/feriados'
@@ -10,6 +11,7 @@ interface Props {
   diagrama?: DiagramaPatternKey
   diagramaInicioMs?: number
   onClick: () => void
+  onContext?: (date: Date, x: number, y: number) => void
 }
 
 const DIAS_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
@@ -31,7 +33,37 @@ function lugarColor(lugar: string): string {
   }
 }
 
-export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick }: Props) {
+export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, onContext }: Props) {
+  const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lpFired = useRef(false)
+  const lpMoved = useRef(false)
+
+  function handleTouchStart(e: React.TouchEvent) {
+    lpFired.current = false
+    lpMoved.current = false
+    const touch = e.touches[0]
+    lpTimer.current = setTimeout(() => {
+      if (!lpMoved.current) {
+        lpFired.current = true
+        onContext?.(fecha, touch.clientX, touch.clientY)
+      }
+    }, 500)
+  }
+  function handleTouchMove() {
+    lpMoved.current = true
+    if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null }
+  }
+  function handleTouchEnd() {
+    if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null }
+  }
+  function handleContextMenu(e: React.MouseEvent) {
+    e.preventDefault()
+    onContext?.(fecha, e.clientX, e.clientY)
+  }
+  function handleClick() {
+    if (lpFired.current) { lpFired.current = false; return }
+    onClick()
+  }
   const dow = fecha.getDay()
   const isWeekend = dow === 0 || dow === 6
   const isFrancoByDiag = diagrama
@@ -74,7 +106,11 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick }
 
   return (
     <button
-      onClick={onClick}
+      onClick={handleClick}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onContextMenu={handleContextMenu}
       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border ${borderColor} 
       ${isEmpty && !isFrancoByDiag ? 'bg-slate-800/30' : 'bg-slate-800/60'} 
         active:scale-[0.98] transition-transform text-left`}

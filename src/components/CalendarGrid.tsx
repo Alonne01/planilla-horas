@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import type { RegistroHoras } from '../db/database'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
 import { esFeriadoNacional } from '../lib/feriados'
@@ -9,6 +10,7 @@ interface Props {
   diagrama: DiagramaPatternKey
   diagramaInicioMs: number
   onSelectDate: (d: Date) => void
+  onContext?: (date: Date, x: number, y: number) => void
 }
 
 const DIAS_HEADER = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do']
@@ -40,8 +42,13 @@ function cellStyle(fecha: Date, reg: RegistroHoras | undefined, diagrama: Diagra
   return { bg: 'bg-slate-700/20 border-slate-600/30', label: '', labelColor: '' }
 }
 
-export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate }: Props) {
+export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext }: Props) {
   if (dias.length === 0) return null
+
+  // Single ref for long-press tracking (only one touch at a time)
+  const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lpFired = useRef(false)
+  const lpMoved = useRef(false)
 
   // Pad start so row begins on Monday
   const startPad = dowMon(dias[0])
@@ -78,7 +85,17 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
               return (
                 <button
                   key={di}
-                  onClick={() => onSelectDate(date)}
+                  onClick={() => { if (lpFired.current) { lpFired.current = false; return } onSelectDate(date) }}
+                  onTouchStart={e => {
+                    lpFired.current = false; lpMoved.current = false
+                    const touch = e.touches[0]
+                    lpTimer.current = setTimeout(() => {
+                      if (!lpMoved.current) { lpFired.current = true; onContext?.(date, touch.clientX, touch.clientY) }
+                    }, 500)
+                  }}
+                  onTouchMove={() => { lpMoved.current = true; if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }}
+                  onTouchEnd={() => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }}
+                  onContextMenu={e => { e.preventDefault(); onContext?.(date, e.clientX, e.clientY) }}
                   className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg}`}
                 >
                   {isFirstOfMonth && (

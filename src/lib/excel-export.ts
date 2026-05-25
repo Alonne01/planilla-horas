@@ -1,30 +1,44 @@
 // Excel export — Normal mode (writes data into the original template_horas.xlsx)
-// Mirrors ExcelHorasGenerator.kt exactly: same cell positions, same logic, same rounding.
 // Uses fflate to preserve template images/drawings that SheetJS CE strips on write.
+// Template stores times as DECIMAL HOURS (e.g. 8.5 = 08:30) in columns C-F with
+// format "0.00", and column G has a formula =IFERROR((D-C)+(F-E) [Base -1h], 0).
 import * as XLSX from 'xlsx'
 import { unzipSync, zipSync, strToU8 } from 'fflate'
 import type { RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd, MESES_ES } from './diagrama'
 
-function fmt(ms: number | null | undefined): string {
-  if (!ms) return ''
+/** ms timestamp → decimal hours (e.g. 08:30 → 8.5) */
+function msToDecimalHours(ms: number | null | undefined): number | null {
+  if (!ms) return null
   const d = new Date(ms)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return d.getHours() + d.getMinutes() / 60
 }
 
-function fmtDate(d: Date): string {
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+/** JS Date → Excel serial (days since Dec 30, 1899, matching Excel's epoch+bug) */
+function dateToExcelSerial(d: Date): number {
+  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000) + 25569
 }
 
-// Matches Kotlin calcularHoras: Base -1h if shift >4h, result rounded to whole hours.
-function calcHoras(inicioMs: number | null | undefined, finMs: number | null | undefined, lugar: string): number {
-  if (!inicioMs || !finMs) return 0
-  let hs = (finMs - inicioMs) / 3_600_000
-  if (hs < 0) hs += 24
-  if (lugar === 'Base' && hs > 4.0) hs -= 1.0
-  return Math.round(hs)
+/** Write string cell */
+function scStr(ws: XLSX.WorkSheet, r: number, c: number, v: string) {
+  ws[XLSX.utils.encode_cell({ r, c })] = { v, t: 's' }
 }
 
+/** Write numeric cell, optionally with a number format string */
+function scNum(ws: XLSX.WorkSheet, r: number, c: number, v: number, z?: string) {
+  const cell: XLSX.CellObject = { v, t: 'n' }
+  if (z) cell.z = z
+  ws[XLSX.utils.encode_cell({ r, c })] = cell
+}
+
+/** Write time cell as decimal hours with "0.00" format, or empty string if null */
+function scTime(ws: XLSX.WorkSheet, r: number, c: number, ms: number | null | undefined) {
+  const dec = msToDecimalHours(ms)
+  if (dec != null) scNum(ws, r, c, dec, '0.00')
+  else scStr(ws, r, c, '')
+}
+
+/** Write header cells (string or number, no special format) */
 function sc(ws: XLSX.WorkSheet, r: number, c: number, v: string | number) {
   ws[XLSX.utils.encode_cell({ r, c })] = typeof v === 'number' ? { v, t: 'n' } : { v, t: 's' }
 }
@@ -36,7 +50,10 @@ function escribirFila(
   reg: RegistroHoras | undefined,
   diagramaLabel: string,
 ) {
-  sc(ws, rowIdx, 1, fmtDate(dia))
+  // Clear column A cross-workbook reference (='[1]ALMEIRA LUIS'!AXX → #REF!)
+  scStr(ws, rowIdx, 0, '')
+  // Write date as Excel serial with Spanish date format (displays as "21-may")
+  scNum(ws, rowIdx, 1, dateToExcelSerial(dia), '[$-40A]dd\\-mmm')
 
   const dow = dia.getDay()
   const isWeekend = dow === 0 || dow === 6
@@ -44,14 +61,15 @@ function escribirFila(
   if (reg == null) {
     const esLV = !diagramaLabel || diagramaLabel.toLowerCase().includes('lun')
     if (isWeekend && esLV) {
-      sc(ws, rowIdx, 2, '-'); sc(ws, rowIdx, 3, ''); sc(ws, rowIdx, 4, ''); sc(ws, rowIdx, 5, '-')
-      sc(ws, rowIdx, 6, 0); sc(ws, rowIdx, 7, '-'); sc(ws, rowIdx, 8, '')
-      sc(ws, rowIdx, 9, '-'); sc(ws, rowIdx, 10, '-'); sc(ws, rowIdx, 11, '-'); sc(ws, rowIdx, 12, '-')
-      sc(ws, rowIdx, 13, 'franco')
+      // LV weekend = franco; '-' in C/F triggers IFERROR in G → 0
+      scStr(ws, rowIdx, 2, '-'); scStr(ws, rowIdx, 3, ''); scStr(ws, rowIdx, 4, ''); scStr(ws, rowIdx, 5, '-')
+      // col 6 (G): formula preserved — skip write
+      scStr(ws, rowIdx, 7, '-'); scStr(ws, rowIdx, 8, '')
+      scStr(ws, rowIdx, 9, '-'); scStr(ws, rowIdx, 10, '-'); scStr(ws, rowIdx, 11, '-'); scStr(ws, rowIdx, 12, '-')
+      scStr(ws, rowIdx, 13, 'franco')
     } else {
-      for (let c = 2; c <= 5; c++) sc(ws, rowIdx, c, '')
-      sc(ws, rowIdx, 6, 0)
-      for (let c = 7; c <= 13; c++) sc(ws, rowIdx, c, '')
+      scStr(ws, rowIdx, 2, ''); scStr(ws, rowIdx, 3, ''); scStr(ws, rowIdx, 4, ''); scStr(ws, rowIdx, 5, '')
+      for (let c = 7; c <= 13; c++) scStr(ws, rowIdx, c, '')
     }
     return
   }
@@ -62,20 +80,18 @@ function escribirFila(
     if (isFeriadoTrabajado || isFrancoTrabajadoLegacy) {
       const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
       if (!hasTurno2) {
-        sc(ws, rowIdx, 2, fmt(reg.entradaInicioMs)); sc(ws, rowIdx, 3, '')
-        sc(ws, rowIdx, 4, ''); sc(ws, rowIdx, 5, fmt(reg.salidaInicioMs))
+        scTime(ws, rowIdx, 2, reg.entradaInicioMs); scStr(ws, rowIdx, 3, '')
+        scStr(ws, rowIdx, 4, ''); scTime(ws, rowIdx, 5, reg.salidaInicioMs)
       } else {
-        sc(ws, rowIdx, 2, fmt(reg.entradaInicioMs)); sc(ws, rowIdx, 3, fmt(reg.salidaInicioMs))
-        sc(ws, rowIdx, 4, fmt(reg.entradaFinMs)); sc(ws, rowIdx, 5, fmt(reg.salidaFinMs))
+        scTime(ws, rowIdx, 2, reg.entradaInicioMs); scTime(ws, rowIdx, 3, reg.salidaInicioMs)
+        scTime(ws, rowIdx, 4, reg.entradaFinMs); scTime(ws, rowIdx, 5, reg.salidaFinMs)
       }
-      const h1 = calcHoras(reg.entradaInicioMs, reg.salidaInicioMs, 'Campo')
-      const h2 = calcHoras(reg.entradaFinMs, reg.salidaFinMs, 'Campo')
-      sc(ws, rowIdx, 6, h1 + h2)
-      sc(ws, rowIdx, 7, reg.horasViaje > 0 ? 'SI' : 'NO')
-      sc(ws, rowIdx, 8, '')
-      sc(ws, rowIdx, 9, ''); sc(ws, rowIdx, 10, ''); sc(ws, rowIdx, 11, ''); sc(ws, rowIdx, 12, '')
+      // G formula calculates automatically (al 100% = Campo-like, no -1h deduction)
+      scStr(ws, rowIdx, 7, reg.horasViaje > 0 ? 'SI' : 'NO')
+      scStr(ws, rowIdx, 8, '')
+      scStr(ws, rowIdx, 9, ''); scStr(ws, rowIdx, 10, ''); scStr(ws, rowIdx, 11, ''); scStr(ws, rowIdx, 12, '')
       const obsBase = reg.observaciones ?? ''
-      sc(ws, rowIdx, 13, isFrancoTrabajadoLegacy
+      scStr(ws, rowIdx, 13, isFrancoTrabajadoLegacy
         ? `franco trabajado${obsBase ? ' - ' + obsBase : ''}`
         : (obsBase ? `feriado trabajado - ${obsBase}` : 'feriado trabajado'))
     } else {
@@ -83,10 +99,11 @@ function escribirFila(
         : reg.esFeriado ? 'feriado'
         : reg.esFrancoCompensatorio ? 'franco (comp.)'
         : 'franco'
-      sc(ws, rowIdx, 2, '-'); sc(ws, rowIdx, 3, ''); sc(ws, rowIdx, 4, ''); sc(ws, rowIdx, 5, '-')
-      sc(ws, rowIdx, 6, 0); sc(ws, rowIdx, 7, '-'); sc(ws, rowIdx, 8, '')
-      sc(ws, rowIdx, 9, '-'); sc(ws, rowIdx, 10, '-'); sc(ws, rowIdx, 11, '-'); sc(ws, rowIdx, 12, '-')
-      sc(ws, rowIdx, 13, etiqueta + (reg.observaciones ? ` - ${reg.observaciones}` : ''))
+      scStr(ws, rowIdx, 2, '-'); scStr(ws, rowIdx, 3, ''); scStr(ws, rowIdx, 4, ''); scStr(ws, rowIdx, 5, '-')
+      // G formula: IFERROR catches '-' string operands → returns 0
+      scStr(ws, rowIdx, 7, '-'); scStr(ws, rowIdx, 8, '')
+      scStr(ws, rowIdx, 9, '-'); scStr(ws, rowIdx, 10, '-'); scStr(ws, rowIdx, 11, '-'); scStr(ws, rowIdx, 12, '-')
+      scStr(ws, rowIdx, 13, etiqueta + (reg.observaciones ? ` - ${reg.observaciones}` : ''))
     }
     return
   }
@@ -94,25 +111,23 @@ function escribirFila(
   // Normal workday (Base or Campo)
   const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
   if (!hasTurno2) {
-    sc(ws, rowIdx, 2, fmt(reg.entradaInicioMs)); sc(ws, rowIdx, 3, '')
-    sc(ws, rowIdx, 4, ''); sc(ws, rowIdx, 5, fmt(reg.salidaInicioMs))
+    scTime(ws, rowIdx, 2, reg.entradaInicioMs); scStr(ws, rowIdx, 3, '')
+    scStr(ws, rowIdx, 4, ''); scTime(ws, rowIdx, 5, reg.salidaInicioMs)
   } else {
-    sc(ws, rowIdx, 2, fmt(reg.entradaInicioMs)); sc(ws, rowIdx, 3, fmt(reg.salidaInicioMs))
-    sc(ws, rowIdx, 4, fmt(reg.entradaFinMs)); sc(ws, rowIdx, 5, fmt(reg.salidaFinMs))
+    scTime(ws, rowIdx, 2, reg.entradaInicioMs); scTime(ws, rowIdx, 3, reg.salidaInicioMs)
+    scTime(ws, rowIdx, 4, reg.entradaFinMs); scTime(ws, rowIdx, 5, reg.salidaFinMs)
   }
-  const h1 = calcHoras(reg.entradaInicioMs, reg.salidaInicioMs, reg.lugarTrabajo)
-  const h2 = calcHoras(reg.entradaFinMs, reg.salidaFinMs, reg.lugarTrabajo)
-  sc(ws, rowIdx, 6, h1 + h2)
-  sc(ws, rowIdx, 7, reg.horasViaje > 0 ? 'SI' : 'NO')
-  sc(ws, rowIdx, 8, reg.lugarTrabajo)
-  sc(ws, rowIdx, 9, reg.pernocte === 'Hotel' ? 'x' : '')
-  sc(ws, rowIdx, 10, reg.pernocte === 'Trailer' ? 'x' : '')
-  sc(ws, rowIdx, 11, reg.pernocte === 'NO' ? 'x' : '')
-  sc(ws, rowIdx, 12, reg.maneja ? 'x' : '')
-  // Obs: use observaciones directly (no project prefix — proyecto IS observaciones now)
+  // G formula: =IFERROR(IF(IF(I="Base",(D-C)+(F-E)-1,(D-C)+(F-E))>16,16,...),0)
+  // Calculates automatically from decimal hour values we wrote above — do NOT overwrite.
+  scStr(ws, rowIdx, 7, reg.horasViaje > 0 ? 'SI' : 'NO')
+  scStr(ws, rowIdx, 8, reg.lugarTrabajo)
+  scStr(ws, rowIdx, 9, reg.pernocte === 'Hotel' ? 'x' : '')
+  scStr(ws, rowIdx, 10, reg.pernocte === 'Trailer' ? 'x' : '')
+  scStr(ws, rowIdx, 11, reg.pernocte === 'NO' ? 'x' : '')
+  scStr(ws, rowIdx, 12, reg.maneja ? 'x' : '')
   let obs = reg.observaciones ?? ''
   if (reg.esFrancoTrabajado) obs = `franco trabajado${obs ? ' - ' + obs : ''}`
-  sc(ws, rowIdx, 13, obs)
+  scStr(ws, rowIdx, 13, obs)
 }
 
 /**
@@ -205,7 +220,11 @@ export async function exportarExcelNormal(
   }
 
   for (let i = dataRowIdx; i < 11 + 31; i++) {
-    for (let c = 1; c <= 13; c++) sc(ws, i, c, '')
+    scStr(ws, i, 0, '') // Clear column A cross-workbook ref
+    for (let c = 1; c <= 13; c++) {
+      if (c === 6) continue // Skip G — preserve formula, returns 0 for empty rows
+      scStr(ws, i, c, '')
+    }
   }
 
   // Write to buffer (not file) so we can patch media
