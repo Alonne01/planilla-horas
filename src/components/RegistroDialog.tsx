@@ -259,6 +259,16 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
   )
 }
 
+/** Snap minutes to nearest 15-min slot (0, 15, 30, 45). Handles rollover at 60→next hour. */
+function snapTo15(timeStr: string): string {
+  if (!timeStr) return timeStr
+  const [h, m] = timeStr.split(':').map(Number)
+  const snapped = Math.round(m / 15) * 15
+  const finalMin = snapped >= 60 ? 0 : snapped
+  const finalHour = snapped >= 60 ? (h + 1) % 24 : h
+  return `${String(finalHour).padStart(2, '0')}:${String(finalMin).padStart(2, '0')}`
+}
+
 function TimeInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div className="flex-1">
@@ -268,7 +278,8 @@ function TimeInput({ label, value, onChange }: { label: string; value: string; o
           type="time"
           step="900"
           value={value}
-          onChange={e => onChange(e.target.value)}
+          onChange={e => onChange(snapTo15(e.target.value))}
+          onBlur={e => { if (e.target.value) onChange(snapTo15(e.target.value)) }}
           className="w-full bg-slate-700 text-white rounded-xl px-4 py-3 text-base font-mono
                      [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
         />
