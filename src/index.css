@@ -42,3 +42,6 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
 @keyframes cal-slide-right { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 @keyframes cal-slide-left  { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
 
+/* ─── Calendar/List view toggle ─── */
+@keyframes view-fade-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+

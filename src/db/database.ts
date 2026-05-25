@@ -2,6 +2,18 @@ import Dexie, { type Table } from 'dexie'
 
 const SHADOW_KEY = 'planilla-shadow'
 const LAST_BACKUP_KEY = 'planilla-last-backup-ts'
+const AUTO_BACKUP_KEY = 'planilla-auto-backup-ts'
+
+/** Returns ms since last auto-backup trigger, or Infinity if never */
+export function msSinceAutoBackup(): number {
+  const ts = localStorage.getItem(AUTO_BACKUP_KEY)
+  return ts ? Date.now() - parseInt(ts, 10) : Infinity
+}
+
+/** Mark that an auto-backup was just triggered */
+export function markAutoBackupDone(): void {
+  localStorage.setItem(AUTO_BACKUP_KEY, String(Date.now()))
+}
 
 export interface RegistroHoras {
   id: string

@@ -27,6 +27,7 @@ export function HorasTrabajoPage() {
   const [contextMenu, setContextMenu] = useState<{ date: Date; x: number; y: number } | null>(null)
 
   const [calAnimKey, setCalAnimKey] = useState(`${mes}-${anio}-init`)
+  const [calAnimClass, setCalAnimClass] = useState('')
 
   const dias = useMemo(() => diasDelPeriodo(mes, anio), [mes, anio])
 
@@ -52,7 +53,9 @@ export function HorasTrabajoPage() {
     if (m > 11) { m = 0; a++ }
     if (m < 0) { m = 11; a-- }
     setMes(m); setAnio(a)
-    setCalAnimKey(`${m}-${a}-${delta > 0 ? 'fwd' : 'bwd'}`)
+    const dir = delta > 0 ? 'fwd' : 'bwd'
+    setCalAnimKey(`${m}-${a}-${dir}`)
+    setCalAnimClass(dir === 'fwd' ? 'animate-[cal-slide-right_220ms_ease_both]' : 'animate-[cal-slide-left_220ms_ease_both]')
   }
 
   function dayKey(d: Date) {
@@ -107,6 +110,13 @@ export function HorasTrabajoPage() {
     }
   }
 
+  function toggleViewMode() {
+    const next = viewMode === 'calendar' ? 'list' : 'calendar'
+    setViewMode(next)
+    setCalAnimKey(`view-${next}-${Date.now()}`)
+    setCalAnimClass('animate-[view-fade-in_180ms_ease_both]')
+  }
+
   function openContext(date: Date, x: number, y: number) {
     setContextMenu({ date, x, y })
   }
@@ -128,7 +138,7 @@ export function HorasTrabajoPage() {
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setViewMode(v => v === 'calendar' ? 'list' : 'calendar')}
+              onClick={() => toggleViewMode()}
               className="p-2 text-slate-400 active:text-white"
               title={viewMode === 'calendar' ? 'Ver lista' : 'Ver calendario'}
             >
@@ -148,7 +158,7 @@ export function HorasTrabajoPage() {
       ) : (
         <div
           key={calAnimKey}
-          className={calAnimKey.endsWith('fwd') ? 'animate-[cal-slide-right_220ms_ease_both]' : calAnimKey.endsWith('bwd') ? 'animate-[cal-slide-left_220ms_ease_both]' : ''}
+          className={calAnimClass}
         >
           {viewMode === 'calendar' ? (
             <CalendarGrid
