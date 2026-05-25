@@ -186,8 +186,8 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
           </div>
         )}
 
-        {/* ── Feriado manual toggle — only for non-national, non-franco days with work ── */}
-        {!isDayOff && !esFeriadoHoy && !isFrancoWorked && (
+        {/* ── Feriado manual toggle — only for regular workdays (not franco, not national holiday) ── */}
+        {!isDayOff && !esFrancoHoy && !esFeriadoHoy && !isFrancoWorked && (
           <div className="mb-4">
             <Toggle label="Feriado (100%)" value={esFeriadoTrabajado} onChange={setEsFeriadoTrabajado} />
           </div>
@@ -244,12 +244,17 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
 
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-sm text-slate-300">{label}</span>
-      <button onClick={() => onChange(!value)}
-        className={`w-12 h-6 rounded-full transition-colors relative overflow-hidden flex-shrink-0 ${value ? 'bg-blue-600' : 'bg-slate-600'}`}>
-        <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${value ? 'translate-x-7' : 'translate-x-1'}`} />
-      </button>
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-sm text-slate-300 flex-1 min-w-0">{label}</span>
+      {/* w-11=44px h-6=24px; knob w-5=20px h-5=20px, top-0.5=2px
+          off: translate-x-0.5=2px  → knob [2px,22px] — 22px right clearance
+          on:  translate-x-[22px]   → knob [22px,42px] — 2px right clearance + overflow-hidden */}
+      <div
+        onClick={() => onChange(!value)}
+        className={`relative w-11 h-6 rounded-full flex-shrink-0 cursor-pointer overflow-hidden transition-colors duration-200 ${value ? 'bg-blue-600' : 'bg-slate-600'}`}
+      >
+        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${value ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+      </div>
     </div>
   )
 }
