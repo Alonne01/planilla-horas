@@ -259,7 +259,9 @@ function InstallSection() {
 
   if (isInstalled) return null
 
-  const isAndroid = /android/i.test(navigator.userAgent)
+  const ua = navigator.userAgent
+  const isAndroid = /android/i.test(ua)
+  const isFirefox = /firefox/i.test(ua)
 
   return (
     <Section title="Instalar app">
@@ -277,6 +279,15 @@ function InstallSection() {
           </p>
           <p>1. Tocá el ícono de <span className="text-blue-300 font-medium">Compartir</span> (cuadrado con flecha ↑) en la barra de Safari</p>
           <p>2. Elegí <span className="text-blue-300 font-medium">"Agregar a pantalla de inicio"</span></p>
+        </div>
+      ) : isAndroid && isFirefox ? (
+        <div className="bg-slate-700/50 rounded-xl p-3 text-sm text-slate-300 space-y-2">
+          <p className="font-semibold text-white flex items-center gap-2">
+            <Smartphone size={15} className="text-blue-400" /> Agregar a pantalla de inicio (Firefox)
+          </p>
+          <p>1. Tocá el menú <span className="text-blue-300 font-medium">⋮</span> de Firefox (tres puntos abajo a la derecha)</p>
+          <p>2. Tocá <span className="text-blue-300 font-medium">"Instalar"</span> o andá a <span className="text-blue-300 font-medium">Más → "Añadir a pantalla de inicio"</span></p>
+          <p className="text-xs text-slate-500">Si no ves la opción, intentá con Chrome para una mejor experiencia de instalación.</p>
         </div>
       ) : isAndroid ? (
         <div className="bg-slate-700/50 rounded-xl p-3 text-sm text-slate-300 space-y-2">
