@@ -197,7 +197,7 @@ export function HorasTrabajoPage() {
           <div className="mb-2 flex flex-col gap-2 items-end">
             <button
               onClick={() => {
-                exportarExcelNormal(mes, anio, registros, settings.nombreUsuario, diagramaLabel)
+                exportarExcelNormal(mes, anio, registros, settings.nombreUsuario, diagramaLabel, settings.diagrama, settings.diagramaInicioMs)
                   .catch(e => { console.error('Error exportando Excel:', e); alert('Error al generar el Excel.') })
                 setShowExportMenu(false)
               }}

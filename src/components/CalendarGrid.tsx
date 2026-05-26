@@ -49,6 +49,8 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpFired = useRef(false)
   const lpMoved = useRef(false)
+  const lpStart = useRef<{ x: number; y: number } | null>(null)
+  const LP_MOVE_TOLERANCE = 10 // px — ignore finger jitter so the long-press still fires
 
   // Pad start so row begins on Monday
   const startPad = dowMon(dias[0])
@@ -89,11 +91,18 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
                   onTouchStart={e => {
                     lpFired.current = false; lpMoved.current = false
                     const touch = e.touches[0]
+                    lpStart.current = { x: touch.clientX, y: touch.clientY }
                     lpTimer.current = setTimeout(() => {
                       if (!lpMoved.current) { lpFired.current = true; onContext?.(date, touch.clientX, touch.clientY) }
                     }, 500)
                   }}
-                  onTouchMove={() => { lpMoved.current = true; if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }}
+                  onTouchMove={e => {
+                    const t = e.touches[0]; const s = lpStart.current
+                    if (s && Math.hypot(t.clientX - s.x, t.clientY - s.y) > LP_MOVE_TOLERANCE) {
+                      lpMoved.current = true
+                      if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null }
+                    }
+                  }}
                   onTouchEnd={() => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }}
                   onContextMenu={e => { e.preventDefault(); onContext?.(date, e.clientX, e.clientY) }}
                   className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg}`}

@@ -37,11 +37,14 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpFired = useRef(false)
   const lpMoved = useRef(false)
+  const lpStart = useRef<{ x: number; y: number } | null>(null)
+  const LP_MOVE_TOLERANCE = 10 // px — ignore finger jitter so the long-press still fires
 
   function handleTouchStart(e: React.TouchEvent) {
     lpFired.current = false
     lpMoved.current = false
     const touch = e.touches[0]
+    lpStart.current = { x: touch.clientX, y: touch.clientY }
     lpTimer.current = setTimeout(() => {
       if (!lpMoved.current) {
         lpFired.current = true
@@ -49,9 +52,12 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
       }
     }, 500)
   }
-  function handleTouchMove() {
-    lpMoved.current = true
-    if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null }
+  function handleTouchMove(e: React.TouchEvent) {
+    const t = e.touches[0]; const s = lpStart.current
+    if (s && Math.hypot(t.clientX - s.x, t.clientY - s.y) > LP_MOVE_TOLERANCE) {
+      lpMoved.current = true
+      if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null }
+    }
   }
   function handleTouchEnd() {
     if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null }

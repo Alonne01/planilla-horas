@@ -11,7 +11,7 @@
 
 import { unzipSync, zipSync, strToU8 } from 'fflate'
 import type { RegistroHoras } from '../db/database'
-import { periodoStart, periodoEnd, MESES_ES } from './diagrama'
+import { periodoStart, periodoEnd, MESES_ES, esFrancoPorDiagrama, type DiagramaPatternKey } from './diagrama'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -82,7 +82,8 @@ function buildRowParts(
   rowNum: number,
   dia: Date,
   reg: RegistroHoras | undefined,
-  diagramaLabel: string,
+  diagramaKey: DiagramaPatternKey,
+  diagramaInicioMs: number,
 ): [string, string] {
   const s = rowNum === 12 ? S12 : SN
   const n = rowNum
@@ -90,13 +91,11 @@ function buildRowParts(
   const cellA = cEmpty(`A${n}`, s.A)             // always clear cross-workbook ref
   const cellB = cNum(`B${n}`, s.B, dateToExcelSerial(dia))
 
-  const dow = dia.getDay()
-  const isWeekend = dow === 0 || dow === 6
-
   // ── No registro ────────────────────────────────────────────────────────────
   if (reg == null) {
-    const esLV = !diagramaLabel || diagramaLabel.toLowerCase().includes('lun')
-    if (isWeekend && esLV) {
+    // Franco por diagrama (lun-vie → fin de semana; 7×7, 10×5, etc. → rotación)
+    const esFranco = esFrancoPorDiagrama(dia.getTime(), diagramaKey, diagramaInicioMs)
+    if (esFranco) {
       return [
         [cellA, cellB, cStr(`C${n}`, s.C, '-'), cEmpty(`D${n}`, s.D), cEmpty(`E${n}`, s.E), cStr(`F${n}`, s.F, '-')].join(''),
         [cStr(`H${n}`, s.H, '-'), cEmpty(`I${n}`, s.I),
@@ -211,6 +210,8 @@ function writeSheetData(
   registros: RegistroHoras[],
   nombreUsuario: string,
   diagramaLabel: string,
+  diagramaKey: DiagramaPatternKey,
+  diagramaInicioMs: number,
 ): string {
   const mesAnterior = MESES_ES[mes === 0 ? 11 : mes - 1]
   const mesActual = MESES_ES[mes]
@@ -237,15 +238,22 @@ function writeSheetData(
   while (cur <= endDate && rowNum <= 42) {
     const dia = new Date(cur)
     const reg = byDay.get(`${dia.getFullYear()}-${dia.getMonth()}-${dia.getDate()}`)
-    sheetXml = replaceDataRow(sheetXml, rowNum, dia, reg, diagramaLabel)
+    sheetXml = replaceDataRow(sheetXml, rowNum, dia, reg, diagramaKey, diagramaInicioMs)
     cur.setDate(cur.getDate() + 1)
     rowNum++
   }
 
-  // Clear remaining rows for short months
+  // Clear remaining rows for short periods (e.g. 21-feb → 20-mar = 28 days)
+  const lastDataRow = rowNum - 1
   while (rowNum <= 42) {
     sheetXml = clearDataRow(sheetXml, rowNum)
     rowNum++
+  }
+
+  // Shrink the shared "Total Hs" formula range (master at G14, ref="G14:G42") so
+  // the cleared rows beyond the period don't show a leftover/0 value — they stay blank.
+  if (lastDataRow < 42) {
+    sheetXml = sheetXml.replace(/(<f t="shared" ref="G\d+:G)\d+(" si=)/, `$1${lastDataRow}$2`)
   }
 
   return sheetXml
@@ -257,7 +265,8 @@ function replaceDataRow(
   rowNum: number,
   dia: Date,
   reg: RegistroHoras | undefined,
-  diagramaLabel: string,
+  diagramaKey: DiagramaPatternKey,
+  diagramaInicioMs: number,
 ): string {
   const rowRe = new RegExp(`(<row(?:[^>]*\\s)?r="${rowNum}"[^>]*>)([\\s\\S]*?)(<\\/row>)`)
   const m = xml.match(rowRe)
@@ -271,7 +280,7 @@ function replaceDataRow(
   const gMatch = originalContent.match(/<c r="G\d+"[^>]*>[\s\S]*?<\/c>/)
   const gCell = gMatch ? gMatch[0] : ''
 
-  const [before, after] = buildRowParts(rowNum, dia, reg, diagramaLabel)
+  const [before, after] = buildRowParts(rowNum, dia, reg, diagramaKey, diagramaInicioMs)
   return xml.replace(rowRe, `${openTag}${before}${gCell}${after}${closeTag}`)
 }
 
@@ -285,8 +294,11 @@ function clearDataRow(xml: string, rowNum: number): string {
   const originalContent = m[2]
   const closeTag = m[3]
 
-  const gMatch = originalContent.match(/<c r="G\d+"[^>]*>[\s\S]*?<\/c>/)
-  const gCell = gMatch ? gMatch[0] : ''
+  // Empty the G cell too (drop the shared formula + cached value), keeping only its
+  // style, so rows beyond the period are truly blank instead of showing 0 / stale total.
+  const gMatch = originalContent.match(/<c r="G\d+"[^>]*>[\s\S]*?<\/c>|<c r="G\d+"[^>]*\/>/)
+  const gStyleMatch = gMatch ? gMatch[0].match(/\bs="(\d+)"/) : null
+  const gCell = gMatch ? `<c r="G${rowNum}"${gStyleMatch ? ` s="${gStyleMatch[1]}"` : ''}/>` : ''
 
   const s = rowNum === 12 ? S12 : SN
   const n = rowNum
@@ -306,6 +318,8 @@ export async function exportarExcelNormal(
   registros: RegistroHoras[],
   nombreUsuario: string,
   diagramaLabel: string,
+  diagramaKey: DiagramaPatternKey,
+  diagramaInicioMs: number,
 ): Promise<void> {
   const resp = await fetch(`${import.meta.env.BASE_URL}template_horas.xlsx`)
   if (!resp.ok) throw new Error(`No se pudo cargar el template: ${resp.status}`)
@@ -315,7 +329,7 @@ export async function exportarExcelNormal(
   const zip = unzipSync(templateBytes)
   const sheetKey = 'xl/worksheets/sheet1.xml'
   const originalXml = new TextDecoder().decode(zip[sheetKey])
-  const modifiedXml = writeSheetData(originalXml, mes, anio, registros, nombreUsuario, diagramaLabel)
+  const modifiedXml = writeSheetData(originalXml, mes, anio, registros, nombreUsuario, diagramaLabel, diagramaKey, diagramaInicioMs)
   zip[sheetKey] = strToU8(modifiedXml)
 
   // Drop the stale calculation chain — Excel regenerates it on open.
