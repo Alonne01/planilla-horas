@@ -1,30 +1,71 @@
-import { useState, useMemo } from 'react'
-import { FileText, FileBarChart, Upload, X, LayoutGrid, List } from 'lucide-react'
+import { useState, useMemo, useRef } from 'react'
+import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
 import { RegistroDialog } from '../components/RegistroDialog'
 import { DayCard } from '../components/DayCard'
 import { CalendarGrid } from '../components/CalendarGrid'
-import { ContextMenu } from '../components/ContextMenu'
 import { ResumenBar } from '../components/ResumenBar'
 import { calcularResumenPeriodo } from '../lib/calculo-horas'
-import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd, esFrancoPorDiagrama } from '../lib/diagrama'
+import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd, esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
 import { esFeriadoNacional } from '../lib/feriados'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
-import type { RegistroHoras } from '../db/database'
+import { db, shadowBackup, type RegistroHoras } from '../db/database'
+
+function dayKey(d: Date) {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+
+/**
+ * Clona los datos de `source` hacia `target`. Si el destino es franco/feriado y
+ * el origen tiene trabajo, queda marcado como franco/feriado trabajado (en el
+ * cálculo y en el badge). A nivel de módulo para no analizarse como render.
+ */
+function cloneForDate(source: RegistroHoras, target: Date, diagrama: DiagramaPatternKey, diagramaInicioMs: number): RegistroHoras {
+  const targetMs = new Date(target.getFullYear(), target.getMonth(), target.getDate(), 12, 0, 0).getTime()
+  const isFranco = esFrancoPorDiagrama(targetMs, diagrama, diagramaInicioMs)
+  const isFeriado = esFeriadoNacional(targetMs)
+  const hasWork = source.entradaInicioMs !== null || source.salidaInicioMs !== null
+
+  // Si el origen era franco sin trabajo y se copia a un día normal, default lugar = Campo
+  let lugarTrabajo = source.lugarTrabajo
+  if (lugarTrabajo === 'Franco' && !isFranco) lugarTrabajo = 'Campo'
+  if (isFranco && !hasWork) lugarTrabajo = 'Franco'
+
+  return {
+    ...source,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    fechaMs: targetMs,
+    fechaCreacion: Date.now(),
+    lugarTrabajo,
+    esFrancoTrabajado: isFranco && hasWork,
+    esFeriado: isFeriado && !hasWork,
+    esFeriadoTrabajado: isFeriado && hasWork,
+    esFrancoCompensatorio: false,
+    esAusenciaJustificada: false,
+  }
+}
 
 export function HorasTrabajoPage() {
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
-  const { registros, loading, upsert, remove } = useHoras(mes, anio)
+  const { registros, loading, upsert, remove, reload } = useHoras(mes, anio)
   const { settings } = useSettings()
   const francosDisponibles = useFrancoCounter()
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar')
-  const [contextMenu, setContextMenu] = useState<{ date: Date; x: number; y: number } | null>(null)
+
+  // ─── Modo "aplicar datos a otro día" (reemplaza copiar día anterior / copiar a días hábiles) ───
+  const [applySource, setApplySource] = useState<RegistroHoras | null>(null)
+  const [applySourceKey, setApplySourceKey] = useState<string | null>(null)
+  const [confirmApply, setConfirmApply] = useState<Date | null>(null)      // pregunta "¿Aplicar a otro día?"
+  const [confirmReplace, setConfirmReplace] = useState<Date | null>(null)  // pregunta "¿Reemplazar?"
+  const [pulseKey, setPulseKey] = useState<string | null>(null)
+  const [appliedCount, setAppliedCount] = useState(0)
+  const applySnapshotRef = useRef<RegistroHoras[]>([])  // snapshot del período al entrar al modo aplicar (para Cancelar)
 
   const [calAnimKey, setCalAnimKey] = useState(`${mes}-${anio}-init`)
   const [calAnimClass, setCalAnimClass] = useState('')
@@ -58,57 +99,72 @@ export function HorasTrabajoPage() {
     setCalAnimClass(dir === 'fwd' ? 'animate-[cal-slide-right_220ms_ease_both]' : 'animate-[cal-slide-left_220ms_ease_both]')
   }
 
-  function dayKey(d: Date) {
-    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-  }
-
-  function cloneForDate(source: RegistroHoras, target: Date): RegistroHoras {
-    const targetMs = new Date(target.getFullYear(), target.getMonth(), target.getDate(), 12, 0, 0).getTime()
-    const isFranco = esFrancoPorDiagrama(targetMs, settings.diagrama, settings.diagramaInicioMs)
-    const isFeriado = esFeriadoNacional(targetMs)
-    const hasWork = source.entradaInicioMs !== null || source.salidaInicioMs !== null
-
-    // If source was unworked franco copied to a regular day, default lugar to Campo
-    let lugarTrabajo = source.lugarTrabajo
-    if (lugarTrabajo === 'Franco' && !isFranco) lugarTrabajo = 'Campo'
-    if (isFranco && !hasWork) lugarTrabajo = 'Franco'
-
-    return {
-      ...source,
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      fechaMs: targetMs,
-      fechaCreacion: Date.now(),
-      lugarTrabajo,
-      esFrancoTrabajado: isFranco && hasWork,
-      esFeriado: isFeriado && !hasWork,
-      esFeriadoTrabajado: isFeriado && hasWork,
-      esFrancoCompensatorio: false,
-      esAusenciaJustificada: false,
-    }
-  }
-
-  async function copyPreviousDay(targetDate: Date) {
-    // Find most recent day before targetDate that has a registro
-    const targetMs = targetDate.getTime()
-    const sorted = registros.filter(r => r.fechaMs < targetMs).sort((a, b) => b.fechaMs - a.fechaMs)
-    if (sorted.length === 0) { alert('No hay días anteriores con registro para copiar.'); return }
-    await upsert(cloneForDate(sorted[0], targetDate))
-  }
-
-  async function copyToAllWorkingDays(sourceDate: Date) {
-    const source = byDay.get(dayKey(sourceDate))
-    if (!source) { alert('El día seleccionado no tiene datos para copiar.'); return }
-    const targets = dias.filter(d => {
-      if (dayKey(d) === dayKey(sourceDate)) return false
-      if (esFrancoPorDiagrama(d.getTime(), settings.diagrama, settings.diagramaInicioMs)) return false
-      if (esFeriadoNacional(d.getTime())) return false
-      if (byDay.has(dayKey(d))) return false  // don't overwrite days that already have data
-      return true
+  function pulse(key: string) {
+    setPulseKey(null)
+    // requestAnimationFrame para que la animación se re-dispare en taps consecutivos
+    requestAnimationFrame(() => {
+      setPulseKey(key)
+      setTimeout(() => setPulseKey(k => (k === key ? null : k)), 480)
     })
-    if (targets.length === 0) { alert('No hay días hábiles para copiar.'); return }
-    for (const d of targets) {
-      await upsert(cloneForDate(source, d))
+  }
+
+  /** Aplica los datos del día origen a `target` (sobrescribe en su lugar si ya existía). */
+  async function doApply(target: Date) {
+    if (!applySource) return
+    const key = dayKey(target)
+    const existing = byDay.get(key)
+    const clone = cloneForDate(applySource, target, settings.diagrama, settings.diagramaInicioMs)
+    if (existing) clone.id = existing.id  // sobrescribir en su lugar → sin duplicados
+    await upsert(clone)
+    setAppliedCount(c => c + 1)
+    pulse(key)
+  }
+
+  /** Tap de un día: en modo aplicar copia los datos; si no, abre el diálogo de registro. */
+  function handleDayTap(date: Date) {
+    if (!applySource) { setSelectedDate(date); return }
+    const key = dayKey(date)
+    if (key === applySourceKey) return                       // no aplicar sobre sí mismo
+    if (byDay.has(key)) { setConfirmReplace(date); return }   // ya tiene datos → preguntar
+    doApply(date)
+  }
+
+  function startApplyMode(sourceDate: Date) {
+    const src = byDay.get(dayKey(sourceDate))
+    if (!src) return
+    applySnapshotRef.current = registros  // snapshot del período para poder deshacer con "Cancelar"
+    setApplySource(src)
+    setApplySourceKey(dayKey(sourceDate))
+    setAppliedCount(0)
+    setConfirmApply(null)
+  }
+
+  function exitApplyMode() {
+    setApplySource(null)
+    setApplySourceKey(null)
+    setPulseKey(null)
+    setAppliedCount(0)
+    setConfirmReplace(null)
+  }
+
+  // "Cancelar": deshace lo aplicado en esta sesión restaurando el snapshot del período.
+  async function cancelApplyMode() {
+    if (appliedCount > 0) {
+      const snap = applySnapshotRef.current
+      const snapIds = new Set(snap.map(r => r.id))
+      const toDelete = registros.filter(r => !snapIds.has(r.id)).map(r => r.id)
+      try {
+        await db.transaction('rw', db.registros, async () => {
+          if (toDelete.length) await db.registros.bulkDelete(toDelete)
+          if (snap.length) await db.registros.bulkPut(snap)
+        })
+        await shadowBackup()
+        await reload()
+      } catch (e) {
+        console.error('Error al deshacer la aplicación:', e)
+      }
     }
+    exitApplyMode()
   }
 
   function toggleViewMode() {
@@ -118,8 +174,11 @@ export function HorasTrabajoPage() {
     setCalAnimClass('animate-[view-fade-in_180ms_ease_both]')
   }
 
-  function openContext(date: Date, x: number, y: number) {
-    setContextMenu({ date, x, y })
+  // Long-press / click derecho sobre un día CON datos → pregunta "¿Aplicar a otro día?"
+  function openContext(date: Date) {
+    if (applySource) return               // ya estamos en modo aplicar
+    if (!byDay.has(dayKey(date))) return  // solo días que ya tienen datos cargados
+    setConfirmApply(date)
   }
 
   const diagramaLabel = DIAGRAMAS.find(d => d.key === settings.diagrama)?.label ?? settings.diagrama
@@ -167,9 +226,12 @@ export function HorasTrabajoPage() {
               byDay={byDay}
               diagrama={settings.diagrama}
               diagramaInicioMs={settings.diagramaInicioMs}
-              onSelectDate={setSelectedDate}
-                onContext={openContext}
-              />
+              onSelectDate={handleDayTap}
+              onContext={openContext}
+              applyMode={!!applySource}
+              sourceKey={applySourceKey}
+              pulseKey={pulseKey}
+            />
           ) : (
             <div className="px-4 space-y-1.5">
               {dias.map(d => {
@@ -181,7 +243,7 @@ export function HorasTrabajoPage() {
                     registro={byDay.get(key)}
                     diagrama={settings.diagrama}
                     diagramaInicioMs={settings.diagramaInicioMs}
-                    onClick={() => setSelectedDate(d)}
+                    onClick={() => handleDayTap(d)}
                     onContext={openContext}
                   />
                 )
@@ -191,8 +253,8 @@ export function HorasTrabajoPage() {
         </div>
       )}
 
-      {/* Export FAB — above the bottom nav (z-30, ~52px) */}
-      <div className="fixed bottom-20 right-4 z-40">
+      {/* Export FAB — above the bottom nav (z-30, ~52px); oculto en modo aplicar */}
+      <div className={`fixed bottom-20 right-4 z-40 ${applySource ? 'hidden' : ''}`}>
         {showExportMenu && (
           <div className="mb-2 flex flex-col gap-2 items-end">
             <button
@@ -243,18 +305,103 @@ export function HorasTrabajoPage() {
         <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
       )}
 
-      {/* Context menu (long press / right click) */}
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          date={contextMenu.date}
-          hasData={byDay.has(dayKey(contextMenu.date))}
-          onCopyPrevious={() => copyPreviousDay(contextMenu.date)}
-          onCopyToAll={() => copyToAllWorkingDays(contextMenu.date)}
-          onClose={() => setContextMenu(null)}
+      {/* ─── Modo aplicar: barra superior (cubre el header mientras se aplica) ─── */}
+      {applySource && (
+        <div className="fixed top-0 inset-x-0 z-50 bg-sky-950/95 backdrop-blur border-b border-sky-700 shadow-lg animate-[apply-bar-in_180ms_ease_both]">
+          <div className="px-4 py-3">
+            <div className="flex items-start gap-3">
+              <Copy size={18} className="text-sky-300 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-white leading-snug">
+                  Tocá los días que quieras llenar con los datos de este día
+                </div>
+                <div className="text-xs text-sky-300/90 mt-0.5">
+                  {appliedCount > 0
+                    ? `${appliedCount} día${appliedCount === 1 ? '' : 's'} aplicado${appliedCount === 1 ? '' : 's'}`
+                    : `Origen: ${new Date(applySource.fechaMs).toLocaleDateString('es-AR', { weekday: 'short', day: '2-digit', month: 'short' })}`}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={cancelApplyMode}
+                className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+              >
+                <X size={15} /> Cancelar
+              </button>
+              <button
+                onClick={exitApplyMode}
+                className="flex-1 py-2 rounded-xl bg-sky-600 text-white text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+              >
+                <Check size={15} /> Finalizar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmación: ¿aplicar este día a otros? */}
+      {confirmApply && (
+        <ConfirmModal
+          title="¿Aplicar a otro día?"
+          message="Vas a copiar las horas y la observación de este día a otros días que elijas en el calendario."
+          confirmLabel="Sí, elegir días"
+          onConfirm={() => startApplyMode(confirmApply)}
+          onCancel={() => setConfirmApply(null)}
         />
       )}
+
+      {/* Confirmación: el día destino ya tiene datos */}
+      {confirmReplace && (
+        <ConfirmModal
+          title="Ese día ya tiene datos"
+          message="¿Querés reemplazarlos con los datos del día origen?"
+          confirmLabel="Reemplazar"
+          danger
+          onConfirm={() => { const d = confirmReplace; setConfirmReplace(null); doApply(d) }}
+          onCancel={() => setConfirmReplace(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+interface ConfirmModalProps {
+  title: string
+  message: string
+  confirmLabel: string
+  danger?: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}
+
+function ConfirmModal({ title, message, confirmLabel, danger = false, onConfirm, onCancel }: ConfirmModalProps) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-[backdrop-fade-in_150ms_ease_both]"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-xs bg-slate-800 border border-slate-600/70 rounded-2xl shadow-2xl p-5"
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="text-base font-bold text-white">{title}</h3>
+        <p className="text-sm text-slate-300 mt-1.5 leading-snug">{message}</p>
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform"
+          >
+            {danger ? 'No' : 'Cancelar'}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`flex-1 py-2.5 rounded-xl text-white text-sm font-semibold active:scale-95 transition-transform ${danger ? 'bg-orange-600' : 'bg-sky-600'}`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

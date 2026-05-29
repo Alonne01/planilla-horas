@@ -11,6 +11,12 @@ interface Props {
   diagramaInicioMs: number
   onSelectDate: (d: Date) => void
   onContext?: (date: Date, x: number, y: number) => void
+  /** Modo "aplicar a otro día" activo: deshabilita long-press, los taps aplican datos */
+  applyMode?: boolean
+  /** Clave del día origen (resaltado mientras se aplica) */
+  sourceKey?: string | null
+  /** Clave del día que debe reproducir la animación de aplicado */
+  pulseKey?: string | null
 }
 
 const DIAS_HEADER = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do']
@@ -42,7 +48,7 @@ function cellStyle(fecha: Date, reg: RegistroHoras | undefined, diagrama: Diagra
   return { bg: 'bg-slate-700/20 border-slate-600/30', label: '', labelColor: '' }
 }
 
-export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext }: Props) {
+export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, pulseKey = null }: Props) {
   if (dias.length === 0) return null
 
   // Single ref for long-press tracking (only one touch at a time)
@@ -83,12 +89,15 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
               const isFeriado = esFeriadoNacional(date.getTime())
               const h = reg && !esDiaNoTrabajado(reg) ? calcularHorasDia(reg) : null
               const isFirstOfMonth = date.getDate() === 1
+              const isSource = applyMode && key === sourceKey
+              const isPulsing = key === pulseKey
 
               return (
                 <button
                   key={di}
                   onClick={() => { if (lpFired.current) { lpFired.current = false; return } onSelectDate(date) }}
                   onTouchStart={e => {
+                    if (applyMode) return
                     lpFired.current = false; lpMoved.current = false
                     const touch = e.touches[0]
                     lpStart.current = { x: touch.clientX, y: touch.clientY }
@@ -97,6 +106,7 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
                     }, 500)
                   }}
                   onTouchMove={e => {
+                    if (applyMode) return
                     const t = e.touches[0]; const s = lpStart.current
                     if (s && Math.hypot(t.clientX - s.x, t.clientY - s.y) > LP_MOVE_TOLERANCE) {
                       lpMoved.current = true
@@ -104,8 +114,8 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
                     }
                   }}
                   onTouchEnd={() => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }}
-                  onContextMenu={e => { e.preventDefault(); onContext?.(date, e.clientX, e.clientY) }}
-                  className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg}`}
+                  onContextMenu={e => { e.preventDefault(); if (!applyMode) onContext?.(date, e.clientX, e.clientY) }}
+                  className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg} ${isSource ? 'ring-2 ring-sky-400 ring-offset-1 ring-offset-slate-900' : ''} ${isPulsing ? 'animate-[apply-pulse_450ms_ease]' : ''} ${applyMode && !isSource ? 'cursor-pointer' : ''}`}
                 >
                   {isFirstOfMonth && (
                     <span className="text-[8px] leading-none text-slate-500 uppercase tracking-wide">
