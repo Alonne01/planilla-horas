@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2 } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros } from '../db/database'
+import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -22,6 +23,8 @@ export function SettingsPage() {
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
   const [backupOverdue, setBackupOverdue] = useState(false)
   const [deleteStep, setDeleteStep] = useState<0 | 1 | 2>(0)
+  const [feriadosBusy, setFeriadosBusy] = useState(false)
+  const [feriadosUpd, setFeriadosUpd] = useState(() => feriadosActualizadoMs())
 
   // Local form state — only written to DB on explicit "Guardar"
   const [nombre, setNombre] = useState('')
@@ -99,6 +102,19 @@ export function SettingsPage() {
     }
   }
 
+  async function handleActualizarFeriados() {
+    setFeriadosBusy(true)
+    try {
+      const { total } = await actualizarFeriadosNacionales()
+      setFeriadosUpd(feriadosActualizadoMs())
+      flash(`Feriados nacionales actualizados ✓ (${total} fechas)`)
+    } catch {
+      flash('No se pudieron actualizar los feriados (¿sin conexión?). Se mantiene la lista actual.', 'err')
+    } finally {
+      setFeriadosBusy(false)
+    }
+  }
+
   if (!loaded) return <div className="text-center text-slate-500 py-12">Cargando…</div>
 
   return (
@@ -168,6 +184,27 @@ export function SettingsPage() {
         >
           {dirty ? 'Guardar cambios' : 'Sin cambios pendientes'}
         </button>
+
+        {/* Feriados nacionales */}
+        <Section title="Feriados nacionales">
+          <p className="text-xs text-slate-400">
+            Los feriados nacionales se detectan automáticamente: si trabajás uno, las horas van al 100%.
+            No incluye feriados puente ni días no laborables (se pagan como día normal). Actualizá la lista
+            para sumar años nuevos o aplicar correcciones oficiales.
+          </p>
+          <button
+            onClick={handleActualizarFeriados}
+            disabled={feriadosBusy}
+            className={`w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors ${feriadosBusy ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}
+          >
+            <CalendarDays size={16} /> {feriadosBusy ? 'Actualizando…' : 'Actualizar feriados nacionales'}
+          </button>
+          {feriadosUpd > 0 && (
+            <p className="text-xs text-slate-500 px-1">
+              Última actualización: {new Date(feriadosUpd).toLocaleDateString('es-AR')}
+            </p>
+          )}
+        </Section>
 
         {/* Instalar app */}
         <InstallSection />

@@ -34,13 +34,12 @@ function msToTime(ms: number | null | undefined): string {
 type LugarTrabajo = 'Base' | 'Campo' | 'Franco'  // 'Franco' used only for saving absences
 type Pernocte = 'NO' | 'Hotel' | 'Trailer'
 /** Mutually-exclusive absence labels — shown only when no times entered */
-type SubFranco = 'COMP' | 'FERIADO' | 'AUSENCIA' | null
+type SubFranco = 'COMP' | 'AUSENCIA' | null
 
 function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
   if (!existing) return null
   if (existing.esFrancoCompensatorio) return 'COMP'
   if (existing.esAusenciaJustificada) return 'AUSENCIA'
-  if (existing.esFeriado && !existing.esFeriadoTrabajado && !existing.entradaInicioMs) return 'FERIADO'
   return null
 }
 
@@ -70,10 +69,6 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
       ? `${existing.proyecto} - ${existing.observaciones}`
       : existing?.observaciones || existing?.proyecto || ''
   )
-  const [esFeriadoTrabajado, setEsFeriadoTrabajado] = useState(
-    // Only pre-set the manual toggle for non-national-holiday feriados
-    !esFeriadoHoy && (existing?.esFeriadoTrabajado ?? false)
-  )
   const [subFranco, setSubFranco] = useState<SubFranco>(getInitialSubFranco(existing))
 
   // Auto-detect based on external context (diagrama + national calendar) + times
@@ -81,8 +76,7 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
   const isPartialEntry = !!(e1 || s1) && !hasWork  // exactly one time filled → incomplete
   const isDayOff = !e1 && !s1                       // both empty → absence day
   const isFrancoWorked = esFrancoHoy && hasWork                        // diagrama franco + times → 100%
-  const isFeriadoWorked = esFeriadoHoy ? hasWork                       // national holiday + times → 100%
-    : (esFeriadoTrabajado && hasWork)                                  // manual toggle (non-listed holidays)
+  const isFeriadoWorked = esFeriadoHoy && hasWork                      // feriado nacional + horas → 100%
 
   function handleSave() {
     if (isPartialEntry) return  // guarded by UI — button disabled when partial
@@ -99,7 +93,7 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
       horasViaje: (isDayOff || lugar === 'Base') ? 0 : (horasViaje ? 2 : 0),
       observaciones: proyectoObs,
       proyecto: proyectoObs,
-      esFeriado: esFeriadoHoy || isFeriadoWorked || (isDayOff && subFranco === 'FERIADO'),
+      esFeriado: esFeriadoHoy,
       esFeriadoTrabajado: isFeriadoWorked,
       esFrancoCompensatorio: isDayOff && subFranco === 'COMP',
       esFrancoTrabajado: isFrancoWorked,
@@ -188,10 +182,9 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
         {isDayOff && !esFrancoHoy && (
           <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
             <p className="text-xs text-slate-400 mb-2">Tipo de ausencia</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {([
                 ['COMP', 'Compensatorio'],
-                ['FERIADO', 'Feriado'],
                 ['AUSENCIA', 'Ausencia Just.'],
               ] as [SubFranco, string][]).map(([key, label]) => (
                 <button
@@ -202,13 +195,6 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
                 </button>
               ))}
             </div>
-          </div>
-        )}
-
-        {/* ── Feriado manual toggle — only for regular workdays (not franco, not national holiday) ── */}
-        {!isDayOff && !esFrancoHoy && !esFeriadoHoy && !isFrancoWorked && (
-          <div className="mb-4">
-            <Toggle label="Feriado (100%)" value={esFeriadoTrabajado} onChange={setEsFeriadoTrabajado} />
           </div>
         )}
 
