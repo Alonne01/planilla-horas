@@ -17,6 +17,10 @@ interface Props {
   sourceKey?: string | null
   /** Clave del día que debe reproducir la animación de aplicado */
   pulseKey?: string | null
+  /** Modo "borrar días" activo: los taps marcan/desmarcan días para borrar */
+  deleteMode?: boolean
+  /** Claves de los días seleccionados para borrar (resaltados en rojo) */
+  selectedDeleteKeys?: Set<string> | null
 }
 
 const DIAS_HEADER = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do']
@@ -48,7 +52,7 @@ function cellStyle(fecha: Date, reg: RegistroHoras | undefined, diagrama: Diagra
   return { bg: 'bg-slate-700/20 border-slate-600/30', label: '', labelColor: '' }
 }
 
-export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, pulseKey = null }: Props) {
+export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, pulseKey = null, deleteMode = false, selectedDeleteKeys = null }: Props) {
   if (dias.length === 0) return null
 
   // Single ref for long-press tracking (only one touch at a time)
@@ -91,13 +95,14 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
               const isFirstOfMonth = date.getDate() === 1
               const isSource = applyMode && key === sourceKey
               const isPulsing = key === pulseKey
+              const isSelectedForDelete = deleteMode && !!selectedDeleteKeys?.has(key)
 
               return (
                 <button
                   key={di}
                   onClick={() => { if (lpFired.current) { lpFired.current = false; return } onSelectDate(date) }}
                   onTouchStart={e => {
-                    if (applyMode) return
+                    if (applyMode || deleteMode) return
                     lpFired.current = false; lpMoved.current = false
                     const touch = e.touches[0]
                     lpStart.current = { x: touch.clientX, y: touch.clientY }
@@ -106,7 +111,7 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
                     }, 500)
                   }}
                   onTouchMove={e => {
-                    if (applyMode) return
+                    if (applyMode || deleteMode) return
                     const t = e.touches[0]; const s = lpStart.current
                     if (s && Math.hypot(t.clientX - s.x, t.clientY - s.y) > LP_MOVE_TOLERANCE) {
                       lpMoved.current = true
@@ -114,8 +119,8 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
                     }
                   }}
                   onTouchEnd={() => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }}
-                  onContextMenu={e => { e.preventDefault(); if (!applyMode) onContext?.(date, e.clientX, e.clientY) }}
-                  className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg} ${isSource ? 'ring-2 ring-sky-400 ring-offset-1 ring-offset-slate-900' : ''} ${isPulsing ? 'animate-[apply-pulse_450ms_ease]' : ''} ${applyMode && !isSource ? 'cursor-pointer' : ''}`}
+                  onContextMenu={e => { e.preventDefault(); if (!applyMode && !deleteMode) onContext?.(date, e.clientX, e.clientY) }}
+                  className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg} ${isSource ? 'ring-2 ring-sky-400 ring-offset-1 ring-offset-slate-900' : ''} ${isSelectedForDelete ? 'ring-2 ring-red-400 ring-offset-1 ring-offset-slate-900' : ''} ${deleteMode && !reg ? 'opacity-30' : ''} ${isPulsing ? 'animate-[apply-pulse_450ms_ease]' : ''} ${applyMode && !isSource ? 'cursor-pointer' : ''}`}
                 >
                   {isFirstOfMonth && (
                     <span className="text-[8px] leading-none text-slate-500 uppercase tracking-wide">

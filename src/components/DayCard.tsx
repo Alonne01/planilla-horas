@@ -12,6 +12,8 @@ interface Props {
   diagramaInicioMs?: number
   onClick: () => void
   onContext?: (date: Date, x: number, y: number) => void
+  deleteMode?: boolean
+  selectedForDelete?: boolean
 }
 
 const DIAS_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
@@ -33,7 +35,7 @@ function lugarColor(lugar: string): string {
   }
 }
 
-export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, onContext }: Props) {
+export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, onContext, deleteMode = false, selectedForDelete = false }: Props) {
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpFired = useRef(false)
   const lpMoved = useRef(false)
@@ -41,6 +43,7 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
   const LP_MOVE_TOLERANCE = 10 // px — ignore finger jitter so the long-press still fires
 
   function handleTouchStart(e: React.TouchEvent) {
+    if (deleteMode) return  // sin long-press en modo borrar
     lpFired.current = false
     lpMoved.current = false
     const touch = e.touches[0]
@@ -64,6 +67,7 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
   }
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault()
+    if (deleteMode) return
     onContext?.(fecha, e.clientX, e.clientY)
   }
   function handleClick() {
@@ -117,8 +121,9 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onContextMenu={handleContextMenu}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border ${borderColor} 
-      ${isEmpty && !isFrancoByDiag ? 'bg-slate-800/30' : 'bg-slate-800/60'} 
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border ${borderColor}
+      ${isEmpty && !isFrancoByDiag ? 'bg-slate-800/30' : 'bg-slate-800/60'}
+      ${selectedForDelete ? 'ring-2 ring-red-400' : ''} ${deleteMode && isEmpty ? 'opacity-40' : ''}
         active:scale-[0.98] transition-transform text-left`}
     >
       {/* Day number */}

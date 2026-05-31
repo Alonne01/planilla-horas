@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react'
-import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb } from 'lucide-react'
+import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb, MoreVertical, Trash2, CalendarX2 } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
 import { RegistroDialog } from '../components/RegistroDialog'
@@ -75,6 +75,13 @@ export function HorasTrabajoPage() {
   const [appliedCount, setAppliedCount] = useState(0)
   const applySnapshotRef = useRef<RegistroHoras[]>([])  // snapshot del período al entrar al modo aplicar (para Cancelar)
 
+  // ─── Acciones de borrado: menú + modo "borrar días" + borrar período ───
+  const [showActionsMenu, setShowActionsMenu] = useState(false)
+  const [deleteMode, setDeleteMode] = useState(false)
+  const [selectedToDelete, setSelectedToDelete] = useState<Set<string>>(new Set())
+  const [confirmDeleteDias, setConfirmDeleteDias] = useState(false)
+  const [deletePeriodoStep, setDeletePeriodoStep] = useState(0)  // 0 oculto · 1 primera confirmación · 2 segunda
+
   const [calAnimKey, setCalAnimKey] = useState(`${mes}-${anio}-init`)
   const [calAnimClass, setCalAnimClass] = useState('')
 
@@ -130,6 +137,7 @@ export function HorasTrabajoPage() {
 
   /** Tap de un día: en modo aplicar copia los datos; si no, abre el diálogo de registro. */
   function handleDayTap(date: Date) {
+    if (deleteMode) { toggleDeleteDay(date); return }
     if (!applySource) { setSelectedDate(date); return }
     const key = dayKey(date)
     if (key === applySourceKey) return                       // no aplicar sobre sí mismo
@@ -184,9 +192,66 @@ export function HorasTrabajoPage() {
 
   // Long-press / click derecho sobre un día CON datos → pregunta "¿Aplicar a otro día?"
   function openContext(date: Date) {
-    if (applySource) return               // ya estamos en modo aplicar
-    if (!byDay.has(dayKey(date))) return  // solo días que ya tienen datos cargados
+    if (applySource || deleteMode) return  // ya estamos en un modo de selección
+    if (!byDay.has(dayKey(date))) return   // solo días que ya tienen datos cargados
     setConfirmApply(date)
+  }
+
+  // ─── Borrar ───
+  function startDeleteMode() {
+    setShowActionsMenu(false)
+    setSelectedToDelete(new Set())
+    setDeleteMode(true)
+  }
+
+  function exitDeleteMode() {
+    setDeleteMode(false)
+    setSelectedToDelete(new Set())
+    setConfirmDeleteDias(false)
+  }
+
+  /** En modo borrar, tocar un día con datos lo marca/desmarca. */
+  function toggleDeleteDay(date: Date) {
+    const key = dayKey(date)
+    if (!byDay.has(key)) return  // solo días con datos
+    setSelectedToDelete(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  /** Borra los días seleccionados (segunda confirmación ya aceptada). */
+  async function doBorrarDias() {
+    const ids = [...selectedToDelete]
+      .map(k => byDay.get(k)?.id)
+      .filter((id): id is string => !!id)
+    if (ids.length) {
+      try {
+        await db.registros.bulkDelete(ids)
+        await shadowBackup()
+        await reload()
+      } catch (e) {
+        console.error('Error al borrar días:', e)
+      }
+    }
+    exitDeleteMode()
+  }
+
+  /** Borra todos los registros del período actual (segunda confirmación ya aceptada). */
+  async function doBorrarPeriodo() {
+    const ids = registros.map(r => r.id)
+    if (ids.length) {
+      try {
+        await db.registros.bulkDelete(ids)
+        await shadowBackup()
+        await reload()
+      } catch (e) {
+        console.error('Error al borrar el período:', e)
+      }
+    }
+    setDeletePeriodoStep(0)
   }
 
   const diagramaLabel = DIAGRAMAS.find(d => d.key === settings.diagrama)?.label ?? settings.diagrama
@@ -206,6 +271,13 @@ export function HorasTrabajoPage() {
           </div>
           <div className="flex items-center gap-1">
             <button
+              onClick={() => setShowActionsMenu(v => !v)}
+              className="p-2 text-slate-400 active:text-white"
+              title="Más acciones"
+            >
+              <MoreVertical size={18} />
+            </button>
+            <button
               onClick={() => toggleViewMode()}
               className="p-2 text-slate-400 active:text-white"
               title={viewMode === 'calendar' ? 'Ver lista' : 'Ver calendario'}
@@ -221,7 +293,7 @@ export function HorasTrabajoPage() {
       {!loading && <ResumenBar resumen={resumen} francosDisponibles={francosDisponibles} />}
 
       {/* Tip: copiar datos de un día a otro (mantener pulsado) */}
-      {!loading && !applySource && showCopyTip && (
+      {!loading && !applySource && !deleteMode && showCopyTip && (
         <div className="mx-4 mb-2 flex items-center gap-2 rounded-xl bg-sky-950/50 border border-sky-800/40 px-3 py-2 animate-[apply-bar-in_220ms_ease_both]">
           <Lightbulb size={15} className="text-sky-400 shrink-0" />
           <span className="text-xs text-sky-200/90 flex-1 leading-snug">
@@ -252,6 +324,8 @@ export function HorasTrabajoPage() {
               applyMode={!!applySource}
               sourceKey={applySourceKey}
               pulseKey={pulseKey}
+              deleteMode={deleteMode}
+              selectedDeleteKeys={selectedToDelete}
             />
           ) : (
             <div className="px-4 space-y-1.5">
@@ -266,6 +340,8 @@ export function HorasTrabajoPage() {
                     diagramaInicioMs={settings.diagramaInicioMs}
                     onClick={() => handleDayTap(d)}
                     onContext={openContext}
+                    deleteMode={deleteMode}
+                    selectedForDelete={deleteMode && selectedToDelete.has(key)}
                   />
                 )
               })}
@@ -275,7 +351,7 @@ export function HorasTrabajoPage() {
       )}
 
       {/* Export FAB — above the bottom nav (z-30, ~52px); oculto en modo aplicar */}
-      <div className={`fixed bottom-20 right-4 z-40 ${applySource ? 'hidden' : ''}`}>
+      <div className={`fixed bottom-20 right-4 z-40 ${applySource || deleteMode ? 'hidden' : ''}`}>
         {showExportMenu && (
           <div className="mb-2 flex flex-col gap-2 items-end">
             <button
@@ -324,6 +400,28 @@ export function HorasTrabajoPage() {
       {/* Overlay dismiss export menu */}
       {showExportMenu && (
         <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
+      )}
+
+      {/* Menú de acciones (borrar) */}
+      {showActionsMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowActionsMenu(false)} />
+          <div className="fixed top-16 right-3 z-50 w-56 rounded-xl bg-slate-800 border border-slate-700 shadow-2xl overflow-hidden animate-[view-fade-in_120ms_ease_both]">
+            <button
+              onClick={() => { setShowActionsMenu(false); setDeletePeriodoStep(1) }}
+              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-300 active:bg-slate-700/60"
+            >
+              <Trash2 size={16} className="shrink-0" /> Borrar período actual
+            </button>
+            <div className="h-px bg-slate-700/70" />
+            <button
+              onClick={startDeleteMode}
+              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-300 active:bg-slate-700/60"
+            >
+              <CalendarX2 size={16} className="shrink-0" /> Borrar días (elegir)…
+            </button>
+          </div>
+        </>
       )}
 
       {/* ─── Modo aplicar: barra superior (cubre el header mientras se aplica) ─── */}
@@ -381,6 +479,75 @@ export function HorasTrabajoPage() {
           danger
           onConfirm={() => { const d = confirmReplace; setConfirmReplace(null); doApply(d) }}
           onCancel={() => setConfirmReplace(null)}
+        />
+      )}
+
+      {/* ─── Modo borrar días: barra superior (tocar días a borrar) ─── */}
+      {deleteMode && (
+        <div className="fixed top-0 inset-x-0 z-50 bg-red-950/95 backdrop-blur border-b border-red-800 shadow-lg animate-[apply-bar-in_180ms_ease_both]">
+          <div className="px-4 py-3">
+            <div className="flex items-start gap-3">
+              <Trash2 size={18} className="text-red-300 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-white leading-snug">
+                  Tocá los días que querés borrar
+                </div>
+                <div className="text-xs text-red-300/90 mt-0.5">
+                  {selectedToDelete.size > 0
+                    ? `${selectedToDelete.size} día${selectedToDelete.size === 1 ? '' : 's'} seleccionado${selectedToDelete.size === 1 ? '' : 's'}`
+                    : 'Tocá solo los días con datos cargados'}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={exitDeleteMode}
+                className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+              >
+                <X size={15} /> Cancelar
+              </button>
+              <button
+                onClick={() => setConfirmDeleteDias(true)}
+                disabled={selectedToDelete.size === 0}
+                className="flex-1 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:active:scale-100"
+              >
+                <Trash2 size={15} /> Borrar ({selectedToDelete.size})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Borrar días: confirmación final (segunda confirmación) */}
+      {confirmDeleteDias && (
+        <ConfirmModal
+          title="¿Borrar los días seleccionados?"
+          message={`Se eliminarán ${selectedToDelete.size} día${selectedToDelete.size === 1 ? '' : 's'} del período. Esta acción no se puede deshacer.`}
+          confirmLabel="Borrar"
+          danger
+          onConfirm={doBorrarDias}
+          onCancel={() => setConfirmDeleteDias(false)}
+        />
+      )}
+
+      {/* Borrar período: doble confirmación */}
+      {deletePeriodoStep === 1 && (
+        <ConfirmModal
+          title="¿Borrar el período actual?"
+          message={`Vas a eliminar ${registros.length} registro${registros.length === 1 ? '' : 's'} de ${MESES_ES[mes]} ${anio} (${periodoStartStr} – ${periodoEndStr}).`}
+          confirmLabel="Continuar"
+          onConfirm={() => setDeletePeriodoStep(2)}
+          onCancel={() => setDeletePeriodoStep(0)}
+        />
+      )}
+      {deletePeriodoStep === 2 && (
+        <ConfirmModal
+          title="Confirmar borrado"
+          message="Esta acción no se puede deshacer. ¿Seguro que querés borrar todo el período?"
+          confirmLabel="Borrar todo"
+          danger
+          onConfirm={doBorrarPeriodo}
+          onCancel={() => setDeletePeriodoStep(0)}
         />
       )}
     </div>
