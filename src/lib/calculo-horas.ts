@@ -61,7 +61,7 @@ export function esDiaNoTrabajado(reg: RegistroHoras): boolean {
  * - Franco / Ausencia / Feriado (no trabajado) → 0 hours
  * - Total = (turno1 + turno2) − (1 h almuerzo si lugar = Base), topeado a [0, 16]
  * - FrancoTrabajado o FeriadoTrabajado → todo al 100%
- * - Día normal: hasta 12 h → normales, > 12 h → al 50% (nunca al 100%)
+ * - Día normal: hasta 8 h → normales, > 8 h → al 50% (nunca al 100%)
  */
 export function calcularHorasDia(reg: RegistroHoras): Pick<ResumenDia, 'horasTrabajadas' | 'horasNormales' | 'horasAl50' | 'horasAl100'> {
   if (esDiaNoTrabajado(reg) || reg.esAusenciaJustificada) {
@@ -80,9 +80,9 @@ export function calcularHorasDia(reg: RegistroHoras): Pick<ResumenDia, 'horasTra
     return { horasTrabajadas: total, horasNormales: 0, horasAl50: 0, horasAl100: total }
   }
 
-  // Día normal: 0–12 h normales, > 12 h al 50%, nunca al 100%
-  const horasNormales = Math.min(total, 12)
-  const horasAl50 = total > 12 ? total - 12 : 0
+  // Día normal: 0–8 h normales, > 8 h al 50%, nunca al 100%
+  const horasNormales = Math.min(total, 8)
+  const horasAl50 = total > 8 ? total - 8 : 0
 
   return { horasTrabajadas: total, horasNormales, horasAl50, horasAl100: 0 }
 }
