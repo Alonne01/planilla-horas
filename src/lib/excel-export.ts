@@ -32,6 +32,61 @@ function msToDecimalHours(ms: number | null | undefined): number | null {
   return d.getHours() + d.getMinutes() / 60
 }
 
+// ─── Column G (Total Hs) cached value ──────────────────────────────────────────
+// La celda G del template trae una FÓRMULA y un valor cacheado de ejemplo. Al
+// reinyectar la celda verbatim, ese valor viejo queda en el archivo y los visores
+// que no recalculan (preview de Google Drive, Sheets) lo muestran en vez del real
+// (ej: G15=13 en vez de 12; francos mostrando horas). Para evitarlo recalculamos el
+// valor replicando la fórmula del template y lo escribimos en el <v> cacheado.
+//
+// Fórmula del template (G):
+//   =IFERROR( MIN(16, IF(I="Base", (D-C)+(F-E)-1, (D-C)+(F-E)) ), 0 )
+
+/** Minutos entre dos timestamps; null→0; maneja turno nocturno (b < a → +24h). */
+function minutesBetweenMs(a: number | null | undefined, b: number | null | undefined): number {
+  if (!a || !b) return 0
+  let diff = b - a
+  if (diff < 0) diff += 24 * 60 * 60 * 1000
+  return diff / 60_000
+}
+
+/** Horas crudas (suma de ambos turnos) = (D-C)+(F-E) según se escriben las celdas. */
+function rawTurnos(reg: RegistroHoras): number {
+  return (
+    minutesBetweenMs(reg.entradaInicioMs, reg.salidaInicioMs) +
+    minutesBetweenMs(reg.entradaFinMs, reg.salidaFinMs)
+  ) / 60
+}
+
+function capG(h: number): number {
+  if (h > 16) return 16
+  if (h < 0) return 0
+  return h
+}
+
+/** Valor de "Total Hs" (col G) que corresponde a la fila, igual a lo que da la fórmula. */
+function gWorkedHours(reg: RegistroHoras | undefined): number {
+  if (reg == null) return 0
+  if (reg.lugarTrabajo === 'Franco') {
+    const hasWork = reg.entradaInicioMs != null
+    const trabajado = (reg.esFrancoTrabajado || reg.esFeriadoTrabajado) && hasWork
+    // Franco/ausencia sin trabajar → celdas C/F = '-' → la fórmula da IFERROR=0.
+    // Franco/feriado trabajado (legado): col I queda vacía → sin descuento de almuerzo.
+    return trabajado ? capG(rawTurnos(reg)) : 0
+  }
+  // Día normal (Base/Campo): col I = lugar → Base descuenta 1h de almuerzo.
+  return capG(rawTurnos(reg) - (reg.lugarTrabajo === 'Base' ? 1 : 0))
+}
+
+/** Reemplaza (o inserta) el valor cacheado <v> de una celda, conservando su fórmula. */
+function setGCachedValue(cellXml: string, value: number): string {
+  const v = String(Math.round(value * 100) / 100)
+  if (/<v>[\s\S]*?<\/v>/.test(cellXml)) {
+    return cellXml.replace(/<v>[\s\S]*?<\/v>/, `<v>${v}</v>`)
+  }
+  return cellXml.replace('</c>', `<v>${v}</v></c>`)
+}
+
 // ─── Cell XML builders ─────────────────────────────────────────────────────────
 // s = style index from template (preserved verbatim — never regenerated)
 
@@ -276,9 +331,12 @@ function replaceDataRow(
   const originalContent = m[2]
   const closeTag = m[3]
 
-  // Extract the G formula cell verbatim from the template row
+  // Extract the G formula cell verbatim from the template row, then refresh its
+  // cached <v> with the real worked-hours value (the template's sample value would
+  // otherwise leak into the export and show in non-recalculating viewers).
   const gMatch = originalContent.match(/<c r="G\d+"[^>]*>[\s\S]*?<\/c>/)
-  const gCell = gMatch ? gMatch[0] : ''
+  let gCell = gMatch ? gMatch[0] : ''
+  if (gCell) gCell = setGCachedValue(gCell, gWorkedHours(reg))
 
   const [before, after] = buildRowParts(rowNum, dia, reg, diagramaKey, diagramaInicioMs)
   return xml.replace(rowRe, `${openTag}${before}${gCell}${after}${closeTag}`)
