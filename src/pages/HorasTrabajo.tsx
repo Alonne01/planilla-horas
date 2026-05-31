@@ -119,7 +119,7 @@ export function HorasTrabajoPage() {
     // requestAnimationFrame para que la animación se re-dispare en taps consecutivos
     requestAnimationFrame(() => {
       setPulseKey(key)
-      setTimeout(() => setPulseKey(k => (k === key ? null : k)), 480)
+      setTimeout(() => setPulseKey(k => (k === key ? null : k)), 560)
     })
   }
 
@@ -214,12 +214,14 @@ export function HorasTrabajoPage() {
   function toggleDeleteDay(date: Date) {
     const key = dayKey(date)
     if (!byDay.has(key)) return  // solo días con datos
+    const isAdding = !selectedToDelete.has(key)
     setSelectedToDelete(prev => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
       return next
     })
+    if (isAdding) pulse(key)  // pop rojo al seleccionar
   }
 
   /** Borra los días seleccionados (segunda confirmación ya aceptada). */

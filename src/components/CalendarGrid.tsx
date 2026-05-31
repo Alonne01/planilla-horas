@@ -120,7 +120,7 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
                   }}
                   onTouchEnd={() => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }}
                   onContextMenu={e => { e.preventDefault(); if (!applyMode && !deleteMode) onContext?.(date, e.clientX, e.clientY) }}
-                  className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg} ${isSource ? 'ring-2 ring-sky-400 ring-offset-1 ring-offset-slate-900' : ''} ${isSelectedForDelete ? 'ring-2 ring-red-400 ring-offset-1 ring-offset-slate-900' : ''} ${deleteMode && !reg ? 'opacity-30' : ''} ${isPulsing ? 'animate-[apply-pulse_450ms_ease]' : ''} ${applyMode && !isSource ? 'cursor-pointer' : ''}`}
+                  className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg} ${isSource ? 'ring-2 ring-sky-400 ring-offset-1 ring-offset-slate-900' : ''} ${isSelectedForDelete ? 'ring-2 ring-red-400 ring-offset-1 ring-offset-slate-900' : ''} ${deleteMode && !reg ? 'opacity-30' : ''} ${isPulsing ? (deleteMode ? 'animate-[delete-pulse_520ms_ease]' : 'animate-[apply-pulse_520ms_ease]') : ''} ${applyMode && !isSource ? 'cursor-pointer' : ''}`}
                 >
                   {isFirstOfMonth && (
                     <span className="text-[8px] leading-none text-slate-500 uppercase tracking-wide">
