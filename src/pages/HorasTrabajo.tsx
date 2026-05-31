@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react'
-import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check } from 'lucide-react'
+import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
 import { RegistroDialog } from '../components/RegistroDialog'
@@ -57,6 +57,14 @@ export function HorasTrabajoPage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar')
+  const [showCopyTip, setShowCopyTip] = useState(() => {
+    try { return localStorage.getItem('planilla-tip-copiar') !== 'dismissed' } catch { return true }
+  })
+
+  function dismissCopyTip() {
+    setShowCopyTip(false)
+    try { localStorage.setItem('planilla-tip-copiar', 'dismissed') } catch { /* ignore */ }
+  }
 
   // ─── Modo "aplicar datos a otro día" (reemplaza copiar día anterior / copiar a días hábiles) ───
   const [applySource, setApplySource] = useState<RegistroHoras | null>(null)
@@ -211,6 +219,19 @@ export function HorasTrabajoPage() {
 
       {/* Resumen */}
       {!loading && <ResumenBar resumen={resumen} francosDisponibles={francosDisponibles} />}
+
+      {/* Tip: copiar datos de un día a otro (mantener pulsado) */}
+      {!loading && !applySource && showCopyTip && (
+        <div className="mx-4 mb-2 flex items-center gap-2 rounded-xl bg-sky-950/50 border border-sky-800/40 px-3 py-2 animate-[apply-bar-in_220ms_ease_both]">
+          <Lightbulb size={15} className="text-sky-400 shrink-0" />
+          <span className="text-xs text-sky-200/90 flex-1 leading-snug">
+            Mantené pulsado un día para copiar sus datos a otro.
+          </span>
+          <button onClick={dismissCopyTip} className="text-sky-500 active:text-sky-300 shrink-0" aria-label="Cerrar">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Day view */}
       {loading ? (

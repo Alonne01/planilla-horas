@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react"
-import { Clock, Settings2, Banknote, RefreshCw, AlertTriangle, Download, FolderOpen, X } from "lucide-react"
+import { Clock, Settings2, Banknote, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X } from "lucide-react"
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
+import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, pruneOldRegistros, migrateHorasViaje } from "./db/database"
@@ -15,8 +16,8 @@ function isStandalone() {
 const SHOW_SALARY = import.meta.env.VITE_SHOW_SALARY === "true"
 const AUTO_BACKUP_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000 // 2 days
 
-type Tab = "horas" | "settings" | "salary"
-const TAB_ORDER: Tab[] = ["horas", "settings", "salary"]
+type Tab = "horas" | "analytics" | "settings" | "salary"
+const TAB_ORDER: Tab[] = ["horas", "analytics", "settings", "salary"]
 
 function goToTab(next: Tab, current: Tab, setter: (t: Tab) => void) {
   if (next === current) return
@@ -182,13 +183,15 @@ export default function App() {
         )}
 
         {tab === "horas" && <HorasTrabajoPage />}
+        {tab === "analytics" && <AnalyticsPage />}
         {tab === "settings" && <SettingsPage />}
         {tab === "salary" && SHOW_SALARY && <ProyeccionSalarialPage />}
       </div>
 
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30">
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30 pb-[env(safe-area-inset-bottom)]">
         <div className="flex">
           <NavTab icon={<Clock size={22} />} label="Horas" active={tab === "horas"} onClick={() => goToTab("horas", tab, setTab)} />
+          <NavTab icon={<BarChart3 size={22} />} label="Análisis" active={tab === "analytics"} onClick={() => goToTab("analytics", tab, setTab)} />
           <NavTab icon={<Settings2 size={22} />} label="Config" active={tab === "settings"} onClick={() => goToTab("settings", tab, setTab)} />
           {SHOW_SALARY && (
             <NavTab icon={<Banknote size={22} />} label="Sueldo" active={tab === "salary"} onClick={() => goToTab("salary", tab, setTab)} />
@@ -203,10 +206,11 @@ function NavTab({ icon, label, active, onClick }: { icon: React.ReactNode; label
   return (
     <button
       onClick={onClick}
-      className={"flex-1 flex flex-col items-center py-2 gap-0.5 transition-colors " + (active ? "text-blue-400" : "text-slate-500")}
+      className={"relative flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 transition-colors active:bg-slate-800/50 " + (active ? "text-blue-400" : "text-slate-500")}
     >
+      {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-blue-400" />}
       <span className="leading-none">{icon}</span>
-      <span className="text-xs">{label}</span>
+      <span className="text-[11px] font-medium">{label}</span>
     </button>
   )
 }

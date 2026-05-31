@@ -1,7 +1,19 @@
 // Hour calculation logic ported from CalculoSalarialUtil.kt
-// Determines normal hours, hours at 50% extra, hours at 100% extra
+// Determines normal hours, hours at 50% extra, hours at 100% extra.
+//
+// El TOTAL de horas trabajadas por día replica EXACTAMENTE la fórmula de la
+// planilla oficial (col. G del template) que usa el export Normal:
+//
+//   total = MIN(16, (D-C)+(F-E) - (lugar=="Base" ? 1 : 0))   ; IFERROR → 0
+//
+// Es decir: la hora de almuerzo en Base se descuenta UNA sola vez por día (no
+// por turno), el total se topea en 16 h y nunca es negativo. Así el resumen en
+// pantalla, el export "Completo con horas" y el export "Normal" (planilla
+// oficial) dan siempre los mismos números.
 
 import type { RegistroHoras } from '../db/database'
+
+const MAX_HORAS_DIA = 16
 
 /** Minutes between two timestamps; null-safe → 0; handles overnight (b < a) */
 function minutesBetween(a: number | null | undefined, b: number | null | undefined): number {
@@ -11,17 +23,8 @@ function minutesBetween(a: number | null | undefined, b: number | null | undefin
   return diff / 60_000
 }
 
-/** Effective worked hours for a single shift window, applying lunch deduction for Base */
-function horasEfectivasTurno(
-  entrada: number | null | undefined,
-  salida: number | null | undefined,
-  lugar: string,
-): number {
-  const raw = minutesBetween(entrada, salida)
-  if (raw <= 0) return 0
-  // Base: deduct 60 min for shifts ≥ 4h (lunch break convention)
-  const deduccion = lugar === 'Base' && raw >= 240 ? 60 : 0
-  return Math.max(0, raw - deduccion) / 60
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n))
 }
 
 export interface ResumenHoras {
@@ -54,31 +57,34 @@ export function esDiaNoTrabajado(reg: RegistroHoras): boolean {
 
 /**
  * Calculate hours for a single day record.
- * Rules (mirroring CalculoSalarialUtil):
+ * Rules (mirroring the official planilla formula + CalculoSalarialUtil):
  * - Franco / Ausencia / Feriado (no trabajado) → 0 hours
- * - FrancoTrabajado or FeriadoTrabajado → 100% extra
- * - Regular day: first 8h → normal, 8-10h → 50%, >10h → 100%
+ * - Total = (turno1 + turno2) − (1 h almuerzo si lugar = Base), topeado a [0, 16]
+ * - FrancoTrabajado o FeriadoTrabajado → todo al 100%
+ * - Día normal: hasta 12 h → normales, > 12 h → al 50% (nunca al 100%)
  */
 export function calcularHorasDia(reg: RegistroHoras): Pick<ResumenDia, 'horasTrabajadas' | 'horasNormales' | 'horasAl50' | 'horasAl100'> {
   if (esDiaNoTrabajado(reg) || reg.esAusenciaJustificada) {
     return { horasTrabajadas: 0, horasNormales: 0, horasAl50: 0, horasAl100: 0 }
   }
 
-  const h1 = horasEfectivasTurno(reg.entradaInicioMs, reg.salidaInicioMs, reg.lugarTrabajo)
-  const h2 = horasEfectivasTurno(reg.entradaFinMs, reg.salidaFinMs, reg.lugarTrabajo)
-  const total = h1 + h2
+  const rawMin =
+    minutesBetween(reg.entradaInicioMs, reg.salidaInicioMs) +
+    minutesBetween(reg.entradaFinMs, reg.salidaFinMs)
+  // Almuerzo: 1 h descontada UNA vez por día en Base (igual que la fórmula del template).
+  const almuerzo = reg.lugarTrabajo === 'Base' ? 1 : 0
+  const total = clamp(rawMin / 60 - almuerzo, 0, MAX_HORAS_DIA)
 
-  // Feriado trabajado or Franco trabajado → everything at 100%
+  // Feriado trabajado o Franco trabajado → todo al 100%
   if (reg.esFeriadoTrabajado || reg.esFrancoTrabajado) {
     return { horasTrabajadas: total, horasNormales: 0, horasAl50: 0, horasAl100: total }
   }
 
-  // Regular workday tiering: 0–12h normal, >12h at 50%, never 100%
-  const normales = Math.min(total, 12)
-  const al50 = total > 12 ? total - 12 : 0
-  const al100 = 0
+  // Día normal: 0–12 h normales, > 12 h al 50%, nunca al 100%
+  const horasNormales = Math.min(total, 12)
+  const horasAl50 = total > 12 ? total - 12 : 0
 
-  return { horasTrabajadas: total, horasNormales: normales, horasAl50: al50, horasAl100: al100 }
+  return { horasTrabajadas: total, horasNormales, horasAl50, horasAl100: 0 }
 }
 
 export function calcularResumenPeriodo(registros: RegistroHoras[]): ResumenHoras {
