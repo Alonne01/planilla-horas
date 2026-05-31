@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import type { RegistroHoras } from '../db/database'
 import { calcularHorasDia, esDiaNoTrabajado } from '../lib/calculo-horas'
-import { esFeriadoNacional } from '../lib/feriados'
+import { esFeriadoNacional, nombreFeriado } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
 import { Palmtree, Banknote, CalendarDays, HeartPulse } from 'lucide-react'
 
@@ -80,6 +80,7 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
     ? esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs ?? 0)
     : isWeekend
   const isFeriadoNacional = esFeriadoNacional(fecha.getTime())
+  const nombreFer = nombreFeriado(fecha.getTime())
   const isEmpty = !registro
 
   let label = ''
@@ -94,7 +95,7 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
     if (registro!.esFrancoCompensatorio) { label = 'Franco Comp.'; badgeIcon = <Palmtree size={13} /> }
     else if (registro!.esFrancoTrabajado) { label = 'Franco Trab.'; badgeIcon = <Banknote size={13} /> }
     else if (registro!.esFeriadoTrabajado) { label = 'Feriado Trab.'; badgeIcon = <Banknote size={13} /> }
-    else if (registro!.esFeriado && isDayOff) { label = 'Feriado'; badgeIcon = <CalendarDays size={13} /> }
+    else if (registro!.esFeriado && isDayOff) { label = nombreFer ?? 'Feriado'; badgeIcon = <CalendarDays size={13} /> }
     else if (registro!.esAusenciaJustificada) { label = 'Ausencia'; badgeIcon = <HeartPulse size={13} /> }
     else if (isDayOff) { label = 'Franco' }
     else { label = registro!.lugarTrabajo }
@@ -139,8 +140,8 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
       {/* Content */}
       <div className="flex-1 min-w-0">
         {isEmpty ? (
-          <span className="text-slate-600 text-sm">
-            {isFrancoByDiag ? 'Franco' : isFeriadoNacional ? 'Feriado' : 'Sin registro'}
+          <span className={`text-sm ${isFeriadoNacional ? 'text-amber-400' : 'text-slate-600'}`}>
+            {isFeriadoNacional ? (nombreFer ?? 'Feriado') : isFrancoByDiag ? 'Franco' : 'Sin registro'}
           </span>
         ) : (
           <>
@@ -161,6 +162,7 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
                 <span>{timeStr(registro!.entradaFinMs)} – {timeStr(registro!.salidaFinMs)}</span>
               )}
               {registro!.proyecto && <span className="text-blue-400">{registro!.proyecto}</span>}
+              {registro!.esFeriadoTrabajado && nombreFer && <span className="text-amber-400">{nombreFer}</span>}
               {registro!.observaciones && <span className="truncate max-w-[120px]">{registro!.observaciones}</span>}
             </div>
           </>

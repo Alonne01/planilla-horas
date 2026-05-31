@@ -226,6 +226,7 @@ function buildRowParts(
        cEmpty(`E${n}`, s.E),                     cSalida(`F${n}`, s.F, reg.entradaInicioMs, reg.salidaInicioMs)]
   let obs = reg.observaciones ?? ''
   if (reg.esFrancoTrabajado) obs = `franco trabajado${obs ? ' - ' + obs : ''}`
+  else if (reg.esFeriadoTrabajado) obs = `feriado trabajado${obs ? ' - ' + obs : ''}`
 
   return [
     [cellA, cellB, cC, cD, cE, cF].join(''),

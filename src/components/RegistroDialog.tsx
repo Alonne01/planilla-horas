@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid'
 import { X, CalendarDays, Clock } from 'lucide-react'
 import { TimeDrumPicker } from './TimeDrumPicker'
 import type { RegistroHoras } from '../db/database'
-import { esFeriadoNacional } from '../lib/feriados'
+import { esFeriadoNacional, nombreFeriado } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
 
 interface Props {
@@ -46,6 +46,7 @@ function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
 export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama, diagramaInicioMs, onSave, onDelete, onClose }: Props) {
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
   const esFeriadoHoy = esFeriadoNacional(fecha.getTime())
+  const nombreFeriadoHoy = nombreFeriado(fecha.getTime())
 
   // Actual work location — only 'Base' or 'Campo'; 'Franco' is stored for absences but never a button
   // Legacy franco-trabajado records have lugarTrabajo='Franco' → default to 'Campo'
@@ -136,7 +137,7 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
             )}
             {esFeriadoHoy && (
               <span className="text-xs text-amber-400 flex items-center gap-1 mt-0.5">
-                <CalendarDays size={12} /> Feriado nacional
+                <CalendarDays size={12} /> Feriado nacional{nombreFeriadoHoy ? ` · ${nombreFeriadoHoy}` : ''}
               </span>
             )}
           </div>
