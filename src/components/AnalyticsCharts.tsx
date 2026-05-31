@@ -152,10 +152,10 @@ export function TrendLines({ periodos }: { periodos: PeriodoStats[] }) {
       <path d={areaPath} fill="url(#trend-area)"
         style={{ opacity: mounted ? 1 : 0, transition: 'opacity 700ms ease', transitionDelay: '300ms' }} />
 
-      {/* Línea horas extra */}
+      {/* Línea horas extra (punteada, aparece tras dibujarse la principal) */}
       <path d={toPath(ptsExtra)} fill="none" stroke={C_EXTRA} strokeWidth={2}
-        strokeLinecap="round" strokeLinejoin="round" strokeDasharray="5 4" pathLength={1}
-        style={drawStyle(250)} opacity={0.85} />
+        strokeLinecap="round" strokeLinejoin="round" strokeDasharray="5 4"
+        style={{ opacity: mounted ? 0.85 : 0, transition: 'opacity 600ms ease', transitionDelay: '450ms' }} />
 
       {/* Línea total trabajadas */}
       <path d={toPath(ptsTotal)} fill="none" stroke={C_NORM} strokeWidth={2.5}
