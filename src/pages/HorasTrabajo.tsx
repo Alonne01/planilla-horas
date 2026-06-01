@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react'
-import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb, MoreVertical, Trash2, CalendarX2 } from 'lucide-react'
+import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb, MoreVertical, Trash2, CalendarX2, Download } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
 import { RegistroDialog } from '../components/RegistroDialog'
@@ -56,6 +56,7 @@ export function HorasTrabajoPage() {
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar')
   const [showCopyTip, setShowCopyTip] = useState(() => {
     try { return localStorage.getItem('planilla-tip-copiar') !== 'dismissed' } catch { return true }
@@ -256,6 +257,20 @@ export function HorasTrabajoPage() {
     setDeletePeriodoStep(0)
   }
 
+  async function runExport(fn: () => void | Promise<void>) {
+    setShowExportMenu(false)
+    setDownloading(true)
+    try {
+      await fn()
+    } catch (e) {
+      console.error('Error exportando Excel:', e)
+      alert('Error al generar el Excel.')
+    } finally {
+      // mantener la animación visible un instante aunque la exportación sea instantánea
+      setTimeout(() => setDownloading(false), 1100)
+    }
+  }
+
   const diagramaLabel = DIAGRAMAS.find(d => d.key === settings.diagrama)?.label ?? settings.diagrama
 
   const periodoStartStr = periodoStart(mes, anio).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
@@ -357,31 +372,35 @@ export function HorasTrabajoPage() {
         {showExportMenu && (
           <div className="mb-2 flex flex-col gap-2 items-end">
             <button
-              onClick={() => {
+              onClick={() => runExport(() =>
                 exportarExcelNormal(mes, anio, registros, settings.nombreUsuario, diagramaLabel, settings.diagrama, settings.diagramaInicioMs)
-                  .catch(e => { console.error('Error exportando Excel:', e); alert('Error al generar el Excel.') })
-                setShowExportMenu(false)
-              }}
-              className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap flex items-center gap-2"
+              )}
+              className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap flex items-center gap-2 animate-[fab-item-in_180ms_ease_both]"
             >
               <FileText size={15} /> Normal (planilla)
             </button>
             <button
-              onClick={() => {
-                exportarExcelCompleto(mes, anio, registros, settings.nombreUsuario)
-                setShowExportMenu(false)
-              }}
-              className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap flex items-center gap-2"
+              onClick={() => runExport(() => exportarExcelCompleto(mes, anio, registros, settings.nombreUsuario))}
+              className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap flex items-center gap-2 animate-[fab-item-in_180ms_ease_both]"
+              style={{ animationDelay: '40ms' }}
             >
               <FileBarChart size={15} /> Completo con horas
             </button>
           </div>
         )}
         <button
-          onClick={() => setShowExportMenu(v => !v)}
-          className="w-14 h-14 rounded-full bg-blue-600 text-white text-2xl shadow-xl flex items-center justify-center active:scale-95 transition-transform"
+          onClick={() => !downloading && setShowExportMenu(v => !v)}
+          disabled={downloading}
+          className={`w-14 h-14 rounded-full text-white text-2xl shadow-xl flex items-center justify-center active:scale-95 transition-all duration-200 ${downloading ? 'bg-emerald-600' : 'bg-blue-600'}`}
         >
-          {showExportMenu ? <X size={22} /> : <Upload size={22} />}
+          <span
+            className="inline-flex transition-transform duration-300"
+            style={{ transform: showExportMenu ? 'rotate(135deg)' : 'rotate(0deg)' }}
+          >
+            {downloading
+              ? <Download size={22} className="animate-[fab-download-bounce_700ms_ease-in-out_infinite]" />
+              : showExportMenu ? <X size={22} /> : <Upload size={22} />}
+          </span>
         </button>
       </div>
 
