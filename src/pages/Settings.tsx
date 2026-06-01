@@ -8,6 +8,15 @@ import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feri
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
+// Kaomoji elegido una vez por inicio de app (constante a nivel de módulo)
+const KAOMOJIS = [
+  '(づ｡◕‿‿◕｡)づ', '(◕‿◕)', '(｡♥‿♥｡)', '٩(◕‿◕)۶', '(★^O^★)',
+  'ヽ(´▽`)/', '(＾▽＾)', '(•‿•)', '(¬‿¬)', '(╯°□°）╯︵ ┻━┻',
+  '┬─┬ ノ( ゜-゜ノ)', '(っ◔◡◔)っ', 'ヽ(•‿•)ノ', '(ﾉ◕ヮ◕)ﾉ', '( ͡° ͜ʖ ͡°)',
+  '(＾◡＾)', '＼(^o^)／', '(ง •̀_•́)ง', '(¬_¬")', 'ʕ•ᴥ•ʔ',
+]
+const KAOMOJI = KAOMOJIS[Math.floor(Math.random() * KAOMOJIS.length)]
+
 function localDateStr(ms: number): string {
   const d = new Date(ms)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -291,7 +300,8 @@ export function SettingsPage() {
         <div className="pt-4 pb-2 text-center space-y-0.5">
           <p className="text-xs text-slate-500">Planilla de Horas</p>
           <p className="text-xs text-slate-600">
-            Desarrollado por <span className="text-slate-400 font-medium">Alonso</span>
+            Desarrollado por <span className="text-slate-400 font-medium">Nicolas Vazquez</span>{' '}
+            <span className="text-slate-500">{KAOMOJI}</span>
           </p>
           <p className="text-[11px] text-slate-700">Hecho con ❤ en Argentina</p>
         </div>
