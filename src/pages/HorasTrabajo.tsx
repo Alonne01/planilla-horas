@@ -368,7 +368,7 @@ export function HorasTrabajoPage() {
       )}
 
       {/* Export FAB — above the bottom nav (z-30, ~52px); oculto en modo aplicar */}
-      <div className={`fixed bottom-20 right-4 z-40 ${applySource || deleteMode ? 'hidden' : ''}`}>
+      <div className={`fixed bottom-20 right-4 z-40 flex flex-col items-end ${applySource || deleteMode ? 'hidden' : ''}`}>
         {showExportMenu && (
           <div className="mb-2 flex flex-col gap-2 items-end">
             <button
@@ -395,7 +395,7 @@ export function HorasTrabajoPage() {
         >
           <span
             className="inline-flex transition-transform duration-300"
-            style={{ transform: showExportMenu ? 'rotate(135deg)' : 'rotate(0deg)' }}
+            style={{ transform: showExportMenu ? 'rotate(90deg)' : 'rotate(0deg)' }}
           >
             {downloading
               ? <Download size={22} className="animate-[fab-download-bounce_700ms_ease-in-out_infinite]" />
