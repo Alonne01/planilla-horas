@@ -6,6 +6,7 @@ import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, pruneOldRegistros, migrateHorasViaje } from "./db/database"
+import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 
 function isStandalone() {
@@ -123,6 +124,7 @@ export default function App() {
   return (
     <div className="max-w-lg mx-auto min-h-screen relative">
       <div className="pb-16 vt-page-content">
+        <Greeting />
         {/* Banners */}
         {recovered && (
           <div className="mx-4 mt-3 p-3 rounded-xl bg-blue-900/40 text-blue-300 text-sm flex items-start gap-2">
@@ -146,19 +148,17 @@ export default function App() {
           </div>
         )}
         {autoBackupDue && (
-          <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-900/40 text-amber-300 text-sm">
-            <div className="flex items-start gap-2 mb-2">
-              <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-400" />
-              <span className="flex-1">Hace más de 2 días que no se descargó un backup automático. Descargalo ahora para no perder datos.</span>
-              <button onClick={() => setAutoBackupDue(false)} className="text-amber-500 hover:text-amber-300 shrink-0">
-                <X size={15} />
-              </button>
-            </div>
+          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 text-xs text-amber-300/90">
+            <AlertTriangle size={14} className="shrink-0 text-amber-400/80" />
+            <span className="flex-1 leading-snug">Conviene descargar un backup.</span>
             <button
               onClick={handleAutoBackupDownload}
-              className="w-full py-2 rounded-xl bg-amber-600 text-white text-xs font-bold flex items-center justify-center gap-2"
+              className="shrink-0 flex items-center gap-1 font-semibold text-amber-300 active:text-amber-200"
             >
-              <Download size={14} /> Descargar backup ahora
+              <Download size={13} /> Backup
+            </button>
+            <button onClick={() => setAutoBackupDue(false)} className="shrink-0 text-amber-500/70 active:text-amber-300" aria-label="Cerrar">
+              <X size={14} />
             </button>
           </div>
         )}
@@ -198,6 +198,23 @@ export default function App() {
           )}
         </div>
       </nav>
+    </div>
+  )
+}
+
+function Greeting() {
+  const { settings, loaded } = useSettings()
+  const hora = new Date().getHours()
+  const saludo = hora < 12 ? "Buenos días" : hora < 20 ? "Buenas tardes" : "Buenas noches"
+  const nombre = settings.nombreUsuario?.trim().split(/\s+/)[0] ?? ""
+
+  if (!loaded) return null
+
+  return (
+    <div className="px-4 pt-3 pb-1">
+      <p className="text-sm text-slate-400">
+        {saludo}{nombre ? <span className="text-slate-200 font-semibold">, {nombre}</span> : ""}
+      </p>
     </div>
   )
 }

@@ -286,6 +286,15 @@ export function SettingsPage() {
 
           <p className="text-xs text-slate-600 px-1">Los registros con más de 6 meses se eliminan automáticamente al abrir la app.</p>
         </Section>
+
+        {/* Créditos */}
+        <div className="pt-4 pb-2 text-center space-y-0.5">
+          <p className="text-xs text-slate-500">Planilla de Horas</p>
+          <p className="text-xs text-slate-600">
+            Desarrollado por <span className="text-slate-400 font-medium">Alonso</span>
+          </p>
+          <p className="text-[11px] text-slate-700">Hecho con ❤ en Argentina</p>
+        </div>
       </div>
     </div>
   )
