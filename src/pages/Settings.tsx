@@ -303,7 +303,6 @@ export function SettingsPage() {
             Desarrollado por <span className="text-slate-400 font-medium">Nicolas Vazquez</span>{' '}
             <span className="text-slate-500">{KAOMOJI}</span>
           </p>
-          <p className="text-[11px] text-slate-700">Hecho con ❤ en Argentina</p>
         </div>
       </div>
     </div>
