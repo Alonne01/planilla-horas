@@ -277,7 +277,7 @@ export function HorasTrabajoPage() {
   const periodoEndStr = periodoEnd(mes, anio).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
 
   return (
-    <div className="min-h-screen bg-slate-900 pb-24">
+    <div className="h-[100dvh] overflow-hidden bg-slate-900 pb-24">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
         <div className="flex items-center justify-between px-4 py-3">
