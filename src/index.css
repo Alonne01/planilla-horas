@@ -89,3 +89,6 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
 }
 @keyframes fab-pop { 0% { transform: scale(1); } 50% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
+/* ─── Barra de cuenta regresiva (aviso de backup) ─── */
+@keyframes countdown-bar { from { width: 100%; } to { width: 0%; } }
+

@@ -88,6 +88,12 @@ export default function App() {
     return () => clearTimeout(t)
   }, [autoBackupDue])
 
+  // Bloquear scroll en la pantalla de Horas (no se necesita)
+  useEffect(() => {
+    document.body.style.overflow = tab === 'horas' ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [tab])
+
   async function handleAutoBackupDownload() {
     try {
       const json = await exportBackupJSON()
@@ -155,18 +161,24 @@ export default function App() {
           </div>
         )}
         {autoBackupDue && (
-          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 text-xs text-amber-300/90">
-            <AlertTriangle size={14} className="shrink-0 text-amber-400/80" />
-            <span className="flex-1 leading-snug">Conviene descargar un backup.</span>
-            <button
-              onClick={handleAutoBackupDownload}
-              className="shrink-0 flex items-center gap-1 font-semibold text-amber-300 active:text-amber-200"
-            >
-              <Download size={13} /> Backup
-            </button>
-            <button onClick={() => setAutoBackupDue(false)} className="shrink-0 text-amber-500/70 active:text-amber-300" aria-label="Cerrar">
-              <X size={14} />
-            </button>
+          <div className="mx-4 mt-2 rounded-lg bg-amber-500/10 border border-amber-500/20 overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-amber-300/90">
+              <AlertTriangle size={14} className="shrink-0 text-amber-400/80" />
+              <span className="flex-1 leading-snug">Conviene descargar un backup.</span>
+              <button
+                onClick={handleAutoBackupDownload}
+                className="shrink-0 flex items-center gap-1 font-semibold text-amber-300 active:text-amber-200"
+              >
+                <Download size={13} /> Backup
+              </button>
+              <button onClick={() => setAutoBackupDue(false)} className="shrink-0 text-amber-500/70 active:text-amber-300" aria-label="Cerrar">
+                <X size={14} />
+              </button>
+            </div>
+            {/* Barra de tiempo: indica cuánto falta para que se oculte */}
+            <div className="h-0.5 bg-amber-500/15">
+              <div className="h-full bg-amber-400/70 animate-[countdown-bar_3s_linear_forwards]" />
+            </div>
           </div>
         )}
         {autoBackupDone && (
