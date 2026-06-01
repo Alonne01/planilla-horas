@@ -88,8 +88,9 @@ export default function App() {
     return () => clearTimeout(t)
   }, [autoBackupDue])
 
-  // Bloquear scroll en la pantalla de Horas (no se necesita)
+  // Bloquear scroll en la pantalla de Horas (no se necesita) y volver arriba al cambiar de pestaña
   useEffect(() => {
+    window.scrollTo(0, 0)
     document.body.style.overflow = tab === 'horas' ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [tab])
