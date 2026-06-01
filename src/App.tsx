@@ -81,6 +81,13 @@ export default function App() {
     init()
   }, [])
 
+  // El aviso de backup se muestra 3 segundos y se oculta solo
+  useEffect(() => {
+    if (!autoBackupDue) return
+    const t = setTimeout(() => setAutoBackupDue(false), 3000)
+    return () => clearTimeout(t)
+  }, [autoBackupDue])
+
   async function handleAutoBackupDownload() {
     try {
       const json = await exportBackupJSON()
