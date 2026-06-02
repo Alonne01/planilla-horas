@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays, Banknote } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros } from '../db/database'
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
+import { CONVENIOS, TURNOS, isSalaryUser, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -40,6 +41,13 @@ export function SettingsPage() {
   const [diagrama, setDiagrama] = useState<DiagramaPatternKey>('LUNES_VIERNES')
   const [diagramaFecha, setDiagramaFecha] = useState('')
   const [dirty, setDirty] = useState(false)
+  // Salario (visible sólo para el usuario de prueba)
+  const [convenio, setConvenio] = useState<Convenio>('CCT_637_11')
+  const [sueldoBasico, setSueldoBasico] = useState('')
+  const [fechaIngreso, setFechaIngreso] = useState('')
+  const [tipoTurno, setTipoTurno] = useState<TipoTurno>('NINGUNO')
+  const [zonaVM, setZonaVM] = useState(false)
+  const [tasaDesarraigo, setTasaDesarraigo] = useState(0.20)
 
   useEffect(() => {
     setBackupOverdue(msSinceLastBackup() > SEVEN_DAYS_MS)
@@ -53,6 +61,12 @@ export function SettingsPage() {
     setDiagramaFecha(
       settings.diagramaInicioMs ? localDateStr(settings.diagramaInicioMs) : ''
     )
+    setConvenio(settings.convenio)
+    setSueldoBasico(settings.sueldoBasico ? String(settings.sueldoBasico) : '')
+    setFechaIngreso(settings.fechaIngresoMs ? localDateStr(settings.fechaIngresoMs) : '')
+    setTipoTurno(settings.tipoTurno)
+    setZonaVM(settings.zonaVacaMuerta)
+    setTasaDesarraigo(settings.tasaDesarraigo644)
     setDirty(false)
   }, [loaded]) // intentionally only on mount
 
@@ -67,6 +81,12 @@ export function SettingsPage() {
         nombreUsuario: nombre,
         diagrama,
         diagramaInicioMs: diagramaFecha ? parseDateLocal(diagramaFecha) : 0,
+        convenio,
+        sueldoBasico: parseFloat(sueldoBasico) || 0,
+        fechaIngresoMs: fechaIngreso ? parseDateLocal(fechaIngreso) : 0,
+        tipoTurno,
+        zonaVacaMuerta: zonaVM,
+        tasaDesarraigo644: tasaDesarraigo,
       })
       setDirty(false)
       flash('Configuración guardada ✓')
@@ -157,6 +177,90 @@ export function SettingsPage() {
             />
           </Field>
         </Section>
+
+        {/* Salario y convenio — visible sólo para el usuario de prueba */}
+        {isSalaryUser(nombre) && (
+          <Section title="Salario y convenio">
+            <Field label="Convenio">
+              <div className="space-y-2">
+                {CONVENIOS.map(c => (
+                  <button
+                    key={c.key}
+                    onClick={() => { setConvenio(c.key); setDirty(true) }}
+                    className={`w-full py-2.5 px-3 rounded-xl text-sm font-medium text-left transition-colors ${convenio === c.key ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            <Field label="Sueldo básico ($)">
+              <input
+                type="number"
+                inputMode="decimal"
+                value={sueldoBasico}
+                onChange={e => { setSueldoBasico(e.target.value); setDirty(true) }}
+                className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
+                placeholder="Ej: 2057223.77"
+              />
+            </Field>
+
+            <Field label="Fecha de ingreso (para antigüedad)">
+              <input
+                type="date"
+                value={fechaIngreso}
+                onChange={e => { setFechaIngreso(e.target.value); setDirty(true) }}
+                className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
+              />
+            </Field>
+
+            {convenio === 'CCT_644_12' && (
+              <>
+                <Field label="Turno">
+                  <div className="grid grid-cols-2 gap-2">
+                    {TURNOS.map(t => (
+                      <button
+                        key={t.key}
+                        onClick={() => { setTipoTurno(t.key); setDirty(true) }}
+                        className={`py-2 px-2 rounded-xl text-xs font-medium transition-colors ${tipoTurno === t.key ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+
+                <button
+                  onClick={() => { setZonaVM(v => !v); setDirty(true) }}
+                  className={`w-full py-2.5 px-3 rounded-xl text-sm font-medium flex items-center justify-between transition-colors ${zonaVM ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                >
+                  <span>Zona Vaca Muerta (+85%)</span>
+                  <span className="text-xs font-bold">{zonaVM ? 'SÍ' : 'NO'}</span>
+                </button>
+
+                <Field label="Desarraigo">
+                  <div className="grid grid-cols-3 gap-2">
+                    {[0, 0.10, 0.20].map(t => (
+                      <button
+                        key={t}
+                        onClick={() => { setTasaDesarraigo(t); setDirty(true) }}
+                        className={`py-2 rounded-xl text-xs font-medium transition-colors ${tasaDesarraigo === t ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                      >
+                        {Math.round(t * 100)}%
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+              </>
+            )}
+
+            <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
+              <Banknote size={13} className="text-slate-600 shrink-0 mt-0.5" />
+              Las horas, viaje y nocturnas salen de la planilla. El detalle se ve en la pestaña Sueldo y el resumen en Análisis.
+            </p>
+          </Section>
+        )}
 
         {/* Diagrama */}
         <Section title="Diagrama de trabajo">

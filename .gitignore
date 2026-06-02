@@ -3,3 +3,6 @@ dist
 *.local
 .env
 .env.*
+
+# Datos de referencia: recibos de sueldo reales (PII) — no commitear ni deployar
+/planillas de horas y recibos de sueldo petroleros privados/

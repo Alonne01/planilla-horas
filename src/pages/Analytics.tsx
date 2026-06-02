@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   BarChart3, Activity, TrendingUp, TrendingDown, Minus,
   Briefcase, Clock, Plane, Truck, BedDouble, Sun, Banknote, Gauge,
@@ -7,6 +7,8 @@ import { useAnalytics, shiftPeriodo, MESES_ES } from '../hooks/useAnalytics'
 import type { PeriodoStats } from '../hooks/useAnalytics'
 import { StackedBars, TrendLines } from '../components/AnalyticsCharts'
 import { defaultPeriodoMes, defaultPeriodoAnio } from '../lib/diagrama'
+import { useSettings } from '../hooks/useSettings'
+import { calcularSueldo, configFromSettings, isSalaryUser, fmtPesos, type SalaryEstimate } from '../lib/calculo-salarial'
 
 function fmt(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1)
@@ -16,6 +18,7 @@ export function AnalyticsPage() {
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const { periodos, loading } = useAnalytics(mes, anio, 2)
+  const { settings } = useSettings()
 
   function cambiarMes(delta: number) {
     const { mes: m, anio: a } = shiftPeriodo(mes, anio, delta)
@@ -25,6 +28,12 @@ export function AnalyticsPage() {
   const actual = periodos[periodos.length - 1]
   const anterior = periodos[periodos.length - 2]
   const hayDatos = periodos.some(p => p.total > 0 || p.diasFranco > 0 || p.viaje > 0)
+
+  const showSalary = isSalaryUser(settings.nombreUsuario) && settings.sueldoBasico > 0
+  const est = useMemo<SalaryEstimate | null>(
+    () => (showSalary && actual ? calcularSueldo(actual.registros, configFromSettings(settings)) : null),
+    [showSalary, actual, settings],
+  )
 
   return (
     <div className="min-h-screen bg-slate-900 pb-24">
@@ -69,6 +78,13 @@ export function AnalyticsPage() {
               <Kpi icon={<Plane size={15} />} label="Hs viaje" value={fmt(actual.viaje)} />
             </div>
           </Section>
+
+          {/* ─── Estimación salarial (sólo usuario de prueba) ─── */}
+          {est && est.diasTrabajados > 0 && (
+            <Section delay={40}>
+              <SalaryCard est={est} />
+            </Section>
+          )}
 
           {/* ─── Gráfico de barras ─── */}
           <Section delay={80}>
@@ -172,6 +188,34 @@ function Kpi({ icon, label, value, accent = 'text-white' }: { icon: React.ReactN
       <div className="flex items-center gap-1 text-slate-500">{icon}</div>
       <div className={`text-xl font-bold mt-1 ${accent}`}>{value}</div>
       <div className="text-[11px] text-slate-400">{label}</div>
+    </div>
+  )
+}
+
+function SalaryCard({ est }: { est: SalaryEstimate }) {
+  return (
+    <div className="rounded-2xl bg-gradient-to-br from-emerald-900/40 to-slate-800/60 border border-emerald-800/40 p-4">
+      <div className="flex items-center gap-1.5 mb-1">
+        <Banknote size={15} className="text-emerald-400" />
+        <h3 className="text-sm font-semibold text-slate-200">Estimación salarial</h3>
+      </div>
+      <div className="text-xs text-emerald-300/80">Neto estimado</div>
+      <div className="text-3xl font-bold text-white leading-none mt-0.5">{fmtPesos(est.netoEstimado)}</div>
+      <div className="grid grid-cols-3 gap-2 mt-3">
+        <SalMini label="Bruto" value={fmtPesos(est.bruto)} />
+        <SalMini label="Retenciones" value={`-${fmtPesos(est.retenciones)}`} accent="text-red-300" />
+        <SalMini label="Valor hora" value={fmtPesos(est.horaBase)} />
+      </div>
+      <p className="text-[11px] text-slate-500 mt-2">Detalle completo en la pestaña Sueldo.</p>
+    </div>
+  )
+}
+
+function SalMini({ label, value, accent = 'text-white' }: { label: string; value: string; accent?: string }) {
+  return (
+    <div className="rounded-xl bg-slate-800/80 border border-slate-700/50 px-2.5 py-2">
+      <div className={`text-sm font-bold ${accent}`}>{value}</div>
+      <div className="text-[10px] text-slate-400">{label}</div>
     </div>
   )
 }

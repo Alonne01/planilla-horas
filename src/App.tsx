@@ -4,8 +4,9 @@ import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
+import { isSalaryUser } from "./lib/calculo-salarial"
 import { InstallGate } from "./components/InstallGate"
-import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, pruneOldRegistros, migrateHorasViaje } from "./db/database"
+import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, pruneOldRegistros, migrateHorasViaje, getSettings } from "./db/database"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 
@@ -14,7 +15,6 @@ function isStandalone() {
     (window.navigator as any).standalone === true
 }
 
-const SHOW_SALARY = import.meta.env.VITE_SHOW_SALARY === "true"
 const AUTO_BACKUP_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000 // 2 days
 
 // Aviso "sin datos guardados": reaparece como mucho 1 vez por semana y se oculta solo
@@ -41,6 +41,9 @@ function goToTab(next: Tab, current: Tab, setter: (t: Tab) => void) {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("horas")
+  // La proyección salarial queda oculta salvo para el usuario de prueba (período de prueba).
+  // Se re-lee al cambiar de pestaña para reflejar el nombre apenas se guarda en Configuración.
+  const [showSalary, setShowSalary] = useState(false)
   const [recovered, setRecovered] = useState(false)
   const [persistDenied, setPersistDenied] = useState(false)
   const [autoBackupDue, setAutoBackupDue] = useState(false)
@@ -111,6 +114,11 @@ export default function App() {
     window.scrollTo(0, 0)
     document.body.style.overflow = tab === 'horas' ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
+  }, [tab])
+
+  // Re-evaluar el gate salarial al cambiar de pestaña (refleja el nombre recién guardado)
+  useEffect(() => {
+    getSettings().then(s => setShowSalary(isSalaryUser(s.nombreUsuario))).catch(() => {})
   }, [tab])
 
   async function handleAutoBackupDownload() {
@@ -233,7 +241,7 @@ export default function App() {
         {tab === "horas" && <HorasTrabajoPage />}
         {tab === "analytics" && <AnalyticsPage />}
         {tab === "settings" && <SettingsPage />}
-        {tab === "salary" && SHOW_SALARY && <ProyeccionSalarialPage />}
+        {tab === "salary" && showSalary && <ProyeccionSalarialPage />}
       </div>
 
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30 pb-[env(safe-area-inset-bottom)]">
@@ -241,7 +249,7 @@ export default function App() {
           <NavTab icon={<Clock size={22} />} label="Horas" active={tab === "horas"} onClick={() => goToTab("horas", tab, setTab)} />
           <NavTab icon={<BarChart3 size={22} />} label="Análisis" active={tab === "analytics"} onClick={() => goToTab("analytics", tab, setTab)} />
           <NavTab icon={<Settings2 size={22} />} label="Config" active={tab === "settings"} onClick={() => goToTab("settings", tab, setTab)} />
-          {SHOW_SALARY && (
+          {showSalary && (
             <NavTab icon={<Banknote size={22} />} label="Sueldo" active={tab === "salary"} onClick={() => goToTab("salary", tab, setTab)} />
           )}
         </div>
