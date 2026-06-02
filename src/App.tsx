@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { Clock, Settings2, Banknote, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X } from "lucide-react"
+import { Clock, Settings2, Banknote, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X, Database } from "lucide-react"
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
@@ -16,6 +16,11 @@ function isStandalone() {
 
 const SHOW_SALARY = import.meta.env.VITE_SHOW_SALARY === "true"
 const AUTO_BACKUP_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000 // 2 days
+
+// Aviso "sin datos guardados": reaparece como mucho 1 vez por semana y se oculta solo
+const EMPTY_DB_ALERT_KEY = "planilla-empty-db-alert-ts"
+const EMPTY_DB_ALERT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000 // 1 semana
+const EMPTY_DB_AUTOHIDE_MS = 8000
 
 type Tab = "horas" | "analytics" | "settings" | "salary"
 const TAB_ORDER: Tab[] = ["horas", "analytics", "settings", "salary"]
@@ -70,7 +75,13 @@ export default function App() {
       try {
         const count = await db.registros.count()
         if (count === 0 && !didRecover) {
-          setEmptyDb(true)
+          // Mostrar el aviso a lo sumo 1 vez por semana
+          const last = localStorage.getItem(EMPTY_DB_ALERT_KEY)
+          const since = last ? Date.now() - parseInt(last, 10) : Infinity
+          if (since > EMPTY_DB_ALERT_INTERVAL_MS) {
+            localStorage.setItem(EMPTY_DB_ALERT_KEY, String(Date.now()))
+            setEmptyDb(true)
+          }
         } else if (count > 0 && msSinceAutoBackup() > AUTO_BACKUP_INTERVAL_MS) {
           setAutoBackupDue(true)
         }
@@ -87,6 +98,13 @@ export default function App() {
     const t = setTimeout(() => setAutoBackupDue(false), 3000)
     return () => clearTimeout(t)
   }, [autoBackupDue])
+
+  // El aviso "sin datos guardados" también se oculta solo
+  useEffect(() => {
+    if (!emptyDb) return
+    const t = setTimeout(() => setEmptyDb(false), EMPTY_DB_AUTOHIDE_MS)
+    return () => clearTimeout(t)
+  }, [emptyDb])
 
   // Bloquear scroll en la pantalla de Horas (no se necesita) y volver arriba al cambiar de pestaña
   useEffect(() => {
@@ -189,18 +207,28 @@ export default function App() {
           </div>
         )}
         {emptyDb && (
-          <div className="mx-4 mt-3 p-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 text-sm">
-            <p className="font-semibold text-white mb-1">Sin datos guardados</p>
-            <p className="text-xs text-slate-400 mb-3">Si tenías datos anteriores, podés restaurarlos desde un backup JSON.</p>
-            <button
-              onClick={() => restoreRef.current?.click()}
-              className="w-full py-2 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center gap-2"
-            >
-              <FolderOpen size={14} /> Restaurar desde backup
-            </button>
-            <input ref={restoreRef} type="file" accept=".json" onChange={handleRestoreFromFile} className="hidden" />
+          <div className="mx-4 mt-2 rounded-lg bg-slate-700/20 border border-slate-600/30 overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300">
+              <Database size={14} className="shrink-0 text-slate-400" />
+              <span className="flex-1 leading-snug">Sin datos guardados.</span>
+              <button
+                onClick={() => restoreRef.current?.click()}
+                className="shrink-0 flex items-center gap-1 font-semibold text-blue-300 active:text-blue-200"
+              >
+                <FolderOpen size={13} /> Restaurar
+              </button>
+              <button onClick={() => setEmptyDb(false)} className="shrink-0 text-slate-500 active:text-slate-300" aria-label="Cerrar">
+                <X size={14} />
+              </button>
+            </div>
+            {/* Barra de tiempo: indica cuánto falta para que se oculte */}
+            <div className="h-0.5 bg-slate-600/20">
+              <div className="h-full bg-slate-400/60 animate-[countdown-bar_8s_linear_forwards]" />
+            </div>
           </div>
         )}
+        {/* Input de restauración: fuera del banner para que sobreviva al auto-cierre durante la selección de archivo */}
+        <input ref={restoreRef} type="file" accept=".json" onChange={handleRestoreFromFile} className="hidden" />
 
         {tab === "horas" && <HorasTrabajoPage />}
         {tab === "analytics" && <AnalyticsPage />}
