@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo } from 'react'
 import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb, MoreVertical, Trash2, CalendarX2, Download } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
@@ -15,6 +15,12 @@ import { db, shadowBackup, type RegistroHoras } from '../db/database'
 
 function dayKey(d: Date) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+
+/** Reconstruye la fecha (mediodía) desde una clave `año-mes-día`. */
+function dateFromKey(key: string): Date {
+  const [y, m, d] = key.split('-').map(Number)
+  return new Date(y, m, d, 12, 0, 0)
 }
 
 /**
@@ -67,14 +73,13 @@ export function HorasTrabajoPage() {
     try { localStorage.setItem('planilla-tip-copiar', 'dismissed') } catch { /* ignore */ }
   }
 
-  // ─── Modo "aplicar datos a otro día" (reemplaza copiar día anterior / copiar a días hábiles) ───
+  // ─── Modo "aplicar datos a otro día": se pintan los días destino (tocando o arrastrando) ───
   const [applySource, setApplySource] = useState<RegistroHoras | null>(null)
   const [applySourceKey, setApplySourceKey] = useState<string | null>(null)
-  const [confirmApply, setConfirmApply] = useState<Date | null>(null)      // pregunta "¿Aplicar a otro día?"
-  const [confirmReplace, setConfirmReplace] = useState<Date | null>(null)  // pregunta "¿Reemplazar?"
+  const [confirmApply, setConfirmApply] = useState<Date | null>(null)        // pregunta "¿Aplicar a otro día?"
+  const [paintedKeys, setPaintedKeys] = useState<Set<string>>(new Set())     // días pintados (aún sin escribir en DB)
+  const [confirmCommit, setConfirmCommit] = useState<number | null>(null)    // nº de días con datos a sobrescribir (pendiente de confirmar)
   const [pulseKey, setPulseKey] = useState<string | null>(null)
-  const [appliedCount, setAppliedCount] = useState(0)
-  const applySnapshotRef = useRef<RegistroHoras[]>([])  // snapshot del período al entrar al modo aplicar (para Cancelar)
 
   // ─── Acciones de borrado: menú + modo "borrar días" + borrar período ───
   const [showActionsMenu, setShowActionsMenu] = useState(false)
@@ -124,35 +129,33 @@ export function HorasTrabajoPage() {
     })
   }
 
-  /** Aplica los datos del día origen a `target` (sobrescribe en su lugar si ya existía). */
-  async function doApply(target: Date) {
-    if (!applySource) return
-    const key = dayKey(target)
-    const existing = byDay.get(key)
-    const clone = cloneForDate(applySource, target, settings.diagrama, settings.diagramaInicioMs)
-    if (existing) clone.id = existing.id  // sobrescribir en su lugar → sin duplicados
-    await upsert(clone)
-    setAppliedCount(c => c + 1)
-    pulse(key)
+  /** Pinta (mode 'add') o despinta (mode 'remove') un día destino. Sin escribir en DB todavía. */
+  function paintDay(date: Date, mode: 'add' | 'remove') {
+    const key = dayKey(date)
+    if (key === applySourceKey) return  // nunca el día origen
+    setPaintedKeys(prev => {
+      if (mode === 'add' ? prev.has(key) : !prev.has(key)) return prev
+      const next = new Set(prev)
+      if (mode === 'add') next.add(key)
+      else next.delete(key)
+      return next
+    })
+    if (mode === 'add') pulse(key)
   }
 
-  /** Tap de un día: en modo aplicar copia los datos; si no, abre el diálogo de registro. */
+  /** Tap de un día: en modo aplicar no hace nada (lo maneja el pintado); si no, abre el diálogo. */
   function handleDayTap(date: Date) {
     if (deleteMode) { toggleDeleteDay(date); return }
-    if (!applySource) { setSelectedDate(date); return }
-    const key = dayKey(date)
-    if (key === applySourceKey) return                       // no aplicar sobre sí mismo
-    if (byDay.has(key)) { setConfirmReplace(date); return }   // ya tiene datos → preguntar
-    doApply(date)
+    if (applySource) return
+    setSelectedDate(date)
   }
 
   function startApplyMode(sourceDate: Date) {
     const src = byDay.get(dayKey(sourceDate))
     if (!src) return
-    applySnapshotRef.current = registros  // snapshot del período para poder deshacer con "Cancelar"
     setApplySource(src)
     setApplySourceKey(dayKey(sourceDate))
-    setAppliedCount(0)
+    setPaintedKeys(new Set())
     setConfirmApply(null)
   }
 
@@ -160,26 +163,32 @@ export function HorasTrabajoPage() {
     setApplySource(null)
     setApplySourceKey(null)
     setPulseKey(null)
-    setAppliedCount(0)
-    setConfirmReplace(null)
+    setPaintedKeys(new Set())
+    setConfirmCommit(null)
   }
 
-  // "Cancelar": deshace lo aplicado en esta sesión restaurando el snapshot del período.
-  async function cancelApplyMode() {
-    if (appliedCount > 0) {
-      const snap = applySnapshotRef.current
-      const snapIds = new Set(snap.map(r => r.id))
-      const toDelete = registros.filter(r => !snapIds.has(r.id)).map(r => r.id)
-      try {
-        await db.transaction('rw', db.registros, async () => {
-          if (toDelete.length) await db.registros.bulkDelete(toDelete)
-          if (snap.length) await db.registros.bulkPut(snap)
-        })
-        await shadowBackup()
-        await reload()
-      } catch (e) {
-        console.error('Error al deshacer la aplicación:', e)
-      }
+  /** "Finalizar": si hay días pintados que ya tenían datos, pide confirmar; si no, escribe directo. */
+  function finalizarApply() {
+    const overwriteCount = [...paintedKeys].filter(k => byDay.has(k)).length
+    if (overwriteCount > 0) { setConfirmCommit(overwriteCount); return }
+    commitPaint()
+  }
+
+  /** Escribe en DB todos los días pintados (sobrescribe en su lugar si ya existían → sin duplicados). */
+  async function commitPaint() {
+    if (!applySource || paintedKeys.size === 0) { exitApplyMode(); return }
+    const writes = [...paintedKeys].map(key => {
+      const clone = cloneForDate(applySource, dateFromKey(key), settings.diagrama, settings.diagramaInicioMs)
+      const existing = byDay.get(key)
+      if (existing) clone.id = existing.id
+      return clone
+    })
+    try {
+      await db.transaction('rw', db.registros, async () => { await db.registros.bulkPut(writes) })
+      await shadowBackup()
+      await reload()
+    } catch (e) {
+      console.error('Error al aplicar los días:', e)
     }
     exitApplyMode()
   }
@@ -340,6 +349,8 @@ export function HorasTrabajoPage() {
               onContext={openContext}
               applyMode={!!applySource}
               sourceKey={applySourceKey}
+              paintedKeys={paintedKeys}
+              onPaint={paintDay}
               pulseKey={pulseKey}
               deleteMode={deleteMode}
               selectedDeleteKeys={selectedToDelete}
@@ -453,27 +464,28 @@ export function HorasTrabajoPage() {
               <Copy size={18} className="text-sky-300 shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-white leading-snug">
-                  Tocá los días que quieras llenar con los datos de este día
+                  Pintá los días a llenar: tocá o arrastrá el dedo. Tocá de nuevo para despintar.
                 </div>
                 <div className="text-xs text-sky-300/90 mt-0.5">
-                  {appliedCount > 0
-                    ? `${appliedCount} día${appliedCount === 1 ? '' : 's'} aplicado${appliedCount === 1 ? '' : 's'}`
+                  {paintedKeys.size > 0
+                    ? `${paintedKeys.size} día${paintedKeys.size === 1 ? '' : 's'} pintado${paintedKeys.size === 1 ? '' : 's'}`
                     : `Origen: ${new Date(applySource.fechaMs).toLocaleDateString('es-AR', { weekday: 'short', day: '2-digit', month: 'short' })}`}
                 </div>
               </div>
             </div>
             <div className="flex gap-2 mt-3">
               <button
-                onClick={cancelApplyMode}
+                onClick={exitApplyMode}
                 className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
               >
                 <X size={15} /> Cancelar
               </button>
               <button
-                onClick={exitApplyMode}
-                className="flex-1 py-2 rounded-xl bg-sky-600 text-white text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+                onClick={finalizarApply}
+                disabled={paintedKeys.size === 0}
+                className="flex-1 py-2 rounded-xl bg-sky-600 text-white text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:active:scale-100"
               >
-                <Check size={15} /> Finalizar
+                <Check size={15} /> Aplicar ({paintedKeys.size})
               </button>
             </div>
           </div>
@@ -491,15 +503,15 @@ export function HorasTrabajoPage() {
         />
       )}
 
-      {/* Confirmación: el día destino ya tiene datos */}
-      {confirmReplace && (
+      {/* Confirmación: algunos días pintados ya tienen datos guardados */}
+      {confirmCommit !== null && (
         <ConfirmModal
-          title="Ese día ya tiene datos"
-          message="¿Querés reemplazarlos con los datos del día origen?"
-          confirmLabel="Reemplazar"
+          title="Algunos días ya tienen datos"
+          message={`${confirmCommit} de los días pintados ya ${confirmCommit === 1 ? 'tiene datos guardados' : 'tienen datos guardados'}. ¿Querés reemplazar${confirmCommit === 1 ? 'los' : 'los'} con los del día origen?`}
+          confirmLabel="Reemplazar y aplicar"
           danger
-          onConfirm={() => { const d = confirmReplace; setConfirmReplace(null); doApply(d) }}
-          onCancel={() => setConfirmReplace(null)}
+          onConfirm={() => { setConfirmCommit(null); commitPaint() }}
+          onCancel={() => setConfirmCommit(null)}
         />
       )}
 

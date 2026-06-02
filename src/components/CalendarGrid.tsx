@@ -11,10 +11,14 @@ interface Props {
   diagramaInicioMs: number
   onSelectDate: (d: Date) => void
   onContext?: (date: Date, x: number, y: number) => void
-  /** Modo "aplicar a otro día" activo: deshabilita long-press, los taps aplican datos */
+  /** Modo "aplicar a otro día" activo: deshabilita long-press, se pintan los días destino */
   applyMode?: boolean
   /** Clave del día origen (resaltado mientras se aplica) */
   sourceKey?: string | null
+  /** Claves de los días pintados (seleccionados para llenar) */
+  paintedKeys?: Set<string> | null
+  /** Pinta (mode 'add') o despinta (mode 'remove') un día. Disparado al tocar o arrastrar. */
+  onPaint?: (date: Date, mode: 'add' | 'remove') => void
   /** Clave del día que debe reproducir la animación de aplicado */
   pulseKey?: string | null
   /** Modo "borrar días" activo: los taps marcan/desmarcan días para borrar */
@@ -27,6 +31,8 @@ const DIAS_HEADER = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do']
 const MESES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
 function fmt2(n: number) { return String(n).padStart(2, '0') }
+
+function keyOf(d: Date) { return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` }
 
 /** Monday-indexed day-of-week: Mon=0 … Sun=6 */
 function dowMon(d: Date) { return (d.getDay() + 6) % 7 }
@@ -52,15 +58,49 @@ function cellStyle(fecha: Date, reg: RegistroHoras | undefined, diagrama: Diagra
   return { bg: 'bg-slate-700/20 border-slate-600/30', label: '', labelColor: '' }
 }
 
-export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, pulseKey = null, deleteMode = false, selectedDeleteKeys = null }: Props) {
-  if (dias.length === 0) return null
-
+export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, paintedKeys = null, onPaint, pulseKey = null, deleteMode = false, selectedDeleteKeys = null }: Props) {
   // Single ref for long-press tracking (only one touch at a time)
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpFired = useRef(false)
   const lpMoved = useRef(false)
   const lpStart = useRef<{ x: number; y: number } | null>(null)
   const LP_MOVE_TOLERANCE = 10 // px — ignore finger jitter so the long-press still fires
+
+  // ─── Pintado por arrastre (modo aplicar): un "trazo" pinta o despinta según el primer día tocado ───
+  const paintActive = useRef(false)
+  const paintMode = useRef<'add' | 'remove'>('add')
+  const paintHandled = useRef<Set<string>>(new Set())  // días ya tocados en este trazo (no re-togglear)
+  const dateByKey = new Map(dias.map(d => [keyOf(d), d]))
+
+  function startStroke(date: Date) {
+    if (!applyMode) return
+    const k = keyOf(date)
+    paintActive.current = true
+    if (k === sourceKey) {                 // empezar el trazo sobre el origen: no se pinta, pero el arrastre sigue
+      paintMode.current = 'add'
+      paintHandled.current = new Set([k])
+      return
+    }
+    paintMode.current = paintedKeys?.has(k) ? 'remove' : 'add'
+    paintHandled.current = new Set([k])
+    onPaint?.(date, paintMode.current)
+  }
+
+  function moveStroke(clientX: number, clientY: number) {
+    if (!applyMode || !paintActive.current) return
+    const el = document.elementFromPoint(clientX, clientY)
+    const cell = (el as HTMLElement | null)?.closest('[data-daykey]') as HTMLElement | null
+    const k = cell?.dataset.daykey
+    if (!k || k === sourceKey || paintHandled.current.has(k)) return
+    const date = dateByKey.get(k)
+    if (!date) return
+    paintHandled.current.add(k)
+    onPaint?.(date, paintMode.current)
+  }
+
+  function endStroke() { paintActive.current = false }
+
+  if (dias.length === 0) return null
 
   // Pad start so row begins on Monday
   const startPad = dowMon(dias[0])
@@ -73,7 +113,14 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
   for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7))
 
   return (
-    <div className="px-2 pb-2">
+    <div
+      className={`px-2 pb-2 ${applyMode ? 'select-none' : ''}`}
+      style={applyMode ? { touchAction: 'none' } : undefined}
+      onPointerMove={applyMode ? e => moveStroke(e.clientX, e.clientY) : undefined}
+      onPointerUp={applyMode ? endStroke : undefined}
+      onPointerCancel={applyMode ? endStroke : undefined}
+      onPointerLeave={applyMode ? endStroke : undefined}
+    >
       {/* Day headers */}
       <div className="grid grid-cols-7 mb-1">
         {DIAS_HEADER.map(d => (
@@ -94,13 +141,29 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
               const h = reg && !esDiaNoTrabajado(reg) ? calcularHorasDia(reg) : null
               const isFirstOfMonth = date.getDate() === 1
               const isSource = applyMode && key === sourceKey
+              const isPainted = applyMode && !!paintedKeys?.has(key)
+              const isOverwrite = isPainted && !!reg          // día pintado que ya tenía datos → se sobrescribe
               const isPulsing = key === pulseKey
               const isSelectedForDelete = deleteMode && !!selectedDeleteKeys?.has(key)
+
+              const applyRing = isSource
+                ? 'ring-2 ring-sky-400 ring-offset-1 ring-offset-slate-900'
+                : isOverwrite
+                  ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-slate-900'
+                  : isPainted
+                    ? 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900'
+                    : ''
 
               return (
                 <button
                   key={di}
-                  onClick={() => { if (lpFired.current) { lpFired.current = false; return } onSelectDate(date) }}
+                  data-daykey={key}
+                  onClick={() => {
+                    if (applyMode) return  // en modo aplicar el pintado se maneja con pointer events
+                    if (lpFired.current) { lpFired.current = false; return }
+                    onSelectDate(date)
+                  }}
+                  onPointerDown={() => startStroke(date)}
                   onTouchStart={e => {
                     if (applyMode || deleteMode) return
                     lpFired.current = false; lpMoved.current = false
@@ -120,7 +183,7 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
                   }}
                   onTouchEnd={() => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }}
                   onContextMenu={e => { e.preventDefault(); if (!applyMode && !deleteMode) onContext?.(date, e.clientX, e.clientY) }}
-                  className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg} ${isSource ? 'ring-2 ring-sky-400 ring-offset-1 ring-offset-slate-900' : ''} ${isSelectedForDelete ? 'ring-2 ring-red-400 ring-offset-1 ring-offset-slate-900' : ''} ${deleteMode && !reg ? 'opacity-30' : ''} ${isPulsing ? (deleteMode ? 'animate-[delete-pulse_520ms_ease]' : 'animate-[apply-pulse_520ms_ease]') : ''} ${applyMode && !isSource ? 'cursor-pointer' : ''}`}
+                  className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg} ${applyRing} ${isSelectedForDelete ? 'ring-2 ring-red-400 ring-offset-1 ring-offset-slate-900' : ''} ${deleteMode && !reg ? 'opacity-30' : ''} ${isPulsing ? (deleteMode ? 'animate-[delete-pulse_520ms_ease]' : 'animate-[apply-pulse_520ms_ease]') : ''} ${applyMode && !isSource ? 'cursor-pointer' : ''}`}
                 >
                   {isFirstOfMonth && (
                     <span className="text-[8px] leading-none text-slate-500 uppercase tracking-wide">
