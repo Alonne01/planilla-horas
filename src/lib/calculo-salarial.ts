@@ -126,11 +126,12 @@ interface Agregados {
   diasCampo: number
   diasBase: number
   pernoctes: number
+  pernoctesTrailer: number
 }
 
 function agregar(registros: RegistroHoras[]): Agregados {
   let total50 = 0, total100 = 0, totalViaje = 0, totalNocturnas = 0
-  let diasTrabajados = 0, diasCampo = 0, diasBase = 0, pernoctes = 0
+  let diasTrabajados = 0, diasCampo = 0, diasBase = 0, pernoctes = 0, pernoctesTrailer = 0
 
   for (const reg of registros) {
     if (esDiaNoTrabajado(reg) || reg.esAusenciaJustificada) continue
@@ -145,8 +146,9 @@ function agregar(registros: RegistroHoras[]): Agregados {
     }
     totalViaje += reg.horasViaje ?? 0
     if (reg.pernocte === 'Hotel' || reg.pernocte === 'Trailer') pernoctes++
+    if (reg.pernocte === 'Trailer') pernoctesTrailer++
   }
-  return { total50, total100, totalViaje, totalNocturnas, diasTrabajados, diasCampo, diasBase, pernoctes }
+  return { total50, total100, totalViaje, totalNocturnas, diasTrabajados, diasCampo, diasBase, pernoctes, pernoctesTrailer }
 }
 
 // ─── Tipos de salida ────────────────────────────────────────────────────────────
@@ -287,10 +289,10 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
   const varViaje = a.totalViaje * valorUnidad
   const difNocturna = (hb / 7.5) * a.totalNocturnas
 
-  // Paso 6: desarraigo (base/30 × días campo × tasa).
+  // Paso 6: desarraigo — sólo se paga por días con pernocte en trailer (base/30 × días × tasa).
   const desarraigoBase = conformado + adicCampo + bonoPaz + varExtra50 + varExtra100 + difNocturna
-  const desarraigo = a.diasCampo > 0
-    ? (desarraigoBase / 30) * a.diasCampo * PRIV_TASA_DESARRAIGO
+  const desarraigo = a.pernoctesTrailer > 0
+    ? (desarraigoBase / 30) * a.pernoctesTrailer * PRIV_TASA_DESARRAIGO
     : 0
 
   // Paso 7: presentismo = 6% de todo lo demás remunerativo.
@@ -312,7 +314,7 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
   if (a.total50 > 0) variableItems.push({ codigo: '170', concepto: `Extras 50% (${fmtHs(a.total50)} hs)`, monto: varExtra50 })
   if (a.total100 > 0) variableItems.push({ codigo: '171', concepto: `Extras 100% (${fmtHs(a.total100)} hs)`, monto: varExtra100 })
   if (difNocturna > 0) variableItems.push({ codigo: '172', concepto: `Dif. Nocturnas (${fmtHs(a.totalNocturnas)} hs)`, monto: difNocturna })
-  if (desarraigo > 0) variableItems.push({ codigo: '191', concepto: `Desarraigo ${Math.round(PRIV_TASA_DESARRAIGO * 100)}% (${a.diasCampo} días)`, monto: desarraigo })
+  if (desarraigo > 0) variableItems.push({ codigo: '191', concepto: `Desarraigo ${Math.round(PRIV_TASA_DESARRAIGO * 100)}% (${a.pernoctesTrailer} días)`, monto: desarraigo })
   const subtotalVariables = variableItems.reduce((s, i) => s + i.monto, 0)
 
   const biRaw = subtotalFijos + subtotalVariables
