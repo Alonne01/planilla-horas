@@ -5,7 +5,7 @@ import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros } from '../db/database'
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
-import { CONVENIOS, TURNOS, isSalaryUser, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
+import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -62,7 +62,7 @@ export function SettingsPage() {
       settings.diagramaInicioMs ? localDateStr(settings.diagramaInicioMs) : ''
     )
     setConvenio(settings.convenio)
-    setSueldoBasico(settings.sueldoBasico ? String(settings.sueldoBasico) : '')
+    setSueldoBasico(fmtBasicoDisplay(settings.sueldoBasico))
     setFechaIngreso(settings.fechaIngresoMs ? localDateStr(settings.fechaIngresoMs) : '')
     setTipoTurno(settings.tipoTurno)
     setZonaVM(settings.zonaVacaMuerta)
@@ -82,7 +82,7 @@ export function SettingsPage() {
         diagrama,
         diagramaInicioMs: diagramaFecha ? parseDateLocal(diagramaFecha) : 0,
         convenio,
-        sueldoBasico: parseFloat(sueldoBasico) || 0,
+        sueldoBasico: parseBasicoInput(sueldoBasico),
         fechaIngresoMs: fechaIngreso ? parseDateLocal(fechaIngreso) : 0,
         tipoTurno,
         zonaVacaMuerta: zonaVM,
@@ -197,12 +197,12 @@ export function SettingsPage() {
 
             <Field label="Sueldo básico ($)">
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
                 value={sueldoBasico}
-                onChange={e => { setSueldoBasico(e.target.value); setDirty(true) }}
+                onChange={e => { setSueldoBasico(formatBasicoInput(e.target.value)); setDirty(true) }}
                 className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
-                placeholder="Ej: 2057223.77"
+                placeholder="Ej: 606.113,47"
               />
             </Field>
 
@@ -216,43 +216,13 @@ export function SettingsPage() {
             </Field>
 
             {convenio === 'CCT_644_12' && (
-              <>
-                <Field label="Turno">
-                  <div className="grid grid-cols-2 gap-2">
-                    {TURNOS.map(t => (
-                      <button
-                        key={t.key}
-                        onClick={() => { setTipoTurno(t.key); setDirty(true) }}
-                        className={`py-2 px-2 rounded-xl text-xs font-medium transition-colors ${tipoTurno === t.key ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-                </Field>
-
-                <button
-                  onClick={() => { setZonaVM(v => !v); setDirty(true) }}
-                  className={`w-full py-2.5 px-3 rounded-xl text-sm font-medium flex items-center justify-between transition-colors ${zonaVM ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}
-                >
-                  <span>Zona Vaca Muerta (+85%)</span>
-                  <span className="text-xs font-bold">{zonaVM ? 'SÍ' : 'NO'}</span>
-                </button>
-
-                <Field label="Desarraigo">
-                  <div className="grid grid-cols-3 gap-2">
-                    {[0, 0.10, 0.20].map(t => (
-                      <button
-                        key={t}
-                        onClick={() => { setTasaDesarraigo(t); setDirty(true) }}
-                        className={`py-2 rounded-xl text-xs font-medium transition-colors ${tasaDesarraigo === t ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}
-                      >
-                        {Math.round(t * 100)}%
-                      </button>
-                    ))}
-                  </div>
-                </Field>
-              </>
+              <div className="rounded-xl bg-slate-800/60 border border-slate-700/80 px-3 py-2.5 space-y-1">
+                <p className="text-xs font-semibold text-slate-300">Adicionales del convenio (fijos)</p>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Servicios especiales (turno +33%) · Zona Vaca Muerta (+85%) · Desarraigo 20%.
+                  Se aplican automáticamente: alcanza con cargar el sueldo básico.
+                </p>
+              </div>
             )}
 
             <p className="text-[11px] text-slate-500 flex items-start gap-1.5">

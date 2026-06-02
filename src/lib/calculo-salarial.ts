@@ -19,6 +19,14 @@ const TOPE_ANSES = 4_162_912.55
 /** Divisor del desarraigo jerárquico (147,78 ÷ 5). */
 const DIAS_BASE_637 = 147.78 / 5.0
 
+// CCT 644/12 — escenario fijo de WENLEN (servicios especiales en Vaca Muerta).
+// Verificado contra 13 recibos (mar-2025 → abr-2026): el operario SIEMPRE cobra
+// turno 33%, zona Vaca Muerta y desarraigo 20%. Por eso el estimado privado se
+// calcula sólo con el básico (igual que jerárquicos). Si la situación cambia, tocar acá.
+const PRIV_TURNO: TipoTurno = 'TURNO_S' // serv. especiales = 33% (en el recibo figura "turno A", mismo 0,33)
+const PRIV_ZONA_VM = true               // Añelo / Rincón de los Sauces = Vaca Muerta (+85% desde 11/2025)
+const PRIV_TASA_DESARRAIGO = 0.20       // "Desarraigo 20%" (cód. 191) en los 13 recibos
+
 export const CONVENIOS: { key: Convenio; label: string; divisor: number }[] = [
   { key: 'CCT_637_11', label: 'CCT 637/11 · Jerárquicos', divisor: 147.78 },
   { key: 'CCT_644_12', label: 'CCT 644/12 · Privados', divisor: 180.0 },
@@ -262,8 +270,8 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
   // Paso 1: conformado. Valor unitario = B × 0,99108% (= antigüedad/año = hora de viaje).
   const valorUnidad = B * 0.0099108
   const antiguedad = valorUnidad * config.antiguedadAnios
-  const turnoAdic = B * turnoFactor(config.tipoTurno)
-  const zonaVM = config.zonaVacaMuerta ? (B + turnoAdic) * 0.85 : 0
+  const turnoAdic = B * turnoFactor(PRIV_TURNO)
+  const zonaVM = PRIV_ZONA_VM ? (B + turnoAdic) * 0.85 : 0
   const conformado = B + turnoAdic + zonaVM
 
   // Pasos 2–3: adicionales fijos del convenio (% del básico).
@@ -281,8 +289,8 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
 
   // Paso 6: desarraigo (base/30 × días campo × tasa).
   const desarraigoBase = conformado + adicCampo + bonoPaz + varExtra50 + varExtra100 + difNocturna
-  const desarraigo = config.tasaDesarraigo644 > 0 && a.diasCampo > 0
-    ? (desarraigoBase / 30) * a.diasCampo * config.tasaDesarraigo644
+  const desarraigo = a.diasCampo > 0
+    ? (desarraigoBase / 30) * a.diasCampo * PRIV_TASA_DESARRAIGO
     : 0
 
   // Paso 7: presentismo = 6% de todo lo demás remunerativo.
@@ -290,7 +298,7 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
 
   const fijoItems: LineItem[] = [{ codigo: '2', concepto: 'Sueldo Básico', monto: B }]
   if (antiguedad > 0) fijoItems.push({ codigo: '30', concepto: `Antigüedad (${config.antiguedadAnios} años)`, monto: antiguedad })
-  if (turnoAdic > 0) fijoItems.push({ codigo: '18', concepto: `Diferencial ${TURNOS.find(t => t.key === config.tipoTurno)?.label ?? ''}`, monto: turnoAdic })
+  if (turnoAdic > 0) fijoItems.push({ codigo: '18', concepto: `Diferencial ${TURNOS.find(t => t.key === PRIV_TURNO)?.label ?? ''}`, monto: turnoAdic })
   if (zonaVM > 0) fijoItems.push({ codigo: '24', concepto: 'Zona Vaca Muerta +85%', monto: zonaVM })
   fijoItems.push(
     { codigo: '102', concepto: 'Adicional Torre/Campo', monto: adicCampo },
@@ -304,7 +312,7 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
   if (a.total50 > 0) variableItems.push({ codigo: '170', concepto: `Extras 50% (${fmtHs(a.total50)} hs)`, monto: varExtra50 })
   if (a.total100 > 0) variableItems.push({ codigo: '171', concepto: `Extras 100% (${fmtHs(a.total100)} hs)`, monto: varExtra100 })
   if (difNocturna > 0) variableItems.push({ codigo: '172', concepto: `Dif. Nocturnas (${fmtHs(a.totalNocturnas)} hs)`, monto: difNocturna })
-  if (desarraigo > 0) variableItems.push({ codigo: '191', concepto: `Desarraigo ${Math.round(config.tasaDesarraigo644 * 100)}% (${a.diasCampo} días)`, monto: desarraigo })
+  if (desarraigo > 0) variableItems.push({ codigo: '191', concepto: `Desarraigo ${Math.round(PRIV_TASA_DESARRAIGO * 100)}% (${a.diasCampo} días)`, monto: desarraigo })
   const subtotalVariables = variableItems.reduce((s, i) => s + i.monto, 0)
 
   const biRaw = subtotalFijos + subtotalVariables
@@ -327,7 +335,7 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
   if (a.diasCampo > 0) noRemItems.push({ codigo: '40012', concepto: `Vianda horas extras (${a.diasCampo} × 2)`, monto: a.diasCampo * 2 * 18674 })
   noRemItems.push({ codigo: '40497', concepto: 'SNR 3% s/remunerativo', monto: biRaw * 0.03 })
   noRemItems.push({ codigo: '42210', concepto: 'Asig. Vianda Fija', monto: 546197 })
-  if (config.zonaVacaMuerta) noRemItems.push({ codigo: '42220', concepto: 'Asig. Vaca Muerta', monto: 380000 })
+  if (PRIV_ZONA_VM) noRemItems.push({ codigo: '42220', concepto: 'Asig. Vaca Muerta', monto: 380000 })
   const subtotalNoRemunerativo = noRemItems.reduce((s, i) => s + i.monto, 0)
 
   const bruto = subtotalFijos + subtotalVariables + subtotalNoRemunerativo
@@ -346,4 +354,28 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
 /** Formatea pesos argentinos sin decimales. */
 export function fmtPesos(n: number): string {
   return '$' + Math.round(n).toLocaleString('es-AR')
+}
+
+// ─── Formato del input de sueldo básico (es-AR: miles "." / decimal ",") ───────
+
+/** Número → string es-AR para precargar el input ("" si es 0). Ej: 606113.47 → "606.113,47". */
+export function fmtBasicoDisplay(n: number): string {
+  if (!n || !isFinite(n)) return ''
+  return n.toLocaleString('es-AR', { maximumFractionDigits: 2 })
+}
+
+/** Reformatea en vivo lo que tipea el usuario: puntos de miles + una sola coma decimal (máx. 2). */
+export function formatBasicoInput(raw: string): string {
+  let s = raw.replace(/[^\d,]/g, '')                                  // sólo dígitos y comas
+  const i = s.indexOf(',')
+  if (i !== -1) s = s.slice(0, i + 1) + s.slice(i + 1).replace(/,/g, '') // una sola coma
+  const [ent, dec] = s.split(',')
+  const entFmt = ent.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return s.includes(',') ? `${entFmt || '0'},${(dec ?? '').slice(0, 2)}` : entFmt
+}
+
+/** String es-AR del input → número. Ej: "606.113,47" → 606113.47. */
+export function parseBasicoInput(s: string): number {
+  if (!s) return 0
+  return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0
 }
