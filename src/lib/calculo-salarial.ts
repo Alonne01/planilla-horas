@@ -52,9 +52,22 @@ export function convenioLabel(c: Convenio): string {
 function normalizar(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 }
+// Whitelist de la versión de prueba del cálculo salarial: SÓLO estos nombres ven la
+// pestaña "Sueldo" y la sección "Salario y convenio". Agregá testers a la lista (no
+// importan acentos, mayúsculas/minúsculas ni espacios de más: se normaliza solo).
+// Para LIBERARLO A TODOS: poné `SALARY_WHITELIST_ABIERTA = true` (o hacé que
+// isSalaryUser devuelva true).
+const SALARY_WHITELIST_ABIERTA = false
+const SALARY_WHITELIST: string[] = [
+  'Nicolas Vazquez',
+  // 'Juan Pérez',
+  // 'Otro Tester',
+].map(normalizar)
+
 export function isSalaryUser(nombre: string | undefined | null): boolean {
+  if (SALARY_WHITELIST_ABIERTA) return true
   if (!nombre) return false
-  return normalizar(nombre) === 'nicolas vazquez'
+  return SALARY_WHITELIST.includes(normalizar(nombre))
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────
