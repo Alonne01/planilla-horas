@@ -18,20 +18,20 @@ const MAX_HORAS_DIA = 16
 /**
  * Línea de trabajo del operario. Define cómo se cuentan las horas:
  *  - Surface Well Testing / Fractura: conteo estándar (hasta 8 h normales, el resto al 50%).
- *  - SBDP: arreglo especial — cada día de CAMPO suma SIEMPRE 12 h al 50% (además de las
- *    horas trabajadas, con tope de 8 normales), sin importar cuántas horas se trabajaron
- *    (3, 12, 16 o 24 hs → siempre las horas trabajadas hasta 8 normales + 12 al 50%).
+ *  - SBDP: arreglo especial — cada día de CAMPO (con o sin pernocte) cuenta SIEMPRE 12 h
+ *    al 50%, SIN horas normales, sin importar cuántas horas se trabajaron (6, 8, 12 o
+ *    16 hs → siempre 12 h al 50%).
  */
 export type LineaTrabajo = 'SURFACE_WELL_TESTING' | 'SBDP' | 'FRACTURA'
 
 export const LINEAS_TRABAJO: { key: LineaTrabajo; label: string; desc: string }[] = [
   { key: 'SURFACE_WELL_TESTING', label: 'Surface Well Testing', desc: 'Conteo estándar de horas.' },
-  { key: 'SBDP', label: 'SBDP', desc: 'En Campo suma siempre 12 h al 50% (además de las trabajadas).' },
+  { key: 'SBDP', label: 'SBDP', desc: 'En Campo cuenta siempre 12 h al 50% (sin horas normales).' },
   { key: 'FRACTURA', label: 'Fractura', desc: 'Conteo estándar de horas.' },
 ]
 
-/** Horas fijas al 50% que el arreglo SBDP agrega por cada día de CAMPO trabajado. */
-const SBDP_CAMPO_EXTRA_50 = 12
+/** Horas al 50% que cuenta un día de CAMPO en SBDP (fijas, sin horas normales). */
+const SBDP_CAMPO_HORAS_50 = 12
 
 /** Minutes between two timestamps; null-safe → 0; handles overnight (b < a) */
 function minutesBetween(a: number | null | undefined, b: number | null | undefined): number {
@@ -94,9 +94,8 @@ export function turnoCruzaMedianoche(reg: RegistroHoras): boolean {
  * - Total = (turno1 + turno2) − (1 h almuerzo si lugar = Base), topeado a [0, 16]
  * - FrancoTrabajado o FeriadoTrabajado → todo al 100%
  * - Día normal: hasta 8 h → normales, > 8 h → al 50% (nunca al 100%)
- * - Línea SBDP, día de CAMPO trabajado → 8 h normales (o las trabajadas si < 8) + 12 h
- *   al 50% FIJAS (el arreglo no depende de las horas reales). Feriado/franco trabajado
- *   mantienen el 100% (paga más que el arreglo).
+ * - Línea SBDP, día de CAMPO trabajado → 12 h al 50% FIJAS, SIN horas normales (no
+ *   depende de las horas reales). Feriado/franco trabajado mantienen el 100%.
  */
 export function calcularHorasDia(
   reg: RegistroHoras,
@@ -118,15 +117,13 @@ export function calcularHorasDia(
     return { horasTrabajadas: total, horasNormales: 0, horasAl50: 0, horasAl100: total }
   }
 
-  // Arreglo SBDP: en CAMPO se suman SIEMPRE 12 h al 50% (además de las horas trabajadas,
-  // con tope de 8 normales), sin importar cuántas se trabajaron. El total puede superar
-  // las 16 h porque es un acuerdo de liquidación, no las horas reales de reloj.
+  // Arreglo SBDP: en CAMPO (con o sin pernocte) se cuentan SIEMPRE 12 h al 50% y NINGUNA
+  // hora normal, sin importar cuántas horas se trabajaron (6, 8, 12 o 16 → siempre 12).
   if (linea === 'SBDP' && reg.lugarTrabajo === 'Campo' && total > 0) {
-    const horasNormales = Math.min(total, 8)
     return {
-      horasTrabajadas: horasNormales + SBDP_CAMPO_EXTRA_50,
-      horasNormales,
-      horasAl50: SBDP_CAMPO_EXTRA_50,
+      horasTrabajadas: SBDP_CAMPO_HORAS_50,
+      horasNormales: 0,
+      horasAl50: SBDP_CAMPO_HORAS_50,
       horasAl100: 0,
     }
   }
