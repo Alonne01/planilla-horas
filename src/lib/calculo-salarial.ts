@@ -60,6 +60,7 @@ function normalizar(s: string): string {
 const SALARY_WHITELIST_ABIERTA = false
 const SALARY_WHITELIST: string[] = [
   'Nicolas Vazquez',
+  'salario',           // palabra clave: cualquier tester que ponga "salario" como nombre lo desbloquea
   // 'Juan Pérez',
   // 'Otro Tester',
 ].map(normalizar)
