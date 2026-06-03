@@ -21,10 +21,12 @@ interface Props {
   onPaint?: (date: Date, mode: 'add' | 'remove') => void
   /** Clave del día que debe reproducir la animación de aplicado */
   pulseKey?: string | null
-  /** Modo "borrar días" activo: los taps marcan/desmarcan días para borrar */
+  /** Modo "borrar días" activo: se pintan (tocando o arrastrando) los días a borrar */
   deleteMode?: boolean
   /** Claves de los días seleccionados para borrar (resaltados en rojo) */
   selectedDeleteKeys?: Set<string> | null
+  /** Pinta/despinta un día para borrar (sólo días con datos). Disparado al tocar o arrastrar. */
+  onDeletePaint?: (date: Date, mode: 'add' | 'remove') => void
 }
 
 const DIAS_HEADER = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do']
@@ -58,7 +60,7 @@ function cellStyle(fecha: Date, reg: RegistroHoras | undefined, diagrama: Diagra
   return { bg: 'bg-slate-700/20 border-slate-600/30', label: '', labelColor: '' }
 }
 
-export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, paintedKeys = null, onPaint, pulseKey = null, deleteMode = false, selectedDeleteKeys = null }: Props) {
+export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, paintedKeys = null, onPaint, pulseKey = null, deleteMode = false, selectedDeleteKeys = null, onDeletePaint }: Props) {
   // Single ref for long-press tracking (only one touch at a time)
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpFired = useRef(false)
@@ -71,31 +73,46 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
   const paintMode = useRef<'add' | 'remove'>('add')
   const paintHandled = useRef<Set<string>>(new Set())  // días ya tocados en este trazo (no re-togglear)
   const dateByKey = new Map(dias.map(d => [keyOf(d), d]))
+  // Pintado por arrastre activo tanto para "aplicar a otro día" como para "borrar días".
+  const paintEnabled = applyMode || deleteMode
 
   function startStroke(date: Date) {
-    if (!applyMode) return
+    if (!paintEnabled) return
     const k = keyOf(date)
     paintActive.current = true
-    if (k === sourceKey) {                 // empezar el trazo sobre el origen: no se pinta, pero el arrastre sigue
-      paintMode.current = 'add'
-      paintHandled.current = new Set([k])
-      return
-    }
-    paintMode.current = paintedKeys?.has(k) ? 'remove' : 'add'
     paintHandled.current = new Set([k])
-    onPaint?.(date, paintMode.current)
+    if (applyMode) {
+      if (k === sourceKey) {               // empezar el trazo sobre el origen: no se pinta, pero el arrastre sigue
+        paintMode.current = 'add'
+        return
+      }
+      paintMode.current = paintedKeys?.has(k) ? 'remove' : 'add'
+      onPaint?.(date, paintMode.current)
+    } else {
+      // borrar: sólo días con datos cargados
+      if (!byDay.has(k)) { paintMode.current = 'add'; return }
+      paintMode.current = selectedDeleteKeys?.has(k) ? 'remove' : 'add'
+      onDeletePaint?.(date, paintMode.current)
+    }
   }
 
   function moveStroke(clientX: number, clientY: number) {
-    if (!applyMode || !paintActive.current) return
+    if (!paintEnabled || !paintActive.current) return
     const el = document.elementFromPoint(clientX, clientY)
     const cell = (el as HTMLElement | null)?.closest('[data-daykey]') as HTMLElement | null
     const k = cell?.dataset.daykey
-    if (!k || k === sourceKey || paintHandled.current.has(k)) return
+    if (!k || paintHandled.current.has(k)) return
     const date = dateByKey.get(k)
     if (!date) return
-    paintHandled.current.add(k)
-    onPaint?.(date, paintMode.current)
+    if (applyMode) {
+      if (k === sourceKey) return
+      paintHandled.current.add(k)
+      onPaint?.(date, paintMode.current)
+    } else {
+      if (!byDay.has(k)) return            // no marcar días sin datos para borrar
+      paintHandled.current.add(k)
+      onDeletePaint?.(date, paintMode.current)
+    }
   }
 
   function endStroke() { paintActive.current = false }
@@ -114,12 +131,12 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
 
   return (
     <div
-      className={`px-2 pb-2 ${applyMode ? 'select-none' : ''}`}
-      style={applyMode ? { touchAction: 'none' } : undefined}
-      onPointerMove={applyMode ? e => moveStroke(e.clientX, e.clientY) : undefined}
-      onPointerUp={applyMode ? endStroke : undefined}
-      onPointerCancel={applyMode ? endStroke : undefined}
-      onPointerLeave={applyMode ? endStroke : undefined}
+      className={`px-2 pb-2 ${paintEnabled ? 'select-none' : ''}`}
+      style={paintEnabled ? { touchAction: 'none' } : undefined}
+      onPointerMove={paintEnabled ? e => moveStroke(e.clientX, e.clientY) : undefined}
+      onPointerUp={paintEnabled ? endStroke : undefined}
+      onPointerCancel={paintEnabled ? endStroke : undefined}
+      onPointerLeave={paintEnabled ? endStroke : undefined}
     >
       {/* Day headers */}
       <div className="grid grid-cols-7 mb-1">
@@ -159,7 +176,7 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
                   key={di}
                   data-daykey={key}
                   onClick={() => {
-                    if (applyMode) return  // en modo aplicar el pintado se maneja con pointer events
+                    if (paintEnabled) return  // aplicar/borrar se manejan con pointer events (pintado)
                     if (lpFired.current) { lpFired.current = false; return }
                     onSelectDate(date)
                   }}

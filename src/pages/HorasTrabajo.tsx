@@ -240,7 +240,7 @@ export function HorasTrabajoPage() {
     setConfirmDeleteDias(false)
   }
 
-  /** En modo borrar, tocar un día con datos lo marca/desmarca. */
+  /** En modo borrar (vista lista), tocar un día con datos lo marca/desmarca. */
   function toggleDeleteDay(date: Date) {
     const key = dayKey(date)
     if (!byDay.has(key)) return  // solo días con datos
@@ -252,6 +252,20 @@ export function HorasTrabajoPage() {
       return next
     })
     if (isAdding) pulse(key)  // pop rojo al seleccionar
+  }
+
+  /** Pinta (add) o despinta (remove) un día para borrar — sólo días con datos. Tocar o arrastrar (vista calendario). */
+  function paintDeleteDay(date: Date, mode: 'add' | 'remove') {
+    const key = dayKey(date)
+    if (!byDay.has(key)) return  // solo días con datos
+    setSelectedToDelete(prev => {
+      if (mode === 'add' ? prev.has(key) : !prev.has(key)) return prev
+      const next = new Set(prev)
+      if (mode === 'add') next.add(key)
+      else next.delete(key)
+      return next
+    })
+    if (mode === 'add') pulse(key)
   }
 
   /** Borra los días seleccionados (segunda confirmación ya aceptada). */
@@ -374,6 +388,7 @@ export function HorasTrabajoPage() {
               pulseKey={pulseKey}
               deleteMode={deleteMode}
               selectedDeleteKeys={selectedToDelete}
+              onDeletePaint={paintDeleteDay}
             />
           ) : (
             <div className="px-4 space-y-1.5">
@@ -545,12 +560,12 @@ export function HorasTrabajoPage() {
               <Trash2 size={18} className="text-red-300 shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-white leading-snug">
-                  Tocá los días que querés borrar
+                  Tocá o arrastrá los días que querés borrar
                 </div>
                 <div className="text-xs text-red-300/90 mt-0.5">
                   {selectedToDelete.size > 0
                     ? `${selectedToDelete.size} día${selectedToDelete.size === 1 ? '' : 's'} seleccionado${selectedToDelete.size === 1 ? '' : 's'}`
-                    : 'Tocá solo los días con datos cargados'}
+                    : 'Tocá o arrastrá; sólo días con datos cargados'}
                 </div>
               </div>
             </div>
