@@ -92,3 +92,11 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
 /* ─── Barra de cuenta regresiva (aviso de backup) ─── */
 @keyframes countdown-bar { from { width: 100%; } to { width: 0%; } }
 
+/* ─── Fondo animado (InstallGate): orbes de gradiente a la deriva ─── */
+@keyframes blob-drift-a { 0%, 100% { transform: translate(0, 0) scale(1); }   50% { transform: translate(8%, 6%) scale(1.15); } }
+@keyframes blob-drift-b { 0%, 100% { transform: translate(0, 0) scale(1); }   50% { transform: translate(-6%, -8%) scale(1.1); } }
+@keyframes blob-drift-c { 0%, 100% { transform: translate(0, 0) scale(1.05); } 50% { transform: translate(5%, -5%) scale(0.95); } }
+
+/* Entrada suave del contenido del gate */
+@keyframes gate-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+

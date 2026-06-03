@@ -103,6 +103,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       : existing?.observaciones || existing?.proyecto || ''
   )
   const [subFranco, setSubFranco] = useState<SubFranco>(getInitialSubFranco(existing))
+  const [showReminder, setShowReminder] = useState(true)  // recordatorio turno noche → se auto-oculta a los 5 s
 
   // Auto-detect based on external context (diagrama + national calendar) + times
   const hasWork = !!(e1 && s1)
@@ -124,6 +125,13 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   const haySugerencia = !!sugEntrada && !!sugSalida
   const sugTipo = haySugerencia ? clasificarTurno(sugEntrada, sugSalida) : null
   function aplicarSugerencia() { setE1(sugEntrada); setS1(sugSalida) }
+
+  // El recordatorio de turno noche se borra solo a los 5 s (la sugerencia de horario queda)
+  useEffect(() => {
+    if (!prevTurnoNoche) return
+    const t = setTimeout(() => setShowReminder(false), 5000)
+    return () => clearTimeout(t)
+  }, [prevTurnoNoche])
 
   function handleSave() {
     if (isPartialEntry) return  // guarded by UI — button disabled when partial
@@ -190,29 +198,25 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
           <button onClick={handleClose} className="text-slate-400 hover:text-white p-2"><X size={20} /></button>
         </div>
 
-        {/* ── Recordatorio: el día anterior fue turno noche (+ reloj sugerido) ── */}
-        {prevTurnoNoche && (
-          <div className="mb-4 flex items-start gap-2.5 rounded-xl bg-indigo-950/50 border border-indigo-800/50 px-3 py-2.5 animate-[apply-bar-in_220ms_ease_both]">
-            <Moon size={15} className="text-indigo-300 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-indigo-200/90 leading-snug">
+        {/* ── Recordatorio: el día anterior fue turno noche (se auto-oculta a los 5 s) ── */}
+        {prevTurnoNoche && showReminder && (
+          <div className="mb-4 rounded-xl bg-indigo-950/50 border border-indigo-800/50 overflow-hidden animate-[apply-bar-in_220ms_ease_both]">
+            <div className="flex items-start gap-2.5 px-3 py-2.5">
+              <Moon size={15} className="text-indigo-300 shrink-0 mt-0.5" />
+              <p className="text-xs text-indigo-200/90 leading-snug flex-1">
                 El día anterior fue <span className="font-semibold text-indigo-100">turno noche</span>
                 {prevSalida ? ` (termina ${prevSalida} hoy)` : ''}. Esas horas de la madrugada ya quedaron contadas — no las cargues de nuevo acá.
               </p>
-              {haySugerencia && (
-                <button
-                  onClick={aplicarSugerencia}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/20 border border-indigo-400/40 px-2.5 py-1.5 text-[11px] font-semibold text-indigo-200 active:scale-95 transition-transform"
-                >
-                  <Clock size={12} /> Usar horario sugerido {sugEntrada}–{sugSalida}
-                </button>
-              )}
+            </div>
+            {/* barra de cuenta regresiva (5 s) */}
+            <div className="h-0.5 bg-indigo-500/15">
+              <div className="h-full bg-indigo-400/70 animate-[countdown-bar_5s_linear_forwards]" />
             </div>
           </div>
         )}
 
-        {/* ── Reloj sugerido según el último día cargado (turno día u otro) ── */}
-        {!prevTurnoNoche && haySugerencia && (
+        {/* ── Reloj sugerido según el último día cargado (persistente, no se auto-oculta) ── */}
+        {haySugerencia && (
           <div className="mb-4 flex items-center gap-2.5 rounded-xl bg-sky-950/40 border border-sky-800/40 px-3 py-2.5 animate-[apply-bar-in_220ms_ease_both]">
             <Clock size={15} className="text-sky-300 shrink-0" />
             <p className="text-xs text-sky-200/90 leading-snug flex-1 min-w-0">
