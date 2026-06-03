@@ -28,7 +28,7 @@ export function InstallGate({ onSkip }: Props) {
         <div className="relative mb-5">
           <div aria-hidden className="absolute inset-0 -z-10 rounded-3xl bg-sky-500/30 blur-2xl scale-110" />
           <img
-            src="/icons/icon-512.svg"
+            src={`${import.meta.env.BASE_URL}icons/icon-512.svg`}
             alt="Planilla de Horas"
             className="w-24 h-24 rounded-2xl shadow-xl ring-1 ring-white/10"
           />
