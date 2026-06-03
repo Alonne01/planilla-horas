@@ -3,7 +3,7 @@ import type { RegistroHoras } from '../db/database'
 import { calcularHorasDia, esDiaNoTrabajado, type LineaTrabajo } from '../lib/calculo-horas'
 import { esFeriadoNacional, nombreFeriado } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
-import { Palmtree, Banknote, CalendarDays, HeartPulse } from 'lucide-react'
+import { Palmtree, Banknote, CalendarDays, HeartPulse, Ban } from 'lucide-react'
 
 interface Props {
   fecha: Date
@@ -96,6 +96,7 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
     if (registro!.esFrancoCompensatorio) { label = 'Franco Comp.'; badgeIcon = <Palmtree size={13} /> }
     else if (registro!.esFrancoTrabajado) { label = 'Franco Trab.'; badgeIcon = <Banknote size={13} /> }
     else if (registro!.esFeriadoTrabajado) { label = 'Feriado Trab.'; badgeIcon = <Banknote size={13} /> }
+    else if (registro!.esFaltaInjustificada) { label = 'Falta injust.'; badgeIcon = <Ban size={13} /> }
     else if (registro!.esFeriado && isDayOff) { label = nombreFer ?? 'Feriado'; badgeIcon = <CalendarDays size={13} /> }
     else if (registro!.esAusenciaJustificada) { label = 'Ausencia'; badgeIcon = <HeartPulse size={13} /> }
     else if (isDayOff) { label = 'Franco' }

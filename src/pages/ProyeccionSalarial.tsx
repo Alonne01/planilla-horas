@@ -161,14 +161,17 @@ function LineSection({ title, icon, items, subtotal, negative }: {
         </span>
       </div>
       <div className="space-y-1">
-        {items.map((it, i) => (
-          <div key={i} className="flex items-center justify-between text-xs">
-            <span className="text-slate-400 truncate pr-2">{it.concepto}</span>
-            <span className={`tabular-nums shrink-0 ${negative ? 'text-red-300/80' : 'text-slate-300'}`}>
-              {negative ? '-' : ''}{fmtPesos(it.monto)}
-            </span>
-          </div>
-        ))}
+        {items.map((it, i) => {
+          const esDescuento = it.monto < 0  // ítem negativo (ej. inasistencia injust.)
+          return (
+            <div key={i} className="flex items-center justify-between text-xs">
+              <span className="text-slate-400 truncate pr-2">{it.concepto}</span>
+              <span className={`tabular-nums shrink-0 ${negative || esDescuento ? 'text-red-300/80' : 'text-slate-300'}`}>
+                {esDescuento ? `-${fmtPesos(Math.abs(it.monto))}` : `${negative ? '-' : ''}${fmtPesos(it.monto)}`}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

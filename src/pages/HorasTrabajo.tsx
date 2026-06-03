@@ -50,6 +50,7 @@ function cloneForDate(source: RegistroHoras, target: Date, diagrama: DiagramaPat
     esFeriadoTrabajado: isFeriado && hasWork,
     esFrancoCompensatorio: false,
     esAusenciaJustificada: false,
+    esFaltaInjustificada: false,
   }
 }
 

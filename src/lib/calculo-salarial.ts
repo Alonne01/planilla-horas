@@ -144,13 +144,16 @@ interface Agregados {
   diasBase: number
   pernoctes: number
   pernoctesTrailer: number
+  faltasInjustificadas: number
 }
 
 function agregar(registros: RegistroHoras[], linea: LineaTrabajo): Agregados {
   let total50 = 0, total100 = 0, totalViaje = 0, totalNocturnas = 0
   let diasTrabajados = 0, diasCampo = 0, diasBase = 0, pernoctes = 0, pernoctesTrailer = 0
+  let faltasInjustificadas = 0
 
   for (const reg of registros) {
+    if (reg.esFaltaInjustificada) { faltasInjustificadas++; continue } // inasistencia: descuenta aparte
     if (esDiaNoTrabajado(reg) || reg.esAusenciaJustificada) continue
     const h = calcularHorasDia(reg, linea)
     if (h.horasTrabajadas > 0) {
@@ -165,7 +168,23 @@ function agregar(registros: RegistroHoras[], linea: LineaTrabajo): Agregados {
     if (reg.pernocte === 'Hotel' || reg.pernocte === 'Trailer') pernoctes++
     if (reg.pernocte === 'Trailer') pernoctesTrailer++
   }
-  return { total50, total100, totalViaje, totalNocturnas, diasTrabajados, diasCampo, diasBase, pernoctes, pernoctesTrailer }
+  return { total50, total100, totalViaje, totalNocturnas, diasTrabajados, diasCampo, diasBase, pernoctes, pernoctesTrailer, faltasInjustificadas }
+}
+
+/**
+ * Descuento por inasistencia injustificada, común a ambos convenios:
+ *  - básico proporcional: (B / 30) por cada día de falta;
+ *  - presentismo: se pierde el presentismo del período si hay al menos una falta.
+ * Es una aproximación (no hay recibo real con faltas para validarlo); el resto del
+ * jornal (antigüedad, turno, zona, etc.) no se prorratea. Devuelve ítems NEGATIVOS.
+ */
+function itemsInasistencia(faltas: number, basico: number, presentismo: number, codBasico: string, codPres: string): LineItem[] {
+  if (faltas <= 0) return []
+  const items: LineItem[] = [
+    { codigo: codBasico, concepto: `Inasistencia injust. (${faltas} ${faltas === 1 ? 'día' : 'días'})`, monto: -(basico / 30) * faltas },
+  ]
+  if (presentismo > 0) items.push({ codigo: codPres, concepto: 'Pérdida de presentismo (inasist.)', monto: -presentismo })
+  return items
 }
 
 // ─── Tipos de salida ────────────────────────────────────────────────────────────
@@ -241,6 +260,7 @@ function calcular637(config: SalaryConfig, a: Agregados): SalaryEstimate {
   if (a.total50 > 0) variableItems.push({ codigo: '3150', concepto: `Extras 50% (${fmtHs(a.total50)} hs)`, monto: varExtra50 })
   if (a.total100 > 0) variableItems.push({ codigo: '3155', concepto: `Extras 100% (${fmtHs(a.total100)} hs)`, monto: varExtra100 })
   if (desarraigo > 0) variableItems.push({ codigo: '3172', concepto: `Desarraigo 20% (${a.pernoctes} días)`, monto: desarraigo })
+  variableItems.push(...itemsInasistencia(a.faltasInjustificadas, B, presentismo, '3500', '3501'))
   const subtotalVariables = variableItems.reduce((s, i) => s + i.monto, 0)
 
   const biRaw = subtotalFijos + subtotalVariables
@@ -332,6 +352,7 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
   if (a.total100 > 0) variableItems.push({ codigo: '171', concepto: `Extras 100% (${fmtHs(a.total100)} hs)`, monto: varExtra100 })
   if (difNocturna > 0) variableItems.push({ codigo: '172', concepto: `Dif. Nocturnas (${fmtHs(a.totalNocturnas)} hs)`, monto: difNocturna })
   if (desarraigo > 0) variableItems.push({ codigo: '191', concepto: `Desarraigo ${Math.round(PRIV_TASA_DESARRAIGO * 100)}% (${a.pernoctesTrailer} días)`, monto: desarraigo })
+  variableItems.push(...itemsInasistencia(a.faltasInjustificadas, B, presentismo, '500', '501'))
   const subtotalVariables = variableItems.reduce((s, i) => s + i.monto, 0)
 
   const biRaw = subtotalFijos + subtotalVariables

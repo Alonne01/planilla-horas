@@ -167,6 +167,7 @@ export function resumenDia(reg: RegistroHoras, linea: LineaTrabajo = 'SURFACE_WE
   if (reg.esFrancoCompensatorio) tipoDisplay = 'Franco Comp.'
   else if (reg.esFrancoTrabajado) tipoDisplay = 'Franco Trab.'
   else if (reg.esFeriadoTrabajado) tipoDisplay = 'Feriado Trab.'
+  else if (reg.esFaltaInjustificada) tipoDisplay = 'Falta injust.'
   else if (reg.esFeriado) tipoDisplay = 'Feriado'
   else if (reg.esAusenciaJustificada) tipoDisplay = 'Ausencia'
 

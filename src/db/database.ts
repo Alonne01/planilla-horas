@@ -34,6 +34,7 @@ export interface RegistroHoras {
   esFrancoCompensatorio: boolean
   esFrancoTrabajado: boolean
   esAusenciaJustificada: boolean
+  esFaltaInjustificada: boolean  // inasistencia injustificada → descuenta básico proporcional + presentismo
   fechaCreacion: number
 }
 

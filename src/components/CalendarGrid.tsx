@@ -51,6 +51,7 @@ function cellStyle(fecha: Date, reg: RegistroHoras | undefined, diagrama: Diagra
     return { bg: 'bg-slate-900/0 border-slate-700/30', label: '', labelColor: '' }
   }
 
+  if (reg.esFaltaInjustificada) return { bg: 'bg-rose-900/40 border-rose-700/40', label: 'Falta', labelColor: 'text-rose-400' }
   if (reg.esAusenciaJustificada) return { bg: 'bg-red-900/40 border-red-700/40', label: 'Ausencia', labelColor: 'text-red-400' }
   if (reg.esFeriado && esDiaNoTrabajado(reg)) return { bg: 'bg-amber-900/40 border-amber-700/40', label: 'Feriado', labelColor: 'text-amber-400' }
   if (reg.esFrancoCompensatorio) return { bg: 'bg-purple-900/40 border-purple-700/40', label: 'F.Comp', labelColor: 'text-purple-400' }

@@ -196,7 +196,8 @@ function buildRowParts(
       ]
     }
 
-    const etiqueta = reg.esAusenciaJustificada ? 'ausencia just.'
+    const etiqueta = reg.esFaltaInjustificada ? 'falta injustificada'
+      : reg.esAusenciaJustificada ? 'ausencia just.'
       : reg.esFeriado ? 'feriado'
       : reg.esFrancoCompensatorio ? 'franco (comp.)'
       : 'franco'

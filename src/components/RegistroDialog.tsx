@@ -66,12 +66,13 @@ function clasificarTurno(entrada: string, salida: string): 'noche' | 'dia' | nul
 type LugarTrabajo = 'Base' | 'Campo' | 'Franco'  // 'Franco' used only for saving absences
 type Pernocte = 'NO' | 'Hotel' | 'Trailer'
 /** Mutually-exclusive absence labels — shown only when no times entered */
-type SubFranco = 'COMP' | 'AUSENCIA' | null
+type SubFranco = 'COMP' | 'AUSENCIA' | 'FALTA' | null
 
 function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
   if (!existing) return null
   if (existing.esFrancoCompensatorio) return 'COMP'
   if (existing.esAusenciaJustificada) return 'AUSENCIA'
+  if (existing.esFaltaInjustificada) return 'FALTA'
   return null
 }
 
@@ -153,6 +154,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       esFrancoCompensatorio: isDayOff && subFranco === 'COMP',
       esFrancoTrabajado: isFrancoWorked,
       esAusenciaJustificada: isDayOff && subFranco === 'AUSENCIA',
+      esFaltaInjustificada: isDayOff && subFranco === 'FALTA',
       fechaCreacion: existing?.fechaCreacion ?? Date.now(),
     }
     onSave(reg)
@@ -286,19 +288,25 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
         {isDayOff && !esFrancoHoy && (
           <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
             <p className="text-xs text-slate-400 mb-2">Tipo de ausencia</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {([
                 ['COMP', 'Compensatorio'],
-                ['AUSENCIA', 'Ausencia Just.'],
+                ['AUSENCIA', 'Ausencia just.'],
+                ['FALTA', 'Falta injust.'],
               ] as [SubFranco, string][]).map(([key, label]) => (
                 <button
                   key={key!}
                   onClick={() => setSubFranco(subFranco === key ? null : key)}
-                  className={`py-2 rounded-lg text-xs font-medium text-center transition-colors ${subFranco === key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                  className={`py-2 px-1 rounded-lg text-xs font-medium text-center transition-colors ${subFranco === key ? (key === 'FALTA' ? 'bg-rose-600 text-white' : 'bg-blue-600 text-white') : 'bg-slate-700 text-slate-300'}`}>
                   {label}
                 </button>
               ))}
             </div>
+            {subFranco === 'FALTA' && (
+              <p className="text-[11px] text-rose-300/90 mt-2 leading-snug">
+                Se descuenta el día proporcional de básico y se pierde el presentismo del período.
+              </p>
+            )}
           </div>
         )}
 
