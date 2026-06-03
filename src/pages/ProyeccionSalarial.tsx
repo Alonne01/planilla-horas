@@ -37,7 +37,7 @@ function Proyeccion() {
   const { settings } = useSettings()
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
-  const { periodos, loading } = useAnalytics(mes, anio, 0)
+  const { periodos, loading } = useAnalytics(mes, anio, 0, settings.lineaTrabajo)
 
   const est = useMemo<SalaryEstimate | null>(() => {
     if (!settings.sueldoBasico) return null

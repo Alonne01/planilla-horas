@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import type { RegistroHoras } from '../db/database'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
 import { esFeriadoNacional } from '../lib/feriados'
-import { calcularHorasDia, esDiaNoTrabajado } from '../lib/calculo-horas'
+import { calcularHorasDia, esDiaNoTrabajado, type LineaTrabajo } from '../lib/calculo-horas'
 
 interface Props {
   dias: Date[]
@@ -27,6 +27,8 @@ interface Props {
   selectedDeleteKeys?: Set<string> | null
   /** Pinta/despinta un día para borrar (sólo días con datos). Disparado al tocar o arrastrar. */
   onDeletePaint?: (date: Date, mode: 'add' | 'remove') => void
+  /** Línea de trabajo: afecta el conteo de horas mostrado (SBDP suma 12 h al 50% en Campo). */
+  lineaTrabajo?: LineaTrabajo
 }
 
 const DIAS_HEADER = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do']
@@ -60,7 +62,7 @@ function cellStyle(fecha: Date, reg: RegistroHoras | undefined, diagrama: Diagra
   return { bg: 'bg-slate-700/20 border-slate-600/30', label: '', labelColor: '' }
 }
 
-export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, paintedKeys = null, onPaint, pulseKey = null, deleteMode = false, selectedDeleteKeys = null, onDeletePaint }: Props) {
+export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, paintedKeys = null, onPaint, pulseKey = null, deleteMode = false, selectedDeleteKeys = null, onDeletePaint, lineaTrabajo = 'SURFACE_WELL_TESTING' }: Props) {
   // Single ref for long-press tracking (only one touch at a time)
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpFired = useRef(false)
@@ -155,7 +157,7 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
               const reg = byDay.get(key)
               const { bg, label, labelColor } = cellStyle(date, reg, diagrama, diagramaInicioMs)
               const isFeriado = esFeriadoNacional(date.getTime())
-              const h = reg && !esDiaNoTrabajado(reg) ? calcularHorasDia(reg) : null
+              const h = reg && !esDiaNoTrabajado(reg) ? calcularHorasDia(reg, lineaTrabajo) : null
               const isFirstOfMonth = date.getDate() === 1
               const isSource = applyMode && key === sourceKey
               const isPainted = applyMode && !!paintedKeys?.has(key)

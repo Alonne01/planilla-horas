@@ -17,8 +17,8 @@ function fmt(n: number): string {
 export function AnalyticsPage() {
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
-  const { periodos, loading } = useAnalytics(mes, anio, 2)
   const { settings } = useSettings()
+  const { periodos, loading } = useAnalytics(mes, anio, 2, settings.lineaTrabajo)
 
   function cambiarMes(delta: number) {
     const { mes: m, anio: a } = shiftPeriodo(mes, anio, delta)

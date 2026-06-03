@@ -6,6 +6,7 @@ import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros } from '../db/database'
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
+import { LINEAS_TRABAJO, type LineaTrabajo } from '../lib/calculo-horas'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -40,6 +41,7 @@ export function SettingsPage() {
   const [nombre, setNombre] = useState('')
   const [diagrama, setDiagrama] = useState<DiagramaPatternKey>('LUNES_VIERNES')
   const [diagramaFecha, setDiagramaFecha] = useState('')
+  const [linea, setLinea] = useState<LineaTrabajo>('SURFACE_WELL_TESTING')
   const [dirty, setDirty] = useState(false)
   // Salario (visible sólo para el usuario de prueba)
   const [convenio, setConvenio] = useState<Convenio>('CCT_637_11')
@@ -61,6 +63,7 @@ export function SettingsPage() {
     setDiagramaFecha(
       settings.diagramaInicioMs ? localDateStr(settings.diagramaInicioMs) : ''
     )
+    setLinea(settings.lineaTrabajo)
     setConvenio(settings.convenio)
     setSueldoBasico(fmtBasicoDisplay(settings.sueldoBasico))
     setFechaIngreso(settings.fechaIngresoMs ? localDateStr(settings.fechaIngresoMs) : '')
@@ -84,6 +87,7 @@ export function SettingsPage() {
         nombreUsuario: nombre,
         diagrama,
         diagramaInicioMs: diagramaFecha ? parseDateLocal(diagramaFecha) : 0,
+        lineaTrabajo: linea,
         convenio,
         sueldoBasico: nuevoBasico,
         ...(basicoCambio ? { sueldoBasicoVigenciaMs: Date.now() } : {}),
@@ -180,6 +184,32 @@ export function SettingsPage() {
               placeholder="Ej: Juan Topo"
             />
           </Field>
+        </Section>
+
+        {/* Línea de trabajo — afecta el conteo de horas (visible para todos) */}
+        <Section title="Línea de trabajo">
+          <div className="space-y-2">
+            {LINEAS_TRABAJO.map(l => (
+              <button
+                key={l.key}
+                onClick={() => { setLinea(l.key); setDirty(true) }}
+                className={`w-full py-2.5 px-3 rounded-xl text-left transition-colors ${linea === l.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+              >
+                <div className="text-sm font-medium">{l.label}</div>
+                <div className={`text-xs mt-0.5 ${linea === l.key ? 'text-blue-100/80' : 'text-slate-400'}`}>{l.desc}</div>
+              </button>
+            ))}
+          </div>
+          {linea === 'SBDP' && (
+            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-2.5">
+              <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                <strong className="text-amber-300">Arreglo SBDP:</strong> cada día marcado como{' '}
+                <strong>Campo</strong> suma automáticamente <strong>12 h al 50%</strong> además de las horas
+                trabajadas (hasta 8 normales), sin importar cuántas se hayan cargado (3, 12, 16 o 24 hs).
+                No afecta días Base, francos ni feriados; tampoco la planilla oficial (que muestra los horarios reales).
+              </p>
+            </div>
+          )}
         </Section>
 
         {/* Salario y convenio — visible sólo para el usuario de prueba */}

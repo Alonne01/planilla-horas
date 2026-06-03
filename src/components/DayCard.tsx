@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import type { RegistroHoras } from '../db/database'
-import { calcularHorasDia, esDiaNoTrabajado } from '../lib/calculo-horas'
+import { calcularHorasDia, esDiaNoTrabajado, type LineaTrabajo } from '../lib/calculo-horas'
 import { esFeriadoNacional, nombreFeriado } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
 import { Palmtree, Banknote, CalendarDays, HeartPulse } from 'lucide-react'
@@ -14,6 +14,7 @@ interface Props {
   onContext?: (date: Date, x: number, y: number) => void
   deleteMode?: boolean
   selectedForDelete?: boolean
+  lineaTrabajo?: LineaTrabajo
 }
 
 const DIAS_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
@@ -35,7 +36,7 @@ function lugarColor(lugar: string): string {
   }
 }
 
-export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, onContext, deleteMode = false, selectedForDelete = false }: Props) {
+export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, onContext, deleteMode = false, selectedForDelete = false, lineaTrabajo = 'SURFACE_WELL_TESTING' }: Props) {
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpFired = useRef(false)
   const lpMoved = useRef(false)
@@ -89,7 +90,7 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
   let subtipo = ''
 
   if (!isEmpty) {
-    const h = calcularHorasDia(registro!)
+    const h = calcularHorasDia(registro!, lineaTrabajo)
     const isDayOff = esDiaNoTrabajado(registro!)
 
     if (registro!.esFrancoCompensatorio) { label = 'Franco Comp.'; badgeIcon = <Palmtree size={13} /> }

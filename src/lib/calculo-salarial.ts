@@ -9,7 +9,7 @@
 // el resto de la app). El diferencial nocturno (sólo 644) se calcula acá (LCT Art.200).
 
 import type { AppSettings, RegistroHoras } from '../db/database'
-import { calcularHorasDia, esDiaNoTrabajado } from './calculo-horas'
+import { calcularHorasDia, esDiaNoTrabajado, type LineaTrabajo } from './calculo-horas'
 
 export type Convenio = 'CCT_637_11' | 'CCT_644_12'
 export type TipoTurno = 'NINGUNO' | 'TURNO_A' | 'TURNO_B' | 'TURNO_S'
@@ -61,6 +61,7 @@ const SALARY_WHITELIST_ABIERTA = false
 const SALARY_WHITELIST: string[] = [
   'Nicolas Vazquez',
   'salario',           // palabra clave: cualquier tester que ponga "salario" como nombre lo desbloquea
+  'Aviles Lucas',
   // 'Juan Pérez',
   // 'Otro Tester',
 ].map(normalizar)
@@ -79,6 +80,7 @@ export interface SalaryConfig {
   tipoTurno: TipoTurno
   zonaVacaMuerta: boolean
   tasaDesarraigo644: number // 0 / 0,10 / 0,20
+  lineaTrabajo: LineaTrabajo // SBDP suma 12 h al 50% por día de Campo
 }
 
 /** Años completos de antigüedad desde la fecha de ingreso (0 si no está cargada). */
@@ -102,6 +104,7 @@ export function configFromSettings(s: AppSettings): SalaryConfig {
     tipoTurno: s.tipoTurno,
     zonaVacaMuerta: s.zonaVacaMuerta,
     tasaDesarraigo644: s.tasaDesarraigo644,
+    lineaTrabajo: s.lineaTrabajo,
   }
 }
 
@@ -143,13 +146,13 @@ interface Agregados {
   pernoctesTrailer: number
 }
 
-function agregar(registros: RegistroHoras[]): Agregados {
+function agregar(registros: RegistroHoras[], linea: LineaTrabajo): Agregados {
   let total50 = 0, total100 = 0, totalViaje = 0, totalNocturnas = 0
   let diasTrabajados = 0, diasCampo = 0, diasBase = 0, pernoctes = 0, pernoctesTrailer = 0
 
   for (const reg of registros) {
     if (esDiaNoTrabajado(reg) || reg.esAusenciaJustificada) continue
-    const h = calcularHorasDia(reg)
+    const h = calcularHorasDia(reg, linea)
     if (h.horasTrabajadas > 0) {
       diasTrabajados++
       total50 += h.horasAl50
@@ -201,7 +204,7 @@ function fmtHs(h: number): string {
 //  Entry point
 // ══════════════════════════════════════════════════════════════════════════════
 export function calcularSueldo(registros: RegistroHoras[], config: SalaryConfig): SalaryEstimate {
-  const agg = agregar(registros)
+  const agg = agregar(registros, config.lineaTrabajo)
   return config.convenio === 'CCT_644_12' ? calcular644(config, agg) : calcular637(config, agg)
 }
 

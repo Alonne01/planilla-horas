@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import type { LineaTrabajo } from '../lib/calculo-horas'
 
 const SHADOW_KEY = 'planilla-shadow'
 const LAST_BACKUP_KEY = 'planilla-last-backup-ts'
@@ -41,6 +42,7 @@ export interface AppSettings {
   nombreUsuario: string
   diagrama: 'LUNES_VIERNES' | 'D10X5' | 'D7X7' | 'D10X4'
   diagramaInicioMs: number
+  lineaTrabajo: LineaTrabajo  // afecta el conteo de horas (SBDP suma 12 h al 50% en Campo)
   proyectosFrecuentes: string[]  // JSON array
   // Hidden salary fields (enabled via VITE_SHOW_SALARY)
   sueldoBasico: number
@@ -62,6 +64,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   nombreUsuario: '',
   diagrama: 'LUNES_VIERNES',
   diagramaInicioMs: 0,
+  lineaTrabajo: 'SURFACE_WELL_TESTING',
   proyectosFrecuentes: [],
   sueldoBasico: 2057223.77,
   sueldoBasicoVigenciaMs: 0,
@@ -159,7 +162,9 @@ export async function getSettings(): Promise<AppSettings> {
     await db.settings.put(DEFAULT_SETTINGS)
     return DEFAULT_SETTINGS
   }
-  return s
+  // Mezclar defaults para que los campos nuevos (ej. lineaTrabajo) tengan valor en
+  // configuraciones guardadas antes de que existieran.
+  return { ...DEFAULT_SETTINGS, ...s }
 }
 
 export async function saveSettings(partial: Partial<AppSettings>): Promise<void> {

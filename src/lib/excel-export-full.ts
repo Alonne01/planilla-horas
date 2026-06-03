@@ -2,7 +2,7 @@
 import * as XLSX from 'xlsx'
 import type { RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd, MESES_ES } from './diagrama'
-import { calcularHorasDia, esDiaNoTrabajado } from './calculo-horas'
+import { calcularHorasDia, esDiaNoTrabajado, type LineaTrabajo } from './calculo-horas'
 
 function fmtDate(d: Date): string {
   const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
@@ -24,6 +24,7 @@ export function exportarExcelCompleto(
   anio: number,
   registros: RegistroHoras[],
   nombreUsuario: string,
+  linea: LineaTrabajo = 'SURFACE_WELL_TESTING',
 ): void {
   const byDay = new Map(registros.map(r => {
     const d = new Date(r.fechaMs)
@@ -54,7 +55,7 @@ export function exportarExcelCompleto(
     if (!reg) {
       rows.push([fmtDate(new Date(cur)), '', 0, 0, 0, 0, 0, ''])
     } else {
-      const h = calcularHorasDia(reg)
+      const h = calcularHorasDia(reg, linea)
       const obs = [reg.proyecto, reg.observaciones].filter(Boolean).join(' — ')
       rows.push([
         fmtDate(new Date(cur)),

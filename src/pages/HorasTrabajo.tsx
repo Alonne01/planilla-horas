@@ -102,7 +102,7 @@ export function HorasTrabajoPage() {
     return m
   }, [registros])
 
-  const resumen = useMemo(() => calcularResumenPeriodo(registros), [registros])
+  const resumen = useMemo(() => calcularResumenPeriodo(registros, settings.lineaTrabajo), [registros, settings.lineaTrabajo])
 
   const selectedRegistro = useMemo(() => {
     if (!selectedDate) return undefined
@@ -389,6 +389,7 @@ export function HorasTrabajoPage() {
               deleteMode={deleteMode}
               selectedDeleteKeys={selectedToDelete}
               onDeletePaint={paintDeleteDay}
+              lineaTrabajo={settings.lineaTrabajo}
             />
           ) : (
             <div className="px-4 space-y-1.5">
@@ -405,6 +406,7 @@ export function HorasTrabajoPage() {
                     onContext={openContext}
                     deleteMode={deleteMode}
                     selectedForDelete={deleteMode && selectedToDelete.has(key)}
+                    lineaTrabajo={settings.lineaTrabajo}
                   />
                 )
               })}
@@ -426,7 +428,7 @@ export function HorasTrabajoPage() {
               <FileText size={15} /> Normal (planilla)
             </button>
             <button
-              onClick={() => runExport(() => exportarExcelCompleto(mes, anio, registros, settings.nombreUsuario))}
+              onClick={() => runExport(() => exportarExcelCompleto(mes, anio, registros, settings.nombreUsuario, settings.lineaTrabajo))}
               className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap flex items-center gap-2 animate-[fab-item-in_180ms_ease_both]"
               style={{ animationDelay: '40ms' }}
             >

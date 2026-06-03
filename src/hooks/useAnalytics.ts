@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { db, type RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd, MESES_ES } from '../lib/diagrama'
-import { calcularHorasDia, esDiaNoTrabajado } from '../lib/calculo-horas'
+import { calcularHorasDia, esDiaNoTrabajado, type LineaTrabajo } from '../lib/calculo-horas'
 
 const MESES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
@@ -40,13 +40,13 @@ export function shiftPeriodo(mes: number, anio: number, delta: number): { mes: n
   return { mes: m, anio: a }
 }
 
-function computePeriodo(mes: number, anio: number, registros: RegistroHoras[]): PeriodoStats {
+function computePeriodo(mes: number, anio: number, registros: RegistroHoras[], linea: LineaTrabajo): PeriodoStats {
   let normales = 0, al50 = 0, al100 = 0, viaje = 0
   let diasTrabajados = 0, diasBase = 0, diasCampo = 0, diasFranco = 0
   let francosTrabajados = 0, feriadosTrabajados = 0, diasManejo = 0, pernoctes = 0
 
   for (const reg of registros) {
-    const h = calcularHorasDia(reg)
+    const h = calcularHorasDia(reg, linea)
     const off = esDiaNoTrabajado(reg) || reg.esAusenciaJustificada
 
     if (off) {
@@ -100,7 +100,7 @@ function computePeriodo(mes: number, anio: number, registros: RegistroHoras[]): 
  * Carga las estadísticas del período (mes,anio) y los `prev` períodos anteriores.
  * Devuelve el arreglo ordenado del más antiguo al más reciente (el último es el actual).
  */
-export function useAnalytics(mes: number, anio: number, prev = 2) {
+export function useAnalytics(mes: number, anio: number, prev = 2, linea: LineaTrabajo = 'SURFACE_WELL_TESTING') {
   const [periodos, setPeriodos] = useState<PeriodoStats[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -117,7 +117,7 @@ export function useAnalytics(mes: number, anio: number, prev = 2) {
           const start = periodoStart(m, a).getTime()
           const end = periodoEnd(m, a).getTime() + 86_400_000
           const rows = await db.registros.where('fechaMs').between(start, end, true, true).sortBy('fechaMs')
-          return computePeriodo(m, a, rows)
+          return computePeriodo(m, a, rows, linea)
         }),
       )
 
@@ -129,7 +129,7 @@ export function useAnalytics(mes: number, anio: number, prev = 2) {
 
     run()
     return () => { cancelled = true }
-  }, [mes, anio, prev])
+  }, [mes, anio, prev, linea])
 
   return { periodos, loading }
 }
