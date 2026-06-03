@@ -7,6 +7,7 @@ import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
 import { isSalaryUser } from "./lib/calculo-salarial"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, pruneOldRegistros, migrateHorasViaje, getSettings } from "./db/database"
+import { refrescarParitarias } from "./lib/paritarias"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 
@@ -60,6 +61,9 @@ export default function App() {
 
   useEffect(() => {
     async function init() {
+      // Bajar el calendario de paritarias remoto (si existe) para próximas proyecciones
+      refrescarParitarias()
+
       const didRecover = await restoreFromShadow()
       if (didRecover) setRecovered(true)
 

@@ -44,6 +44,7 @@ export interface AppSettings {
   proyectosFrecuentes: string[]  // JSON array
   // Hidden salary fields (enabled via VITE_SHOW_SALARY)
   sueldoBasico: number
+  sueldoBasicoVigenciaMs: number  // mes/fecha al que corresponde el básico cargado (para escalar por paritaria)
   convenio: 'CCT_637_11' | 'CCT_644_12'
   fechaIngresoMs: number
   tipoTurno: 'NINGUNO' | 'TURNO_A' | 'TURNO_B' | 'TURNO_S'
@@ -63,6 +64,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   diagramaInicioMs: 0,
   proyectosFrecuentes: [],
   sueldoBasico: 2057223.77,
+  sueldoBasicoVigenciaMs: 0,
   convenio: 'CCT_637_11',
   fechaIngresoMs: 0,
   tipoTurno: 'NINGUNO',

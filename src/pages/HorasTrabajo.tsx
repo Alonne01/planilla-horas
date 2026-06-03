@@ -109,6 +109,26 @@ export function HorasTrabajoPage() {
     return byDay.get(`${selectedDate.getFullYear()}-${selectedDate.getMonth()}-${selectedDate.getDate()}`)
   }, [selectedDate, byDay])
 
+  // Registro del día anterior → para avisar si fue turno noche (horas ya contadas)
+  const prevDayRegistro = useMemo(() => {
+    if (!selectedDate) return undefined
+    const p = new Date(selectedDate)
+    p.setDate(p.getDate() - 1)
+    return byDay.get(`${p.getFullYear()}-${p.getMonth()}-${p.getDate()}`)
+  }, [selectedDate, byDay])
+
+  // Último día con turno cargado (hasta 14 días atrás) → reloj sugerido para el día nuevo
+  const lastWorkedRegistro = useMemo(() => {
+    if (!selectedDate) return undefined
+    for (let i = 1; i <= 14; i++) {
+      const p = new Date(selectedDate)
+      p.setDate(p.getDate() - i)
+      const r = byDay.get(`${p.getFullYear()}-${p.getMonth()}-${p.getDate()}`)
+      if (r && r.entradaInicioMs != null && r.salidaInicioMs != null) return r
+    }
+    return undefined
+  }, [selectedDate, byDay])
+
   function cambiarMes(delta: number) {
     let m = mes + delta
     let a = anio
@@ -420,6 +440,8 @@ export function HorasTrabajoPage() {
         <RegistroDialog
           fecha={selectedDate}
           existing={selectedRegistro}
+          prevDayRegistro={prevDayRegistro}
+          lastWorkedRegistro={lastWorkedRegistro}
           proyectosFrecuentes={settings.proyectosFrecuentes}
           diagrama={settings.diagrama}
           diagramaInicioMs={settings.diagramaInicioMs}

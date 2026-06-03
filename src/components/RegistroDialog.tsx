@@ -1,14 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { v4 as uuid } from 'uuid'
-import { X, CalendarDays, Clock } from 'lucide-react'
+import { X, CalendarDays, Clock, Moon } from 'lucide-react'
 import { TimeDrumPicker } from './TimeDrumPicker'
 import type { RegistroHoras } from '../db/database'
 import { esFeriadoNacional, nombreFeriado } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
+import { turnoCruzaMedianoche } from '../lib/calculo-horas'
 
 interface Props {
   fecha: Date
   existing?: RegistroHoras
+  prevDayRegistro?: RegistroHoras
+  lastWorkedRegistro?: RegistroHoras
   proyectosFrecuentes: string[]
   diagrama: DiagramaPatternKey
   diagramaInicioMs: number
@@ -31,6 +34,35 @@ function msToTime(ms: number | null | undefined): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+/** ¿La salida (HH:MM) tiene hora menor que la entrada? → el turno cruza la medianoche. */
+function cruzaMedianocheStr(entrada: string, salida: string): boolean {
+  if (!entrada || !salida) return false
+  const [eh, em] = entrada.split(':').map(Number)
+  const [sh, sm] = salida.split(':').map(Number)
+  return sh * 60 + sm < eh * 60 + em
+}
+
+/**
+ * Clasifica un turno (entrada/salida en "HH:MM") como noche o día para la nota
+ * estética. Es noche si cruza la medianoche o si la mitad o más de sus horas caen
+ * en la ventana nocturna 21:00–06:00 (mismo criterio que el cálculo salarial 644).
+ */
+function clasificarTurno(entrada: string, salida: string): 'noche' | 'dia' | null {
+  if (!entrada || !salida) return null
+  const [eh, em] = entrada.split(':').map(Number)
+  const [sh, sm] = salida.split(':').map(Number)
+  if ([eh, em, sh, sm].some(n => Number.isNaN(n))) return null
+  const start = eh + em / 60
+  let end = sh + sm / 60
+  const cruza = end < start
+  if (cruza) end += 24
+  const total = end - start
+  if (total <= 0) return null
+  let noct = Math.max(0, Math.min(end, 30) - Math.max(start, 21))
+  noct += Math.max(0, Math.min(end, 6) - Math.max(start, 0))
+  return cruza || noct >= total / 2 ? 'noche' : 'dia'
+}
+
 type LugarTrabajo = 'Base' | 'Campo' | 'Franco'  // 'Franco' used only for saving absences
 type Pernocte = 'NO' | 'Hotel' | 'Trailer'
 /** Mutually-exclusive absence labels — shown only when no times entered */
@@ -43,7 +75,7 @@ function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
   return null
 }
 
-export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama, diagramaInicioMs, onSave, onDelete, onClose }: Props) {
+export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, onSave, onDelete, onClose }: Props) {
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
   const esFeriadoHoy = esFeriadoNacional(fecha.getTime())
   const nombreFeriadoHoy = nombreFeriado(fecha.getTime())
@@ -78,6 +110,20 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
   const isDayOff = !e1 && !s1                       // both empty → absence day
   const isFrancoWorked = esFrancoHoy && hasWork                        // diagrama franco + times → 100%
   const isFeriadoWorked = esFeriadoHoy && hasWork                      // feriado nacional + horas → 100%
+
+  // Nota estética turno noche / día + recordatorio del día anterior
+  const turnoTipo = hasWork ? clasificarTurno(e1, s1) : null
+  const turnoCruza = cruzaMedianocheStr(e1, s1)
+  const prevTurnoNoche = !!prevDayRegistro && turnoCruzaMedianoche(prevDayRegistro)
+  const prevSalida = prevTurnoNoche ? msToTime(prevDayRegistro?.salidaInicioMs) : ''
+
+  // Reloj sugerido (no aplicado) según el último día cargado — sólo si el turno está vacío
+  const turnoVacio = !e1 && !s1
+  const sugEntrada = turnoVacio && lastWorkedRegistro?.entradaInicioMs ? msToTime(lastWorkedRegistro.entradaInicioMs) : ''
+  const sugSalida = turnoVacio && lastWorkedRegistro?.salidaInicioMs ? msToTime(lastWorkedRegistro.salidaInicioMs) : ''
+  const haySugerencia = !!sugEntrada && !!sugSalida
+  const sugTipo = haySugerencia ? clasificarTurno(sugEntrada, sugSalida) : null
+  function aplicarSugerencia() { setE1(sugEntrada); setS1(sugSalida) }
 
   function handleSave() {
     if (isPartialEntry) return  // guarded by UI — button disabled when partial
@@ -144,6 +190,43 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
           <button onClick={handleClose} className="text-slate-400 hover:text-white p-2"><X size={20} /></button>
         </div>
 
+        {/* ── Recordatorio: el día anterior fue turno noche (+ reloj sugerido) ── */}
+        {prevTurnoNoche && (
+          <div className="mb-4 flex items-start gap-2.5 rounded-xl bg-indigo-950/50 border border-indigo-800/50 px-3 py-2.5 animate-[apply-bar-in_220ms_ease_both]">
+            <Moon size={15} className="text-indigo-300 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-indigo-200/90 leading-snug">
+                El día anterior fue <span className="font-semibold text-indigo-100">turno noche</span>
+                {prevSalida ? ` (termina ${prevSalida} hoy)` : ''}. Esas horas de la madrugada ya quedaron contadas — no las cargues de nuevo acá.
+              </p>
+              {haySugerencia && (
+                <button
+                  onClick={aplicarSugerencia}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/20 border border-indigo-400/40 px-2.5 py-1.5 text-[11px] font-semibold text-indigo-200 active:scale-95 transition-transform"
+                >
+                  <Clock size={12} /> Usar horario sugerido {sugEntrada}–{sugSalida}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Reloj sugerido según el último día cargado (turno día u otro) ── */}
+        {!prevTurnoNoche && haySugerencia && (
+          <div className="mb-4 flex items-center gap-2.5 rounded-xl bg-sky-950/40 border border-sky-800/40 px-3 py-2.5 animate-[apply-bar-in_220ms_ease_both]">
+            <Clock size={15} className="text-sky-300 shrink-0" />
+            <p className="text-xs text-sky-200/90 leading-snug flex-1 min-w-0">
+              Sugerido (último día): <span className="font-semibold text-sky-100">{sugEntrada}–{sugSalida}</span> · turno {sugTipo === 'noche' ? 'noche' : 'día'}
+            </p>
+            <button
+              onClick={aplicarSugerencia}
+              className="shrink-0 rounded-lg bg-sky-500/20 border border-sky-400/40 px-2.5 py-1.5 text-[11px] font-semibold text-sky-200 active:scale-95 transition-transform"
+            >
+              Usar
+            </button>
+          </div>
+        )}
+
         {/* ── Turno ── */}
         <div className="mb-5">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Turno</p>
@@ -151,6 +234,22 @@ export function RegistroDialog({ fecha, existing, proyectosFrecuentes, diagrama,
             <TimeInput label="Entrada" value={e1} onChange={setE1} />
             <TimeInput label="Salida" value={s1} onChange={setS1} />
           </div>
+          {turnoTipo && (
+            <div className="mt-2.5 flex items-center gap-2 animate-[apply-bar-in_220ms_ease_both]">
+              {turnoTipo === 'noche' ? (
+                <span className="rounded-full bg-indigo-500/15 border border-indigo-500/30 px-2.5 py-1 text-[11px] font-semibold text-indigo-300">
+                  Turno noche
+                </span>
+              ) : (
+                <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 text-[11px] font-semibold text-amber-300">
+                  Turno día
+                </span>
+              )}
+              {turnoCruza && (
+                <span className="text-[11px] text-slate-400">termina al día siguiente</span>
+              )}
+            </div>
+          )}
           {isPartialEntry && (
             <p className="text-xs text-red-400 mt-2">Ingresá tanto la Entrada como la Salida</p>
           )}

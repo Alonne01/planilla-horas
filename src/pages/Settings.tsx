@@ -77,12 +77,16 @@ export function SettingsPage() {
 
   async function handleGuardar() {
     try {
+      const nuevoBasico = parseBasicoInput(sueldoBasico)
+      // Si cambió el básico, lo anclamos a HOY para escalarlo por paritaria en otros meses.
+      const basicoCambio = nuevoBasico !== settings.sueldoBasico
       await update({
         nombreUsuario: nombre,
         diagrama,
         diagramaInicioMs: diagramaFecha ? parseDateLocal(diagramaFecha) : 0,
         convenio,
-        sueldoBasico: parseBasicoInput(sueldoBasico),
+        sueldoBasico: nuevoBasico,
+        ...(basicoCambio ? { sueldoBasicoVigenciaMs: Date.now() } : {}),
         fechaIngresoMs: fechaIngreso ? parseDateLocal(fechaIngreso) : 0,
         tipoTurno,
         zonaVacaMuerta: zonaVM,

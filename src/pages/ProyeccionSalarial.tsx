@@ -7,6 +7,7 @@ import {
   calcularSueldo, configFromSettings, isSalaryUser, fmtPesos, convenioLabel,
   type SalaryEstimate, type LineItem,
 } from '../lib/calculo-salarial'
+import { basicoProyectado } from '../lib/paritarias'
 
 export function ProyeccionSalarialPage() {
   const { settings, loaded } = useSettings()
@@ -41,8 +42,11 @@ function Proyeccion() {
   const est = useMemo<SalaryEstimate | null>(() => {
     if (!settings.sueldoBasico) return null
     const registros = periodos[0]?.registros ?? []
-    return calcularSueldo(registros, configFromSettings(settings))
-  }, [periodos, settings])
+    // Básico del mes proyectado: escala el básico cargado por la paritaria vigente ese mes.
+    const basicoMes = basicoProyectado(settings.convenio, anio, mes, settings.sueldoBasico, settings.sueldoBasicoVigenciaMs)
+    const config = { ...configFromSettings(settings), sueldoBasico: basicoMes }
+    return calcularSueldo(registros, config)
+  }, [periodos, settings, mes, anio])
 
   function cambiarMes(delta: number) {
     const { mes: m, anio: a } = shiftPeriodo(mes, anio, delta)

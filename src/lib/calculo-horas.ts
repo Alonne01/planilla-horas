@@ -56,6 +56,20 @@ export function esDiaNoTrabajado(reg: RegistroHoras): boolean {
 }
 
 /**
+ * ¿El turno principal cruza la medianoche? (turno noche: la salida tiene una hora
+ * de reloj menor que la entrada, p. ej. 19:00 → 07:00). Se usa para avisar, en el
+ * día siguiente, que esas horas de la madrugada ya quedaron contadas en este día.
+ */
+export function turnoCruzaMedianoche(reg: RegistroHoras): boolean {
+  const e = reg.entradaInicioMs
+  const s = reg.salidaInicioMs
+  if (e == null || s == null) return false
+  const eMin = new Date(e).getHours() * 60 + new Date(e).getMinutes()
+  const sMin = new Date(s).getHours() * 60 + new Date(s).getMinutes()
+  return sMin < eMin
+}
+
+/**
  * Calculate hours for a single day record.
  * Rules (mirroring the official planilla formula + CalculoSalarialUtil):
  * - Franco / Ausencia / Feriado (no trabajado) → 0 hours
