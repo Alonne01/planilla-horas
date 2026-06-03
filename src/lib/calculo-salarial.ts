@@ -59,8 +59,9 @@ function normalizar(s: string): string {
 // isSalaryUser devuelva true).
 const SALARY_WHITELIST_ABIERTA = false
 const SALARY_WHITELIST: string[] = [
-  'Nicolas Vazquez',
-  'Aviles Lucas',
+  '666',               // palabra clave de prueba actual: quien ponga "666" como nombre desbloquea
+  // 'Nicolas Vazquez',
+  // 'Aviles Lucas',
   // 'Juan Pérez',
   // 'Otro Tester',
 ].map(normalizar)
