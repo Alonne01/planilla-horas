@@ -9,7 +9,7 @@
 // el resto de la app). El diferencial nocturno (sólo 644) se calcula acá (LCT Art.200).
 
 import type { AppSettings, RegistroHoras } from '../db/database'
-import { calcularHorasDia, esDiaNoTrabajado, type LineaTrabajo } from './calculo-horas'
+import { calcularHorasDia, esDiaNoTrabajado, horasViajeSeparadas, type LineaTrabajo } from './calculo-horas'
 
 export type Convenio = 'CCT_637_11' | 'CCT_644_12'
 export type TipoTurno = 'NINGUNO' | 'TURNO_A' | 'TURNO_B' | 'TURNO_S'
@@ -164,7 +164,7 @@ function agregar(registros: RegistroHoras[], linea: LineaTrabajo): Agregados {
       if (reg.lugarTrabajo === 'Campo') diasCampo++
       else if (reg.lugarTrabajo === 'Base') diasBase++
     }
-    totalViaje += reg.horasViaje ?? 0
+    totalViaje += horasViajeSeparadas(reg)
     if (reg.pernocte === 'Hotel' || reg.pernocte === 'Trailer') pernoctes++
     if (reg.pernocte === 'Trailer') pernoctesTrailer++
   }
