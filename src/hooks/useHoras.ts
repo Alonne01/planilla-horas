@@ -40,7 +40,12 @@ export function useHoras(mes: number, anio: number) {
   return { registros, loading, reload, upsert, remove, getAllForCounter }
 }
 
-export function useFrancoCounter() {
+/**
+ * Francos compensatorios disponibles (ganados por franco trabajado − usados).
+ * Recibe `registros` del período visible como dependencia: cada alta/edición/borrado
+ * dispara un reload de registros, y eso refresca el contador al instante.
+ */
+export function useFrancoCounter(registros: RegistroHoras[] = []) {
   const [disponibles, setDisponibles] = useState(0)
 
   useEffect(() => {
@@ -49,7 +54,7 @@ export function useFrancoCounter() {
       const usados = all.filter(r => r.esFrancoCompensatorio).length
       setDisponibles(ganados - usados)
     })
-  }, [])
+  }, [registros])
 
   return disponibles
 }

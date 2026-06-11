@@ -59,7 +59,7 @@ export function HorasTrabajoPage() {
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const { registros, loading, upsert, remove, reload } = useHoras(mes, anio)
   const { settings } = useSettings()
-  const francosDisponibles = useFrancoCounter()
+  const francosDisponibles = useFrancoCounter(registros)
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
@@ -463,6 +463,7 @@ export function HorasTrabajoPage() {
           proyectosFrecuentes={settings.proyectosFrecuentes}
           diagrama={settings.diagrama}
           diagramaInicioMs={settings.diagramaInicioMs}
+          francosDisponibles={francosDisponibles}
           onSave={async (reg) => { await upsert(reg); setSelectedDate(null) }}
           onDelete={async (id) => { await remove(id); setSelectedDate(null) }}
           onClose={() => setSelectedDate(null)}

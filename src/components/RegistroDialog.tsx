@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { v4 as uuid } from 'uuid'
-import { X, CalendarDays, Clock, Moon } from 'lucide-react'
+import { X, CalendarDays, Clock, Moon, Palmtree, Check } from 'lucide-react'
 import { TimeDrumPicker } from './TimeDrumPicker'
 import type { RegistroHoras } from '../db/database'
 import { esFeriadoNacional, nombreFeriado } from '../lib/feriados'
@@ -15,6 +15,8 @@ interface Props {
   proyectosFrecuentes: string[]
   diagrama: DiagramaPatternKey
   diagramaInicioMs: number
+  /** Francos compensatorios disponibles ANTES de guardar este registro */
+  francosDisponibles: number
   onSave: (reg: RegistroHoras) => void
   onDelete?: (id: string) => void
   onClose: () => void
@@ -77,7 +79,7 @@ function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
   return null
 }
 
-export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, onSave, onDelete, onClose }: Props) {
+export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose }: Props) {
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
   const esFeriadoHoy = esFeriadoNacional(fecha.getTime())
   const nombreFeriadoHoy = nombreFeriado(fecha.getTime())
@@ -139,6 +141,15 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   const isDayOff = !e1 && !s1                       // both empty → absence day
   const isFrancoWorked = esFrancoHoy && hasWork                        // diagrama franco + times → 100%
   const isFeriadoWorked = esFeriadoHoy && hasWork                      // feriado nacional + horas → 100%
+
+  // ── Saldo de francos compensatorios en vivo ──
+  // `francosDisponibles` ya incluye lo que aporta el registro guardado: se lo descuenta
+  // para proyectar el saldo según lo que el usuario está eligiendo AHORA en el formulario.
+  const baseFrancos = francosDisponibles
+    - (existing?.esFrancoTrabajado ? 1 : 0)
+    + (existing?.esFrancoCompensatorio ? 1 : 0)
+  const usaCompensatorio = isDayOff && subFranco === 'COMP'
+  const francosProyectados = baseFrancos + (isFrancoWorked ? 1 : 0) - (usaCompensatorio ? 1 : 0)
 
   // Nota estética turno noche / día + recordatorio del día anterior
   const turnoTipo = hasWork ? clasificarTurno(e1, s1) : null
@@ -295,26 +306,54 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
           )}
           {/* ── Aviso: salida 00:00 → probablemente está partiendo un turno noche a mano ── */}
           {!!e1 && s1 === '00:00' && (
-            <div className="mt-3 rounded-xl bg-amber-950/40 border border-amber-700/40 px-3 py-2.5 animate-[apply-bar-in_220ms_ease_both]">
-              <div className="flex items-start gap-2.5">
-                <Moon size={15} className="text-amber-300 shrink-0 mt-0.5" />
-                <div className="text-xs text-amber-100/90 leading-snug flex-1 min-w-0">
-                  <p className="font-semibold text-amber-200 mb-1">¿Estás tratando de cargar un turno noche?</p>
-                  <p>
-                    Cargá el turno <span className="font-semibold">completo</span> en este día (con la salida real de la
-                    madrugada) y la app lo separa sola en dos. Por ejemplo, si cargás acá{' '}
-                    <span className="font-mono font-semibold text-amber-200">{e1}–07:00</span>, se cuenta así:
+            <div className="mt-3 rounded-2xl overflow-hidden border border-indigo-700/50 bg-gradient-to-b from-indigo-950/70 to-slate-900/60 animate-[apply-bar-in_220ms_ease_both]">
+              {/* header */}
+              <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-indigo-900/40 border-b border-indigo-700/40">
+                <span className="grid place-items-center w-7 h-7 rounded-full bg-indigo-500/25 shrink-0">
+                  <Moon size={14} className="text-indigo-200" />
+                </span>
+                <p className="text-sm font-semibold text-indigo-100">¿Estás cargando un turno noche?</p>
+              </div>
+
+              <div className="px-3.5 py-3 space-y-3">
+                <p className="text-xs text-indigo-100/85 leading-relaxed">
+                  Una salida <span className="font-mono font-semibold text-indigo-200">00:00</span> suele significar que el turno
+                  sigue de madrugada. En ese caso <span className="font-semibold text-indigo-100">no lo cortes en medianoche</span>:
+                  cargá el turno completo en este día, con la hora real a la que salís, y la app reparte las horas sola.
+                </p>
+
+                {/* ✓ forma correcta */}
+                <div className="rounded-xl bg-emerald-950/40 border border-emerald-700/40 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wide flex items-center gap-1.5 mb-1.5">
+                    <Check size={13} /> Así se carga
                   </p>
-                  <div className="mt-2 mb-1 flex flex-col gap-1">
-                    <span className="rounded-lg bg-amber-500/10 border border-amber-600/30 px-2.5 py-1.5 font-mono text-amber-200">
-                      {hoyCorto} <span className="text-amber-100/60">(hoy)</span> · {e1}–00:00
-                    </span>
-                    <span className="rounded-lg bg-amber-500/10 border border-amber-600/30 px-2.5 py-1.5 font-mono text-amber-200">
-                      {mananaCorto} <span className="text-amber-100/60">(mañana)</span> · 00:00–07:00
-                    </span>
+                  <p className="text-xs text-emerald-100/90">
+                    Un solo registro el <span className="font-semibold">{hoyCorto}</span>, de entrada a salida real
+                    (ej. <span className="font-mono font-semibold text-emerald-200">{e1} → 07:00</span>).
+                  </p>
+                  <div className="mt-2 flex items-stretch gap-1.5 text-[11px] font-mono">
+                    <div className="flex-1 rounded-lg bg-emerald-500/10 border border-emerald-600/30 px-2 py-1.5 text-center">
+                      <div className="text-emerald-100/60 text-[10px]">{hoyCorto} (hoy)</div>
+                      <div className="text-emerald-200 font-semibold">{e1}–00:00</div>
+                    </div>
+                    <div className="self-center text-emerald-400/70">+</div>
+                    <div className="flex-1 rounded-lg bg-emerald-500/10 border border-emerald-600/30 px-2 py-1.5 text-center">
+                      <div className="text-emerald-100/60 text-[10px]">{mananaCorto} (mañana)</div>
+                      <div className="text-emerald-200 font-semibold">00:00–07:00</div>
+                    </div>
                   </div>
-                  <p className="text-amber-100/70">
-                    No cargues mañana otro registro 00:00–07:00: esas horas ya quedan contadas acá y se duplicarían.
+                  <p className="text-[11px] text-emerald-100/60 mt-1.5">↑ la app las separa así, automáticamente</p>
+                </div>
+
+                {/* ✗ forma incorrecta */}
+                <div className="rounded-xl bg-rose-950/30 border border-rose-800/40 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold text-rose-300 uppercase tracking-wide flex items-center gap-1.5 mb-1.5">
+                    <X size={13} /> Así NO
+                  </p>
+                  <p className="text-xs text-rose-100/85 leading-relaxed">
+                    Cargar hoy <span className="font-mono">{e1}–00:00</span> y mañana otro registro{' '}
+                    <span className="font-mono">00:00–07:00</span>: las horas de la madrugada se cuentan dos veces
+                    y el cálculo del período da mal.
                   </p>
                 </div>
               </div>
@@ -324,9 +363,14 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
             <p className="text-xs text-red-400 mt-2">Ingresá tanto la Entrada como la Salida</p>
           )}
           {isFrancoWorked && (
-            <p className="text-xs text-purple-400 mt-2 flex items-center gap-1">
-              <CalendarDays size={12} /> Franco trabajado — horas al 100%
-            </p>
+            <div className="mt-2 space-y-1">
+              <p className="text-xs text-purple-400 flex items-center gap-1">
+                <CalendarDays size={12} /> Franco trabajado — horas al 100%
+              </p>
+              <p className="text-xs text-emerald-400 flex items-center gap-1 animate-[apply-bar-in_220ms_ease_both]">
+                <Palmtree size={12} /> Ganás 1 franco compensatorio — al guardar vas a tener <span className="font-bold">{francosProyectados}</span>
+              </p>
+            </div>
           )}
           {isFeriadoWorked && (
             <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
@@ -366,6 +410,17 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
                 </button>
               ))}
             </div>
+            {usaCompensatorio && (
+              baseFrancos > 0 ? (
+                <p className="text-[11px] text-emerald-300/90 mt-2 leading-snug flex items-center gap-1 animate-[apply-bar-in_220ms_ease_both]">
+                  <Palmtree size={12} className="shrink-0" /> Usás 1 franco compensatorio — al guardar te {francosProyectados === 1 ? 'queda' : 'quedan'} <span className="font-bold">{francosProyectados}</span>
+                </p>
+              ) : (
+                <p className="text-[11px] text-amber-300/90 mt-2 leading-snug animate-[apply-bar-in_220ms_ease_both]">
+                  ⚠ No tenés francos compensatorios ganados (saldo actual: {baseFrancos}). Si lo guardás igual, el saldo queda en <span className="font-bold">{francosProyectados}</span>.
+                </p>
+              )
+            )}
             {subFranco === 'FALTA' && (
               <p className="text-[11px] text-rose-300/90 mt-2 leading-snug">
                 Se descuenta el día proporcional de básico y se pierde el presentismo del período.
