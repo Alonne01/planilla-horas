@@ -204,6 +204,10 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   }
 
   const labelDia = fecha.toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long' })
+  // Fechas cortas para el ejemplo del aviso de turno noche (salida 00:00)
+  const hoyCorto = fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
+  const mananaCorto = new Date(fecha.getTime() + 24 * 60 * 60 * 1000)
+    .toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
 
   return (
     <div
@@ -287,6 +291,33 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               {turnoCruza && (
                 <span className="text-[11px] text-slate-400">termina al día siguiente</span>
               )}
+            </div>
+          )}
+          {/* ── Aviso: salida 00:00 → probablemente está partiendo un turno noche a mano ── */}
+          {!!e1 && s1 === '00:00' && (
+            <div className="mt-3 rounded-xl bg-amber-950/40 border border-amber-700/40 px-3 py-2.5 animate-[apply-bar-in_220ms_ease_both]">
+              <div className="flex items-start gap-2.5">
+                <Moon size={15} className="text-amber-300 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-100/90 leading-snug flex-1 min-w-0">
+                  <p className="font-semibold text-amber-200 mb-1">¿Estás tratando de cargar un turno noche?</p>
+                  <p>
+                    Cargá el turno <span className="font-semibold">completo</span> en este día (con la salida real de la
+                    madrugada) y la app lo separa sola en dos. Por ejemplo, si cargás acá{' '}
+                    <span className="font-mono font-semibold text-amber-200">{e1}–07:00</span>, se cuenta así:
+                  </p>
+                  <div className="mt-2 mb-1 flex flex-col gap-1">
+                    <span className="rounded-lg bg-amber-500/10 border border-amber-600/30 px-2.5 py-1.5 font-mono text-amber-200">
+                      {hoyCorto} <span className="text-amber-100/60">(hoy)</span> · {e1}–00:00
+                    </span>
+                    <span className="rounded-lg bg-amber-500/10 border border-amber-600/30 px-2.5 py-1.5 font-mono text-amber-200">
+                      {mananaCorto} <span className="text-amber-100/60">(mañana)</span> · 00:00–07:00
+                    </span>
+                  </div>
+                  <p className="text-amber-100/70">
+                    No cargues mañana otro registro 00:00–07:00: esas horas ya quedan contadas acá y se duplicarían.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
           {isPartialEntry && (
