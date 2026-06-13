@@ -214,12 +214,15 @@ export async function pruneOldRegistros(): Promise<number> {
 }
 
 /**
- * One-time migration: the old toggle stored horasViaje=1 (boolean),
- * the new code stores horasViaje=2 (actual hours).
- * Upgrade any record with exactly 1 → 2.
+ * One-time migration: the old Campo toggle stored horasViaje=1 (boolean),
+ * the new code stores actual hours (Campo: 3/5/manual, o el 2 legado).
+ * Upgrade any such record with exactly 1 → 2.
+ *
+ * OJO: el toggle "Viaje a base (+1h)" guarda horasViaje=1 en días de Base, así que
+ * NO hay que tocar los registros de Base o se rompería esa +1h en cada arranque.
  */
 export async function migrateHorasViaje(): Promise<number> {
-  const toMigrate = await db.registros.filter(r => r.horasViaje === 1).toArray()
+  const toMigrate = await db.registros.filter(r => r.horasViaje === 1 && r.lugarTrabajo !== 'Base').toArray()
   if (toMigrate.length === 0) return 0
   await db.registros.bulkPut(toMigrate.map(r => ({ ...r, horasViaje: 2 })))
   await shadowBackup()

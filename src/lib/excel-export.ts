@@ -22,6 +22,15 @@ function xmlEsc(s: string): string {
     .replace(/>/g, '&gt;')
 }
 
+/**
+ * Columna H del template (antes "SI"/"NO"): ahora muestra las HORAS de viaje cuando hubo
+ * (3, 5, 1, 1.5…) y "NO" cuando no hubo.
+ */
+function fmtViaje(h: number): string {
+  if (!h || h <= 0) return 'NO'
+  return String(Math.round(h * 10) / 10)
+}
+
 function dateToExcelSerial(d: Date): number {
   return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000) + 25569
 }
@@ -190,7 +199,7 @@ function buildRowParts(
         : (obsBase ? `feriado trabajado - ${obsBase}` : 'feriado trabajado')
       return [
         [cellA, cellB, cC, cD, cE, cF].join(''),
-        [cStr(`H${n}`, s.H, reg.horasViaje > 0 ? 'SI' : 'NO'), cEmpty(`I${n}`, s.I),
+        [cStr(`H${n}`, s.H, fmtViaje(reg.horasViaje)), cEmpty(`I${n}`, s.I),
           cEmpty(`J${n}`, s.J), cEmpty(`K${n}`, s.K), cEmpty(`L${n}`, s.L), cEmpty(`M${n}`, s.M),
           cStr(`N${n}`, s.N, obs)].join(''),
       ]
@@ -231,7 +240,7 @@ function buildRowParts(
 
   return [
     [cellA, cellB, cC, cD, cE, cF].join(''),
-    [cStr(`H${n}`, s.H, reg.horasViaje > 0 ? 'SI' : 'NO'),
+    [cStr(`H${n}`, s.H, fmtViaje(reg.horasViaje)),
       cStr(`I${n}`, s.I, reg.lugarTrabajo),
       cStr(`J${n}`, s.J, reg.pernocte === 'Hotel' ? 'x' : ''),
       cStr(`K${n}`, s.K, reg.pernocte === 'Trailer' ? 'x' : ''),
