@@ -89,14 +89,13 @@ export function turnoCruzaMedianoche(reg: RegistroHoras): boolean {
 
 /**
  * Horas de viaje que se liquidan APARTE (ítem "Horas Viaje", ~47% del valor hora):
- * - Campo sin manejar, o Base (la +1h del toggle "Viaje a base").
- * Si el operario MANEJA en Campo, sus horas de viaje NO van acá: se suman a la
- * jornada trabajada (entran en normales/extras y en el cap diario de 16 h).
+ * cualquier día con horasViaje > 0 (Campo, o la +1h del toggle "Viaje a base").
+ * "Manejó" NO cambia esto: igual que en EquipTrack, las horas de viaje siempre van al
+ * ítem Viaje y nunca engrosan la jornada trabajada.
  */
 export function horasViajeSeparadas(reg: RegistroHoras): number {
   const hv = reg.horasViaje ?? 0
   if (hv <= 0) return 0
-  if (reg.lugarTrabajo === 'Campo' && reg.maneja) return 0
   return hv
 }
 
@@ -105,7 +104,6 @@ export function horasViajeSeparadas(reg: RegistroHoras): number {
  * Rules (mirroring the official planilla formula + CalculoSalarialUtil):
  * - Franco / Ausencia / Feriado (no trabajado) → 0 hours
  * - Total = (turno1 + turno2) − (1 h almuerzo si lugar = Base), topeado a [0, 16]
- * - Campo + maneja: las horas de viaje se suman a la jornada (dentro del cap de 16 h)
  * - FrancoTrabajado o FeriadoTrabajado → todo al 100%
  * - Día normal: hasta 8 h → normales, > 8 h → al 50% (nunca al 100%)
  * - Línea SBDP, día de CAMPO trabajado → 12 h al 50% FIJAS, SIN horas normales (no
@@ -124,9 +122,9 @@ export function calcularHorasDia(
     minutesBetween(reg.entradaFinMs, reg.salidaFinMs)
   // Almuerzo: 1 h descontada UNA vez por día en Base (igual que la fórmula del template).
   const almuerzo = reg.lugarTrabajo === 'Base' ? 1 : 0
-  // Maneja en Campo: las horas de viaje engrosan la jornada (y respetan el cap de 16 h)
-  const viajeManeja = reg.lugarTrabajo === 'Campo' && reg.maneja ? (reg.horasViaje ?? 0) : 0
-  const total = clamp(rawMin / 60 - almuerzo + viajeManeja, 0, MAX_HORAS_DIA)
+  // Las horas de viaje NUNCA engrosan la jornada (igual que EquipTrack): aunque haya manejado,
+  // se liquidan aparte en el ítem Viaje (ver horasViajeSeparadas).
+  const total = clamp(rawMin / 60 - almuerzo, 0, MAX_HORAS_DIA)
 
   // Feriado trabajado o Franco trabajado → todo al 100%
   if (reg.esFeriadoTrabajado || reg.esFrancoTrabajado) {
