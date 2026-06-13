@@ -586,16 +586,19 @@ function TimeInput({ label, value, onChange }: { label: string; value: string; o
 function ProjectInput({ value, onChange, suggestions }: { value: string; onChange: (v: string) => void; suggestions: string[] }) {
   // Proyectos frecuentes que matchean lo tipeado, como CHIPS arriba del input (en flujo
   // normal, no dropdown flotante). Tocar un chip llena el valor SIN enfocar el input, así
-  // seleccionar un frecuente no abre el teclado ni desplaza la pantalla. Si no hay filtro,
-  // se muestran los primeros para no tapar el formulario; tipeando se filtran todos.
+  // seleccionar un frecuente no abre el teclado ni desplaza la pantalla.
+  // Con muchos proyectos NO se hace una pared: se muestran hasta CHIPS_MAX y el resto se
+  // accede tipeando (que filtra los chips). El contador "+N" avisa que hay más.
+  const CHIPS_MAX = 8
   const q = value.trim().toLowerCase()
   const matches = suggestions.filter(s => s.toLowerCase().includes(q))
-  const shown = q ? matches : matches.slice(0, 8)
+  const shown = matches.slice(0, CHIPS_MAX)
+  const ocultos = matches.length - shown.length
 
   return (
     <div>
       {shown.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
           {shown.map(s => (
             <button
               key={s}
@@ -608,6 +611,9 @@ function ProjectInput({ value, onChange, suggestions }: { value: string; onChang
               {s}
             </button>
           ))}
+          {ocultos > 0 && (
+            <span className="text-[11px] text-slate-500 px-1">+{ocultos} · escribí para filtrar</span>
+          )}
         </div>
       )}
       <input
