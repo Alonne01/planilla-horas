@@ -584,24 +584,39 @@ function TimeInput({ label, value, onChange }: { label: string; value: string; o
 }
 
 function ProjectInput({ value, onChange, suggestions }: { value: string; onChange: (v: string) => void; suggestions: string[] }) {
-  const [open, setOpen] = useState(false)
-  const filtered = suggestions.filter(s => s.toLowerCase().includes(value.toLowerCase()))
+  // Proyectos frecuentes que matchean lo tipeado, como CHIPS arriba del input (en flujo
+  // normal, no dropdown flotante). Tocar un chip llena el valor SIN enfocar el input, así
+  // seleccionar un frecuente no abre el teclado ni desplaza la pantalla. Si no hay filtro,
+  // se muestran los primeros para no tapar el formulario; tipeando se filtran todos.
+  const q = value.trim().toLowerCase()
+  const matches = suggestions.filter(s => s.toLowerCase().includes(q))
+  const shown = q ? matches : matches.slice(0, 8)
 
   return (
-    <div className="relative">
-      <input type="text" value={value} onChange={e => { onChange(e.target.value); setOpen(true) }}
-        onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm" />
-      {open && filtered.length > 0 && (
-        <div className="absolute z-10 w-full bottom-full mb-1 bg-slate-700 rounded-xl overflow-hidden shadow-xl max-h-48 overflow-y-auto">
-          {filtered.map(s => (
-            <button key={s} onMouseDown={() => { onChange(s); setOpen(false) }}
-              className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-600">
+    <div>
+      {shown.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {shown.map(s => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onChange(s)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                s === value ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200 active:bg-slate-600'
+              }`}
+            >
               {s}
             </button>
           ))}
         </div>
       )}
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Escribí o tocá un proyecto frecuente"
+        className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
     </div>
   )
 }
