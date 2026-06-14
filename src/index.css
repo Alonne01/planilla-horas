@@ -107,3 +107,24 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
 @keyframes donador-in   { from { opacity: 0; transform: translateY(12px) scale(0.92); } to { opacity: 1; transform: none; } }
 @keyframes donador-out  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(10px) scale(0.94); } }
 
+/* Muerte estilo Final Fantasy: fogonazo blanco + disolución en barrido ascendente
+   con scanlines (mask de 2 capas) + leve hundida/escala. Si el navegador no
+   soporta mask-composite, degrada a un fade con flash (opacity/filter igual corren). */
+@keyframes donador-death {
+  0%   { -webkit-mask-position: 50% 0%, 0 0;   mask-position: 50% 0%, 0 0;   opacity: 1; filter: brightness(1) saturate(1);                 transform: translateY(0) scale(1); }
+  18%  {                                                                      opacity: 1; filter: brightness(2.6) saturate(0.25) contrast(1.15); }
+  100% { -webkit-mask-position: 50% 100%, 0 0; mask-position: 50% 100%, 0 0; opacity: 0; filter: brightness(1.7) saturate(0.35);            transform: translateY(-12px) scale(1.04); }
+}
+.donador-muriendo {
+  -webkit-mask-image: linear-gradient(to top, transparent, #000 35%), repeating-linear-gradient(0deg, #000 0 2px, transparent 2px 4px);
+          mask-image: linear-gradient(to top, transparent, #000 35%), repeating-linear-gradient(0deg, #000 0 2px, transparent 2px 4px);
+  -webkit-mask-size: 100% 220%, 100% 100%;
+          mask-size: 100% 220%, 100% 100%;
+  -webkit-mask-repeat: no-repeat, repeat;
+          mask-repeat: no-repeat, repeat;
+  -webkit-mask-composite: source-in;
+          mask-composite: intersect;
+  animation: donador-death 720ms ease-in forwards;
+}
+@keyframes donador-bubble-out { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(-4px) scale(0.96); } }
+

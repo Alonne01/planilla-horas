@@ -35,21 +35,20 @@ export function DonadorDonacion() {
 
   useEffect(() => {
     if (!visible) return
-    const tLeave = setTimeout(() => setLeaving(true), 10_000)
-    const tGone = setTimeout(() => setVisible(false), 10_400)
+    const tLeave = setTimeout(() => setLeaving(true), 10_000)         // empieza la muerte
+    const tGone = setTimeout(() => setVisible(false), 10_760)         // desmonta tras la animación (720ms)
     return () => { clearTimeout(tLeave); clearTimeout(tGone) }
   }, [visible])
 
   if (!visible) return null
 
-  const spriteStyle: CSSProperties = {
+  const spriteBase: CSSProperties = {
     width: `${FRAME}px`,
     height: `${FRAME}px`,
     backgroundImage: `url(${donadorSheet})`,
     backgroundRepeat: 'no-repeat',
     backgroundSize: '300% 100%',
     backgroundPositionX: '0%',
-    animation: 'donador-walk 1s steps(3) infinite',
   }
 
   return (
@@ -65,23 +64,29 @@ export function DonadorDonacion() {
         bottom: 'calc(2.5rem + env(safe-area-inset-bottom))', // sentado sobre el nav
       }}
       className={`fixed z-40 block origin-bottom-left transition-transform active:scale-95 ${
-        leaving
-          ? 'pointer-events-none animate-[donador-out_360ms_ease_both]'
-          : 'animate-[donador-in_280ms_ease_both]'
+        leaving ? 'pointer-events-none' : 'animate-[donador-in_280ms_ease_both]'
       }`}
     >
-      {/* Personaje, apoyado sobre la barra de navegación */}
-      <div style={spriteStyle} className="absolute bottom-0 left-0" />
+      {/* Personaje, apoyado sobre la barra de navegación.
+          Vivo: camina (donador-walk). Muriendo: disolución estilo Final Fantasy. */}
+      <div
+        style={leaving ? spriteBase : { ...spriteBase, animation: 'donador-walk 1s steps(3) infinite' }}
+        className={`absolute bottom-0 left-0 ${leaving ? 'donador-muriendo' : ''}`}
+      />
 
       {/* Globo de diálogo, arriba a la derecha del personaje.
           w-max + max-w fuerza ancho intrínseco (evita el colapso a ~46px del
           contenedor de 100px) → frases largas en 2 líneas anchas, no 6 angostas. */}
-      <div className="absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-2xl bg-white px-3 py-1.5 shadow-lg ring-1 ring-black/10">
-        <span className="flex items-start gap-1.5 text-[11px] font-semibold leading-snug text-slate-800">
+      <div
+        className={`absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-[18px] bg-gradient-to-br from-white to-slate-100 px-3.5 py-2 shadow-lg shadow-black/25 ring-1 ring-black/5 ${
+          leaving ? 'animate-[donador-bubble-out_220ms_ease-in_forwards]' : ''
+        }`}
+      >
+        <span className="flex items-start gap-2 text-[11px] font-semibold leading-snug text-slate-700">
           <Coffee size={13} className="mt-px shrink-0 text-sky-600" /> {dialogo}
         </span>
         {/* colita que apunta al personaje (abajo-izquierda) */}
-        <span className="absolute -bottom-1 left-3 h-3 w-3 rotate-45 rounded-[2px] bg-white" />
+        <span className="absolute -bottom-1 left-3 h-3 w-3 rotate-45 rounded-[2px] bg-gradient-to-br from-white to-slate-100" />
       </div>
     </a>
   )
