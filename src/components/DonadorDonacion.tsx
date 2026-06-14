@@ -35,8 +35,8 @@ export function DonadorDonacion() {
 
   useEffect(() => {
     if (!visible) return
-    const tLeave = setTimeout(() => setLeaving(true), 10_000)         // empieza la muerte
-    const tGone = setTimeout(() => setVisible(false), 10_760)         // desmonta tras la animación (720ms)
+    const tLeave = setTimeout(() => setLeaving(true), 10_000)        // empieza la muerte FF
+    const tGone = setTimeout(() => setVisible(false), 10_900)        // desmonta tras la animación (820ms)
     return () => { clearTimeout(tLeave); clearTimeout(tGone) }
   }, [visible])
 
@@ -64,29 +64,39 @@ export function DonadorDonacion() {
         bottom: 'calc(2.5rem + env(safe-area-inset-bottom))', // sentado sobre el nav
       }}
       className={`fixed z-40 block origin-bottom-left transition-transform active:scale-95 ${
-        leaving ? 'pointer-events-none' : 'animate-[donador-in_280ms_ease_both]'
+        leaving ? 'pointer-events-none' : ''
       }`}
     >
-      {/* Personaje, apoyado sobre la barra de navegación.
-          Vivo: camina (donador-walk). Muriendo: disolución estilo Final Fantasy. */}
+      {/* Personaje. Vivo: sube y camina. Muriendo: disolución estilo Final Fantasy. */}
       <div
-        style={leaving ? spriteBase : { ...spriteBase, animation: 'donador-walk 1s steps(3) infinite' }}
+        style={leaving ? spriteBase : { ...spriteBase, animation: 'donador-rise 360ms ease-out both, donador-walk 1s steps(3) infinite' }}
         className={`absolute bottom-0 left-0 ${leaving ? 'donador-muriendo' : ''}`}
       />
+
+      {/* Chispas que suben mientras se disuelve */}
+      {leaving && (
+        <span className="donador-chispas absolute bottom-0 left-0" style={{ width: `${FRAME}px`, height: `${FRAME}px` }} />
+      )}
 
       {/* Globo de diálogo, arriba a la derecha del personaje.
           w-max + max-w fuerza ancho intrínseco (evita el colapso a ~46px del
           contenedor de 100px) → frases largas en 2 líneas anchas, no 6 angostas. */}
       <div
-        className={`absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-[18px] bg-gradient-to-br from-white to-slate-100 px-3.5 py-2 shadow-lg shadow-black/25 ring-1 ring-black/5 ${
-          leaving ? 'animate-[donador-bubble-out_220ms_ease-in_forwards]' : ''
-        }`}
+        style={{
+          animation: leaving
+            ? 'donador-bubble-out 220ms ease-in forwards'
+            : 'donador-bubble-in 340ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms both',
+        }}
+        className="absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-[20px] bg-white px-3.5 py-2 shadow-[0_8px_20px_-6px_rgba(2,6,23,0.55)] ring-1 ring-slate-900/10"
       >
-        <span className="flex items-start gap-2 text-[11px] font-semibold leading-snug text-slate-700">
-          <Coffee size={13} className="mt-px shrink-0 text-sky-600" /> {dialogo}
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold leading-snug text-slate-700">
+          <span className="grid size-[18px] shrink-0 place-items-center rounded-full bg-sky-100 ring-1 ring-sky-200">
+            <Coffee size={11} className="text-sky-600" />
+          </span>
+          {dialogo}
         </span>
-        {/* colita que apunta al personaje (abajo-izquierda) */}
-        <span className="absolute -bottom-1 left-3 h-3 w-3 rotate-45 rounded-[2px] bg-gradient-to-br from-white to-slate-100" />
+        {/* colita triangular que apunta al personaje */}
+        <span className="absolute -bottom-[7px] left-3 h-0 w-0 border-x-[7px] border-x-transparent border-t-[9px] border-t-white drop-shadow-[0_2px_1px_rgba(2,6,23,0.22)]" />
       </div>
     </a>
   )
