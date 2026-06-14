@@ -7,6 +7,7 @@ import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, 
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, type LineaTrabajo } from '../lib/calculo-horas'
+import { useOnboarding } from '../onboarding/OnboardingContext'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -54,6 +55,10 @@ export function SettingsPage() {
   useEffect(() => {
     setBackupOverdue(msSinceLastBackup() > SEVEN_DAYS_MS)
   }, [])
+
+  // Acciones del tour: actualizar feriados + guardar (referencias frescas cada render).
+  const registrarTour = useOnboarding().registrar
+  useEffect(() => { registrarTour({ actualizarFeriados: handleActualizarFeriados, guardarConfig: handleGuardar }) })
 
   // Sync local state once settings load from DB
   useEffect(() => {
@@ -178,6 +183,7 @@ export function SettingsPage() {
           <Field label="Nombre completo">
             <input
               type="text"
+              data-tour="cfg-nombre"
               value={nombre}
               onChange={e => { setNombre(e.target.value); setDirty(true) }}
               className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
@@ -188,7 +194,7 @@ export function SettingsPage() {
 
         {/* Línea de trabajo — afecta el conteo de horas (visible para todos) */}
         <Section title="Línea de trabajo">
-          <div className="space-y-2">
+          <div className="space-y-2" data-tour="cfg-linea">
             {LINEAS_TRABAJO.map(l => (
               <button
                 key={l.key}
@@ -268,7 +274,7 @@ export function SettingsPage() {
 
         {/* Diagrama */}
         <Section title="Diagrama de trabajo">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2" data-tour="cfg-diagrama">
             {DIAGRAMAS.map(d => (
               <button
                 key={d.key}
@@ -285,6 +291,7 @@ export function SettingsPage() {
             <Field label="Fecha inicio de diagrama">
               <input
                 type="date"
+                data-tour="cfg-fecha"
                 value={diagramaFecha}
                 onChange={e => { setDiagramaFecha(e.target.value); setDirty(true) }}
                 className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
@@ -295,6 +302,7 @@ export function SettingsPage() {
 
         {/* Guardar button */}
         <button
+          data-tour="cfg-guardar"
           onClick={handleGuardar}
           disabled={!dirty}
           className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${dirty ? 'bg-blue-600 text-white active:bg-blue-700' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}
@@ -310,6 +318,7 @@ export function SettingsPage() {
             para sumar años nuevos o aplicar correcciones oficiales.
           </p>
           <button
+            data-tour="cfg-feriados"
             onClick={handleActualizarFeriados}
             disabled={feriadosBusy}
             className={`w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors ${feriadosBusy ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}

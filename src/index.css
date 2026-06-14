@@ -148,3 +148,13 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
   100% { opacity: 0; transform: translateY(-44px) scale(1.05); }
 }
 
+/* ─── Walkthrough / tour: glow pulsante sobre el elemento resaltado ─── */
+@keyframes tour-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.9), 0 0 16px 4px rgba(56, 189, 248, 0.45); }
+  50%      { box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.95), 0 0 28px 8px rgba(45, 212, 191, 0.5); }
+}
+.tour-glow {
+  animation: tour-glow-pulse 1.4s ease-in-out infinite;
+  transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease;
+}
+

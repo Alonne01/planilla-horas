@@ -293,7 +293,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
         )}
 
         {/* ── Turno ── */}
-        <div className="mb-5">
+        <div className="mb-5" data-tour="dlg-turno">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Turno</p>
           <div className="grid grid-cols-2 gap-3">
             <TimeInput label="Entrada" value={e1} onChange={setE1} />
@@ -391,7 +391,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
         </div>
 
         {/* ── Lugar de Trabajo — Base / Campo only ── */}
-        <div className="mb-4">
+        <div className="mb-4" data-tour="dlg-lugar">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Lugar de Trabajo</p>
           <div className="flex gap-2">
             {(['Base', 'Campo'] as const).map(l => (
@@ -405,7 +405,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
         {/* ── Tipo de ausencia — only when no times entered AND not a scheduled franco day ── */}
         {isDayOff && !esFrancoHoy && (
-          <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
+          <div className="bg-slate-700/40 rounded-xl p-3 mb-4" data-tour="dlg-ausencia">
             <p className="text-xs text-slate-400 mb-2">Tipo de ausencia</p>
             <div className="grid grid-cols-3 gap-2">
               {([
@@ -442,7 +442,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
         {/* ── Pernocte / Maneja / Horas viaje — Campo only ── */}
         {!isDayOff && lugar === 'Campo' && (
-          <div className="space-y-3 mb-4">
+          <div className="space-y-3 mb-4" data-tour="dlg-viaje">
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Pernocte</p>
               <div className="flex gap-2">
@@ -522,7 +522,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
         )}
 
         {/* ── Proyecto / Observaciones ── */}
-        <div className="mb-5">
+        <div className="mb-5" data-tour="dlg-obs">
           <label className="text-xs text-slate-400 mb-1 block">Proyecto / Observaciones</label>
           <ProjectInput value={proyectoObs} onChange={setProyectoObs} suggestions={proyectosFrecuentes} />
           {proyectosFrecuentes.length === 0 && (

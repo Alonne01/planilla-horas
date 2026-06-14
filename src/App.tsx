@@ -4,12 +4,14 @@ import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
-import { isSalaryUser } from "./lib/calculo-salarial"
+import { isSalaryUser, isDonationUser } from "./lib/calculo-salarial"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, pruneOldRegistros, migrateHorasViaje, getSettings } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
+import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding/OnboardingContext"
+import { GuideTooltip } from "./components/GuideTooltip"
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches ||
@@ -41,6 +43,14 @@ function goToTab(next: Tab, current: Tab, setter: (t: Tab) => void) {
 }
 
 export default function App() {
+  return (
+    <OnboardingProvider>
+      <AppContent />
+    </OnboardingProvider>
+  )
+}
+
+function AppContent() {
   const [tab, setTab] = useState<Tab>("horas")
   // La proyección salarial queda oculta salvo para el usuario de prueba (período de prueba).
   // Se re-lee al cambiar de pestaña para reflejar el nombre apenas se guarda en Configuración.
@@ -52,6 +62,15 @@ export default function App() {
   const [emptyDb, setEmptyDb] = useState(false)
   const [gateSkipped, setGateSkipped] = useState(false)
   const restoreRef = useRef<HTMLInputElement>(null)
+
+  // ─── Walkthrough / onboarding (solo Nicolas): auto-arranca en 1er inicio si el nombre es Nicolas ───
+  const onb = useOnboarding()
+  useEffect(() => { onb.registrar({ setTab }) }, [])
+  useEffect(() => {
+    getSettings().then(s => {
+      if (!onboardingHecho() && isDonationUser(s.nombreUsuario)) onb.start()
+    }).catch(() => {})
+  }, [])
 
   // iOS Safari can silently erase PWA storage after 7 days of inactivity
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
@@ -271,6 +290,8 @@ export default function App() {
           )}
         </div>
       </nav>
+
+      <GuideTooltip />
     </div>
   )
 }

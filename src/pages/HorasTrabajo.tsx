@@ -13,6 +13,7 @@ import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
 import { isDonationUser } from '../lib/calculo-salarial'
 import { DonadorDonacion, DonadorGracias } from '../components/DonadorDonacion'
+import { useOnboarding } from '../onboarding/OnboardingContext'
 import { db, shadowBackup, type RegistroHoras } from '../db/database'
 
 function dayKey(d: Date) {
@@ -110,6 +111,35 @@ export function HorasTrabajoPage() {
       window.removeEventListener('pageshow', check)
     }
   }, [])
+
+  // ─── Tour / walkthrough: abrir un diálogo demo y registrar acciones ───
+  const onb = useOnboarding()
+  const [tourExisting, setTourExisting] = useState<RegistroHoras | null | undefined>(undefined)
+  const [exportHecho, setExportHecho] = useState(() => {
+    try { return localStorage.getItem('planilla-export-hecho') === '1' } catch { return false }
+  })
+  function abrirDiaTour(modo: 'ausencia' | 'trabajo') {
+    const d = new Date()
+    const dia = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0)
+    if (modo === 'trabajo') {
+      const e = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8, 0, 0).getTime()
+      const s = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 16, 0, 0).getTime()
+      setTourExisting({
+        id: 'tour-demo', fechaMs: dia.getTime(),
+        entradaInicioMs: e, salidaInicioMs: s, entradaFinMs: null, salidaFinMs: null,
+        lugarTrabajo: 'Campo', pernocte: 'NO', maneja: false, horasViaje: 3,
+        observaciones: '', proyecto: '',
+        esFeriado: false, esFeriadoTrabajado: false, esFrancoCompensatorio: false,
+        esFrancoTrabajado: false, esAusenciaJustificada: false, esFaltaInjustificada: false,
+        fechaCreacion: Date.now(),
+      })
+    } else {
+      setTourExisting(null) // sin datos → isDayOff → botones de ausencia
+    }
+    setSelectedDate(dia)
+  }
+  function cerrarDialogoTour() { setSelectedDate(null); setTourExisting(undefined) }
+  useEffect(() => { onb.registrar({ abrirDiaTour, cerrarDialogo: cerrarDialogoTour }) }, [])
 
   // ─── Modo "aplicar datos a otro día": se pintan los días destino (tocando o arrastrando) ───
   const [applySource, setApplySource] = useState<RegistroHoras | null>(null)
@@ -343,6 +373,8 @@ export function HorasTrabajoPage() {
     setDownloading(true)
     try {
       await fn()
+      setExportHecho(true)
+      try { localStorage.setItem('planilla-export-hecho', '1') } catch { /* ignore */ }
     } catch (e) {
       console.error('Error exportando Excel:', e)
       alert('Error al generar el Excel.')
@@ -369,6 +401,7 @@ export function HorasTrabajoPage() {
           </div>
           <div className="flex items-center gap-1">
             <button
+              data-tour="hrs-menu"
               onClick={() => setShowActionsMenu(v => !v)}
               className="p-2 text-slate-400 active:text-white"
               title="Más acciones"
@@ -475,6 +508,7 @@ export function HorasTrabajoPage() {
           </div>
         )}
         <button
+          data-tour="hrs-export"
           onClick={() => !downloading && setShowExportMenu(v => !v)}
           disabled={downloading}
           className={`w-14 h-14 rounded-full text-white text-2xl shadow-xl flex items-center justify-center active:scale-95 transition-all duration-200 ${downloading ? 'bg-emerald-600' : 'bg-blue-600'}`}
@@ -495,23 +529,24 @@ export function HorasTrabajoPage() {
       {isDonationUser(settings.nombreUsuario) && (
         graciasVisible
           ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
-          : (!yaAgradecioHoy && <DonadorDonacion />)
+          : (!yaAgradecioHoy && exportHecho && <DonadorDonacion />)
       )}
 
       {/* Registro dialog */}
       {selectedDate && (
         <RegistroDialog
+          key={tourExisting === undefined ? 'real' : (tourExisting ? 'tour-trabajo' : 'tour-ausencia')}
           fecha={selectedDate}
-          existing={selectedRegistro}
+          existing={tourExisting !== undefined ? (tourExisting ?? undefined) : selectedRegistro}
           prevDayRegistro={prevDayRegistro}
           lastWorkedRegistro={lastWorkedRegistro}
           proyectosFrecuentes={settings.proyectosFrecuentes}
           diagrama={settings.diagrama}
           diagramaInicioMs={settings.diagramaInicioMs}
           francosDisponibles={francosDisponibles}
-          onSave={async (reg) => { await upsert(reg); setSelectedDate(null) }}
-          onDelete={async (id) => { await remove(id); setSelectedDate(null) }}
-          onClose={() => setSelectedDate(null)}
+          onSave={async (reg) => { if (tourExisting !== undefined) { cerrarDialogoTour(); return } await upsert(reg); setSelectedDate(null) }}
+          onDelete={async (id) => { if (tourExisting !== undefined) { cerrarDialogoTour(); return } await remove(id); setSelectedDate(null) }}
+          onClose={() => { if (tourExisting !== undefined) cerrarDialogoTour(); else setSelectedDate(null) }}
         />
       )}
 
@@ -538,6 +573,17 @@ export function HorasTrabajoPage() {
             >
               <CalendarX2 size={16} className="shrink-0" /> Borrar días (elegir)…
             </button>
+            {isDonationUser(settings.nombreUsuario) && (
+              <>
+                <div className="h-px bg-slate-700/70" />
+                <button
+                  onClick={() => { setShowActionsMenu(false); onb.start() }}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-sky-300 active:bg-slate-700/60"
+                >
+                  <Lightbulb size={16} className="shrink-0" /> Iniciar tutorial
+                </button>
+              </>
+            )}
           </div>
         </>
       )}
