@@ -72,6 +72,24 @@ export function isSalaryUser(nombre: string | undefined | null): boolean {
   return SALARY_WHITELIST.includes(normalizar(nombre))
 }
 
+// ─── Gate de donación (MercadoPago) ──────────────────────────────────────────
+// Mismo mecanismo de nombre que el gate salarial: el botón de donar aparece SÓLO
+// para estos nombres (no importan acentos/mayúsculas/espacios: se normaliza).
+// Para ABRIRLO A TODOS (que cualquiera que use la app pueda donar) poné
+// `DONATION_WHITELIST_ABIERTA = true`.
+export const MERCADOPAGO_DONACION_URL = 'https://link.mercadopago.com.ar/nvzqz'
+const DONATION_WHITELIST_ABIERTA = false
+const DONATION_WHITELIST: string[] = [
+  'Nicolas Vazquez',
+  // '666',  // descomentá para desbloquearlo con el nombre de prueba
+].map(normalizar)
+
+export function isDonationUser(nombre: string | undefined | null): boolean {
+  if (DONATION_WHITELIST_ABIERTA) return true
+  if (!nombre) return false
+  return DONATION_WHITELIST.includes(normalizar(nombre))
+}
+
 // ─── Config ──────────────────────────────────────────────────────────────────
 export interface SalaryConfig {
   convenio: Convenio
