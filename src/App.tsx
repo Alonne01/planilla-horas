@@ -113,6 +113,13 @@ export default function App() {
     return () => clearTimeout(t)
   }, [emptyDb])
 
+  // El aviso de almacenamiento no persistente se oculta solo a los 5s
+  useEffect(() => {
+    if (!persistDenied) return
+    const t = setTimeout(() => setPersistDenied(false), 5000)
+    return () => clearTimeout(t)
+  }, [persistDenied])
+
   // Bloquear scroll en la pantalla de Horas (no se necesita) y volver arriba al cambiar de pestaña
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -177,9 +184,15 @@ export default function App() {
           </div>
         )}
         {persistDenied && !recovered && (
-          <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-900/40 text-amber-300 text-sm flex items-start gap-2">
-            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-            <span>El almacenamiento persistente no fue otorgado. Hacé backup periódicamente desde Configuración.</span>
+          <div className="mx-4 mt-3 rounded-xl bg-amber-900/40 overflow-hidden">
+            <div className="p-3 text-amber-300 text-sm flex items-start gap-2">
+              <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+              <span>El almacenamiento persistente no fue otorgado. Hacé backup periódicamente desde Configuración.</span>
+            </div>
+            {/* Barra de tiempo: se oculta solo a los 5s */}
+            <div className="h-0.5 bg-amber-500/15">
+              <div className="h-full bg-amber-400/70 animate-[countdown-bar_5s_linear_forwards]" />
+            </div>
           </div>
         )}
         {isIOSBrowser && !recovered && (
