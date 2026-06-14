@@ -87,7 +87,12 @@ export function HorasTrabajoPage() {
         if (!ts) return
         localStorage.removeItem('planilla-donacion-ts')
         const elapsed = Date.now() - ts
-        if (elapsed > 60_000 && elapsed < 30 * 60_000) setGraciasVisible(true)
+        const hoy = dayKey(new Date())
+        // Una sola vez por día: si ya se mostró hoy, no vuelve a salir.
+        if (elapsed > 60_000 && elapsed < 30 * 60_000 && localStorage.getItem('planilla-gracias-dia') !== hoy) {
+          localStorage.setItem('planilla-gracias-dia', hoy)
+          setGraciasVisible(true)
+        }
       } catch { /* ignore */ }
     }
     document.addEventListener('visibilitychange', check)
