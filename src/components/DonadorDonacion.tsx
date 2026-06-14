@@ -168,21 +168,21 @@ export function DonadorDonacion() {
           className="absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-[20px] bg-slate-200 px-3.5 py-2 text-[11px] font-semibold leading-snug text-slate-800 shadow-[0_8px_20px_-6px_rgba(2,6,23,0.55)] ring-1 ring-slate-900/10"
         >
           {dialogo}
+          {/* hint "tocá": manito anclada al final del último carácter del texto */}
+          <span aria-hidden className="relative inline-block h-0 w-0 align-baseline">
+            <span
+              className="pointer-events-none absolute -top-1 left-1 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-500/70"
+              style={{ animation: 'donador-tap-ripple 1s ease-out infinite' }}
+            />
+            <span
+              className="pointer-events-none absolute -top-1.5 left-0 text-slate-700 [filter:drop-shadow(0_0_2px_rgba(255,255,255,0.7))]"
+              style={{ animation: 'donador-tap 1s ease-in-out infinite' }}
+            >
+              <Pointer size={16} strokeWidth={2.25} className="rotate-[6deg]" />
+            </span>
+          </span>
           {/* colita triangular que apunta al personaje */}
           <span className="absolute -bottom-[7px] left-3 h-0 w-0 border-x-[7px] border-x-transparent border-t-[9px] border-t-slate-200 drop-shadow-[0_2px_1px_rgba(2,6,23,0.22)]" />
-          {/* hint "tocá": ondita del click + manito que hace tap sobre el globo */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute bottom-6 right-7 h-3.5 w-3.5 rounded-full border-2 border-slate-500/70"
-            style={{ animation: 'donador-tap-ripple 1s ease-out infinite' }}
-          />
-          <span
-            aria-hidden
-            className="pointer-events-none absolute bottom-2.5 right-7 text-slate-700 [filter:drop-shadow(0_0_2px_rgba(255,255,255,0.7))]"
-            style={{ animation: 'donador-tap 1s ease-in-out infinite' }}
-          >
-            <Pointer size={16} strokeWidth={2.25} className="rotate-[6deg]" />
-          </span>
         </div>
       </a>
     </>
