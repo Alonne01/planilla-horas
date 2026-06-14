@@ -173,7 +173,7 @@ export function DonadorDonacion() {
               ? 'donador-bubble-out 220ms ease-in forwards'
               : 'donador-bubble-in 340ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms both',
           }}
-          className="absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-[20px] bg-slate-200 px-3.5 py-2 text-[11px] font-semibold leading-snug text-slate-800 shadow-[0_8px_20px_-6px_rgba(2,6,23,0.55)] ring-1 ring-slate-900/10"
+          className="absolute bottom-[74px] left-[54px] w-max max-w-[215px] rounded-[20px] bg-slate-200 py-2 pl-3.5 pr-7 text-[11px] font-semibold leading-snug text-slate-800 shadow-[0_8px_20px_-6px_rgba(2,6,23,0.55)] ring-1 ring-slate-900/10"
         >
           {dialogo}
           {/* hint "tocá": manito anclada al final del último carácter del texto */}

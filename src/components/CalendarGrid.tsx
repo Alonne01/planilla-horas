@@ -155,7 +155,7 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
         {rows.map((week, wi) => (
           <div key={wi} className="grid grid-cols-7 gap-1">
             {week.map((date, di) => {
-              if (!date) return <div key={di} className="aspect-square" />
+              if (!date) return <div key={di} className="aspect-square sm:aspect-auto sm:h-[clamp(2.5rem,8vh,4.25rem)]" />
               const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
               const reg = byDay.get(key)
               const { bg, label, labelColor } = cellStyle(date, reg, diagrama, diagramaInicioMs)
@@ -206,7 +206,7 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
                   }}
                   onTouchEnd={() => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }}
                   onContextMenu={e => { e.preventDefault(); if (!applyMode && !deleteMode) onContext?.(date, e.clientX, e.clientY) }}
-                  className={`aspect-square rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg} ${applyRing} ${isSelectedForDelete ? 'ring-2 ring-red-400 ring-offset-1 ring-offset-slate-900' : ''} ${deleteMode && !reg ? 'opacity-30' : ''} ${isPulsing ? (deleteMode ? 'animate-[delete-pulse_520ms_ease]' : 'animate-[apply-pulse_520ms_ease]') : ''} ${applyMode && !isSource ? 'cursor-pointer' : ''}`}
+                  className={`aspect-square sm:aspect-auto sm:h-[clamp(2.5rem,8vh,4.25rem)] rounded-lg border flex flex-col items-center justify-center p-0.5 active:scale-95 transition-transform ${bg} ${applyRing} ${isSelectedForDelete ? 'ring-2 ring-red-400 ring-offset-1 ring-offset-slate-900' : ''} ${deleteMode && !reg ? 'opacity-30' : ''} ${isPulsing ? (deleteMode ? 'animate-[delete-pulse_520ms_ease]' : 'animate-[apply-pulse_520ms_ease]') : ''} ${applyMode && !isSource ? 'cursor-pointer' : ''}`}
                 >
                   {isFirstOfMonth && (
                     <span className="text-[8px] leading-none text-slate-500 uppercase tracking-wide">

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb, MoreVertical, Trash2, CalendarX2, Download } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
@@ -7,14 +7,14 @@ import { DayCard } from '../components/DayCard'
 import { CalendarGrid } from '../components/CalendarGrid'
 import { ResumenBar } from '../components/ResumenBar'
 import { calcularResumenPeriodo } from '../lib/calculo-horas'
-import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd, esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
+import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd, fechaCobro, esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
 import { esFeriadoNacional } from '../lib/feriados'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
-import { isDonationUser } from '../lib/calculo-salarial'
+import { credencialesNubeValidas } from '../lib/cloud-backup'
 import { DonadorDonacion, DonadorGracias } from '../components/DonadorDonacion'
 import { useOnboarding } from '../onboarding/OnboardingContext'
-import { db, shadowBackup, type RegistroHoras } from '../db/database'
+import { db, shadowBackup, getSettings, type RegistroHoras } from '../db/database'
 
 function dayKey(d: Date) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
@@ -119,13 +119,22 @@ export function HorasTrabajoPage() {
     try { return localStorage.getItem('planilla-export-hecho') === '1' } catch { return false }
   })
   function elegirDiaDemo(): Date {
-    // Primer día trabajable (no franco/feriado) y sin datos del período; fallback hoy.
+    // Día de TRABAJO garantizado para la demo: lunes (si el diagrama es Lun-Vie) o el primer día
+    // no-franco (= día del diagrama) si es otro. Así nunca cae en un franco (que ocultaría los
+    // botones de turno/lugar/ausencia). Se busca dentro del período visible para que el resaltado
+    // del día funcione.
+    const esLV = settings.diagrama === 'LUNES_VIERNES'
     const hit = dias.find(d => {
       const ms = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0).getTime()
-      const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-      return !esFrancoPorDiagrama(ms, settings.diagrama, settings.diagramaInicioMs) && !esFeriadoNacional(ms) && !byDay.has(k)
+      if (esFeriadoNacional(ms)) return false
+      return esLV ? d.getDay() === 1 : !esFrancoPorDiagrama(ms, settings.diagrama, settings.diagramaInicioMs)
     })
-    return hit ?? new Date()
+    if (hit) return hit
+    // Fallback (período sin día válido visible): el inicio del diagrama o el próximo lunes.
+    if (!esLV && settings.diagramaInicioMs) return new Date(settings.diagramaInicioMs)
+    const d = new Date(); d.setHours(12, 0, 0, 0)
+    while (d.getDay() !== 1) d.setDate(d.getDate() + 1)
+    return d
   }
   function abrirDiaTour(modo: 'ausencia' | 'trabajo') {
     const base = elegirDiaDemo()
@@ -148,7 +157,33 @@ export function HorasTrabajoPage() {
     setSelectedDate(dia)
   }
   function cerrarDialogoTour() { setSelectedDate(null); setTourExisting(undefined) }
-  useEffect(() => { onb.registrar({ abrirDiaTour, cerrarDialogo: cerrarDialogoTour }) }, [])
+  // Tour guiado "aprender haciendo": abre el día demo + offset (0=día1/1=día2/2=día3) VACÍO y real;
+  // el usuario lo carga y se guarda de verdad (necesario para después pintar/borrar).
+  function abrirDiaDemo(offset: number) {
+    const base = elegirDiaDemo()
+    const dia = new Date(base.getFullYear(), base.getMonth(), base.getDate() + offset, 12, 0, 0)
+    setTourExisting(undefined)
+    setSelectedDate(dia)
+  }
+  // Sin deps: re-registra el closure fresco en cada render para que abrirDiaTour/abrirDiaDemo usen el
+  // diagrama/settings ACTUALES (si no, elige el día demo con datos viejos y cae en un franco).
+  useEffect(() => { onb.registrar({ abrirDiaTour, abrirDiaDemo, cerrarDialogo: cerrarDialogoTour }) })
+
+  // Ref siempre fresca a onb (para timeouts del tour que disparan onb.next() tras un retardo).
+  const onbRef = useRef(onb)
+  onbRef.current = onb
+  // Avance del tour con retardo. DEBOUNCE: cada llamada reinicia la cuenta (p.ej. al pintar/marcar
+  // cada día), así avanza recién `ms` tras la ÚLTIMA acción, no tras la primera.
+  const tourDelayRef = useRef<{ id: string; t: number } | null>(null)
+  const scheduleTourAdvance = useCallback((id: string, ms: number) => {
+    if (tourDelayRef.current) clearTimeout(tourDelayRef.current.t)
+    const t = window.setTimeout(() => {
+      tourDelayRef.current = null
+      const o = onbRef.current
+      if (o.activo && o.paso?.id === id) o.next()
+    }, ms)
+    tourDelayRef.current = { id, t }
+  }, [])
 
   // ─── Modo "aplicar datos a otro día": se pintan los días destino (tocando o arrastrando) ───
   const [applySource, setApplySource] = useState<RegistroHoras | null>(null)
@@ -230,8 +265,11 @@ export function HorasTrabajoPage() {
   function paintDay(date: Date, mode: 'add' | 'remove') {
     const key = dayKey(date)
     if (key === applySourceKey) return  // nunca el día origen
+    // Tour "Aplicá la copia": se puede despintar, pero siempre debe quedar al menos 1 día pintado.
+    const dejarUno = mode === 'remove' && onb.activo && onb.paso?.id === 'g-paint-finalizar'
     setPaintedKeys(prev => {
       if (mode === 'add' ? prev.has(key) : !prev.has(key)) return prev
+      if (dejarUno && prev.size <= 1) return prev
       const next = new Set(prev)
       if (mode === 'add') next.add(key)
       else next.delete(key)
@@ -242,7 +280,7 @@ export function HorasTrabajoPage() {
 
   /** Tap de un día: en modo aplicar no hace nada (lo maneja el pintado); si no, abre el diálogo. */
   function handleDayTap(date: Date) {
-    if (onb.activo && onb.paso?.id === 'hrs-dia') { onb.next(); return }  // tour: tocar el día avanza
+    if (onb.activo && onb.paso?.id === 'g-paint-longpress') return  // tour pintar: el tap NO abre el día (sólo click derecho / long-press copia)
     if (deleteMode) { toggleDeleteDay(date); return }
     if (applySource) return
     setSelectedDate(date)
@@ -302,6 +340,8 @@ export function HorasTrabajoPage() {
   function openContext(date: Date) {
     if (applySource || deleteMode) return  // ya estamos en un modo de selección
     if (!byDay.has(dayKey(date))) return   // solo días que ya tienen datos cargados
+    // Tour guiado: el long-press entra DIRECTO a modo pintar (sin el confirm "¿Aplicar a otro día?").
+    if (onb.activo && onb.paso?.id === 'g-paint-longpress') { startApplyMode(date); return }
     setConfirmApply(date)
   }
 
@@ -346,6 +386,28 @@ export function HorasTrabajoPage() {
     if (mode === 'add') pulse(key)
   }
 
+  // Tour guiado: avanzar los pasos de pintar/borrar según el estado de la pantalla.
+  useEffect(() => {
+    if (!onb.activo) {
+      if (tourDelayRef.current) { clearTimeout(tourDelayRef.current.t); tourDelayRef.current = null }
+      return
+    }
+    const id = onb.paso?.id
+    // Si cambió el paso, cancelar cualquier retardo pendiente del paso anterior.
+    if (tourDelayRef.current && tourDelayRef.current.id !== id) {
+      clearTimeout(tourDelayRef.current.t); tourDelayRef.current = null
+    }
+    if (id === 'g-paint-longpress' && applySource) onb.next()
+    // 1,5 s tras la ÚLTIMA pintada (debounce) y pasar a "Aplicar".
+    else if (id === 'g-paint-pintar' && paintedKeys.size >= 1) scheduleTourAdvance('g-paint-pintar', 1500)
+    else if (id === 'g-paint-finalizar' && !applySource) onb.next()
+    else if (id === 'g-del-menu' && showActionsMenu) onb.next()
+    else if (id === 'g-del-item' && deleteMode) onb.next()
+    // 1,5 s tras la ÚLTIMA marca (debounce) y pasar a "Borrar".
+    else if (id === 'g-del-pintar' && selectedToDelete.size >= 1) scheduleTourAdvance('g-del-pintar', 1500)
+    else if (id === 'g-del-borrar' && !deleteMode) onb.next()
+  }, [onb, applySource, deleteMode, paintedKeys, selectedToDelete, showActionsMenu, scheduleTourAdvance])
+
   /** Borra los días seleccionados (segunda confirmación ya aceptada). */
   async function doBorrarDias() {
     const ids = [...selectedToDelete]
@@ -383,8 +445,15 @@ export function HorasTrabajoPage() {
     setDownloading(true)
     try {
       await fn()
-      setExportHecho(true)
-      try { localStorage.setItem('planilla-export-hecho', '1') } catch { /* ignore */ }
+      // Durante el tutorial la exportación es demostrativa: no activa el donador y, al terminar de
+      // descargar, avanza al paso final. Fuera del tour, habilita el donador.
+      const o = onbRef.current
+      if (!o.activo) {
+        setExportHecho(true)
+        try { localStorage.setItem('planilla-export-hecho', '1') } catch { /* ignore */ }
+      } else if (o.paso?.id === 'g-export-normal') {
+        o.next()
+      }
     } catch (e) {
       console.error('Error exportando Excel:', e)
       alert('Error al generar el Excel.')
@@ -398,7 +467,24 @@ export function HorasTrabajoPage() {
 
   const periodoStartStr = periodoStart(mes, anio).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
   const periodoEndStr = periodoEnd(mes, anio).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
-  const tourDiaKey = onb.activo && onb.paso?.id === 'hrs-dia' ? dayKey(elegirDiaDemo()) : null
+  // Fecha de cobro = 4º día hábil del mes siguiente al cierre (ej. "lun 6 jul").
+  const cobroStr = fechaCobro(mes, anio)
+    .toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })
+    .replace(/[.,]/g, '')
+  // ¿Estamos en un paso guiado de Horas (g-*)? Para ocultar "Cancelar" en las barras de aplicar/borrar.
+  const tourGuiado = onb.activo && (onb.paso?.id ?? '').startsWith('g-')
+  // Tour: resaltar el día a tocar (día1/2/3 según el paso) o el último cargado (pintar = día3).
+  const tourDiaKey = (() => {
+    if (!onb.activo) return null
+    const b = elegirDiaDemo()
+    const k = (off: number) => dayKey(new Date(b.getFullYear(), b.getMonth(), b.getDate() + off))
+    switch (onb.paso?.id) {
+      case 'g-aus-dia': return k(0)
+      case 'g-base-dia': return k(1)
+      case 'g-campo-dia': case 'g-paint-longpress': return k(2)
+      default: return null
+    }
+  })()
 
   return (
     <div className={`h-[100dvh] ${viewMode === 'list' ? 'overflow-y-auto' : 'overflow-hidden'} bg-slate-900 pb-24`}>
@@ -408,7 +494,7 @@ export function HorasTrabajoPage() {
           <button onClick={() => cambiarMes(-1)} className="p-2 text-slate-400 active:text-white">‹</button>
           <div className="text-center">
             <div className="text-base font-bold text-white">{MESES_ES[mes]} {anio}</div>
-            <div className="text-xs text-slate-500">{periodoStartStr} – {periodoEndStr}</div>
+            <div className="text-xs text-slate-500">{periodoStartStr} – {periodoEndStr} · cobro: {cobroStr}</div>
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -503,6 +589,7 @@ export function HorasTrabajoPage() {
         {showExportMenu && (
           <div className="mb-2 flex flex-col gap-2 items-end">
             <button
+              data-tour="hrs-export-normal"
               onClick={() => runExport(() =>
                 exportarExcelNormal(mes, anio, registros, settings.nombreUsuario, diagramaLabel, settings.diagrama, settings.diagramaInicioMs)
               )}
@@ -538,11 +625,9 @@ export function HorasTrabajoPage() {
 
       {/* Donador — pedido de donación; o agradecimiento al volver de donar (>1 min).
           Si ya donó hoy (se mostró el gracias), no aparece el pedido el resto del día. */}
-      {isDonationUser(settings.nombreUsuario) && (
-        graciasVisible
-          ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
-          : (!yaAgradecioHoy && exportHecho && <DonadorDonacion />)
-      )}
+      {graciasVisible
+        ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
+        : (!yaAgradecioHoy && exportHecho && <DonadorDonacion />)}
 
       {/* Registro dialog */}
       {selectedDate && (
@@ -556,10 +641,14 @@ export function HorasTrabajoPage() {
           diagrama={settings.diagrama}
           diagramaInicioMs={settings.diagramaInicioMs}
           francosDisponibles={francosDisponibles}
-          onSave={async (reg) => { if (tourExisting !== undefined) { onb.next(); return } await upsert(reg); setSelectedDate(null) }}
+          onSave={async (reg) => {
+            if (tourExisting !== undefined) { onb.next(); return }
+            await upsert(reg); setSelectedDate(null)
+            if (onb.activo && (onb.paso?.id ?? '').endsWith('-guardar')) onb.next()  // tour guiado: avanzar tras guardar
+          }}
           onDelete={async (id) => { if (tourExisting !== undefined) { onb.skip(); return } await remove(id); setSelectedDate(null) }}
           onClose={() => { if (tourExisting !== undefined) { onb.skip(); return } setSelectedDate(null) }}
-          onTourReady={() => { if (onb.activo && onb.paso?.id === 'dlg-turno') onb.next() }}
+          ocultarCierre={tourGuiado}
         />
       )}
 
@@ -581,22 +670,25 @@ export function HorasTrabajoPage() {
             </button>
             <div className="h-px bg-slate-700/70" />
             <button
+              data-tour="menu-borrar-dias"
               onClick={startDeleteMode}
               className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-300 active:bg-slate-700/60"
             >
               <CalendarX2 size={16} className="shrink-0" /> Borrar días (elegir)…
             </button>
-            {isDonationUser(settings.nombreUsuario) && (
-              <>
-                <div className="h-px bg-slate-700/70" />
-                <button
-                  onClick={() => { setShowActionsMenu(false); onb.start() }}
-                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-sky-300 active:bg-slate-700/60"
-                >
-                  <Lightbulb size={16} className="shrink-0" /> Iniciar tutorial
-                </button>
-              </>
-            )}
+            <div className="h-px bg-slate-700/70" />
+            <button
+              onClick={async () => {
+                setShowActionsMenu(false)
+                // Leer settings FRESCOS (el `settings` de este componente puede estar desactualizado
+                // si el código se generó en la pestaña Config sin re-montar Horas).
+                const s = await getSettings()
+                onb.start('full', { saltearConfig: credencialesNubeValidas(s.nombreUsuario, s.backupCodigo) })
+              }}
+              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-sky-300 active:bg-slate-700/60"
+            >
+              <Lightbulb size={16} className="shrink-0" /> Iniciar tutorial
+            </button>
           </div>
         </>
       )}
@@ -619,13 +711,16 @@ export function HorasTrabajoPage() {
               </div>
             </div>
             <div className="flex gap-2 mt-3">
+              {!tourGuiado && (
+                <button
+                  onClick={exitApplyMode}
+                  className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+                >
+                  <X size={15} /> Cancelar
+                </button>
+              )}
               <button
-                onClick={exitApplyMode}
-                className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
-              >
-                <X size={15} /> Cancelar
-              </button>
-              <button
+                data-tour="hrs-aplicar"
                 onClick={finalizarApply}
                 disabled={paintedKeys.size === 0}
                 className="flex-1 py-2 rounded-xl bg-sky-600 text-white text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:active:scale-100"
@@ -678,13 +773,16 @@ export function HorasTrabajoPage() {
               </div>
             </div>
             <div className="flex gap-2 mt-3">
+              {!tourGuiado && (
+                <button
+                  onClick={exitDeleteMode}
+                  className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+                >
+                  <X size={15} /> Cancelar
+                </button>
+              )}
               <button
-                onClick={exitDeleteMode}
-                className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
-              >
-                <X size={15} /> Cancelar
-              </button>
-              <button
+                data-tour="hrs-borrar"
                 onClick={() => setConfirmDeleteDias(true)}
                 disabled={selectedToDelete.size === 0}
                 className="flex-1 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:active:scale-100"

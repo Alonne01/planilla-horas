@@ -12,6 +12,7 @@
 import { unzipSync, zipSync, strToU8 } from 'fflate'
 import type { RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd, MESES_ES, esFrancoPorDiagrama, type DiagramaPatternKey } from './diagrama'
+import { sufijoTurnoCampo } from './calculo-horas'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -237,6 +238,10 @@ function buildRowParts(
   let obs = reg.observaciones ?? ''
   if (reg.esFrancoTrabajado) obs = `franco trabajado${obs ? ' - ' + obs : ''}`
   else if (reg.esFeriadoTrabajado) obs = `feriado trabajado${obs ? ' - ' + obs : ''}`
+  // Día de CAMPO: el turno trabajado (TD/TN) va al final de la observación. En Base no
+  // (siempre es día); las ausencias / francos no trabajados no llegan a esta rama.
+  const sufTurno = sufijoTurnoCampo(reg)
+  if (sufTurno) obs = obs ? `${obs} ${sufTurno}` : sufTurno
 
   return [
     [cellA, cellB, cC, cD, cE, cF].join(''),

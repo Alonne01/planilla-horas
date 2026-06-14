@@ -1,17 +1,19 @@
 import { useState, useEffect, useRef } from "react"
-import { Clock, Settings2, Banknote, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X, Database } from "lucide-react"
+import { Clock, Settings2, Banknote, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X, Database, Cloud } from "lucide-react"
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
-import { isSalaryUser, isDonationUser } from "./lib/calculo-salarial"
+import { isSalaryUser } from "./lib/calculo-salarial"
 import { InstallGate } from "./components/InstallGate"
-import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, pruneOldRegistros, migrateHorasViaje, getSettings } from "./db/database"
+import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, getSettings } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube } from "./lib/cloud-backup"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding/OnboardingContext"
 import { GuideTooltip } from "./components/GuideTooltip"
+import { CloudSetupModal } from "./components/CloudSetupModal"
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches ||
@@ -19,6 +21,20 @@ function isStandalone() {
 }
 
 const AUTO_BACKUP_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000 // 2 days
+const CLOUD_BACKUP_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000 // 3 días (respaldo automático a la nube)
+
+// Aviso "configurá el respaldo en la nube" (usuarios con nombre sin nube). "Más tarde" lo pospone 7 días.
+const CLOUD_PROMPT_SNOOZE_KEY = "planilla-cloud-prompt-snooze-ts"
+const CLOUD_PROMPT_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000
+function cloudPromptSnoozed(): boolean {
+  try {
+    const ts = localStorage.getItem(CLOUD_PROMPT_SNOOZE_KEY)
+    return !!ts && Date.now() - parseInt(ts, 10) < CLOUD_PROMPT_SNOOZE_MS
+  } catch { return false }
+}
+function snoozeCloudPrompt(): void {
+  try { localStorage.setItem(CLOUD_PROMPT_SNOOZE_KEY, String(Date.now())) } catch { /* ignore */ }
+}
 
 // Aviso "sin datos guardados": reaparece como mucho 1 vez por semana y se oculta solo
 const EMPTY_DB_ALERT_KEY = "planilla-empty-db-alert-ts"
@@ -59,17 +75,18 @@ function AppContent() {
   const [persistDenied, setPersistDenied] = useState(false)
   const [autoBackupDue, setAutoBackupDue] = useState(false)
   const [autoBackupDone, setAutoBackupDone] = useState(false)
+  const [cloudBackupDone, setCloudBackupDone] = useState(false)
+  const [cloudRestoreOffer, setCloudRestoreOffer] = useState(false)
+  const [cloudPromptOpen, setCloudPromptOpen] = useState(false)
   const [emptyDb, setEmptyDb] = useState(false)
   const [gateSkipped, setGateSkipped] = useState(false)
   const restoreRef = useRef<HTMLInputElement>(null)
 
-  // ─── Walkthrough / onboarding (solo Nicolas): auto-arranca en 1er inicio si el nombre es Nicolas ───
+  // ─── Walkthrough / onboarding: auto-arranca en el 1er inicio para CUALQUIER usuario (hasta completarlo/omitirlo) ───
   const onb = useOnboarding()
   useEffect(() => { onb.registrar({ setTab }) }, [])
   useEffect(() => {
-    getSettings().then(s => {
-      if (!onboardingHecho() && isDonationUser(s.nombreUsuario)) onb.start()
-    }).catch(() => {})
+    if (!onboardingHecho()) onb.start()
   }, [])
 
   // iOS Safari can silently erase PWA storage after 7 days of inactivity
@@ -100,16 +117,42 @@ function AppContent() {
       // Check record count after shadow restore
       try {
         const count = await db.registros.count()
+        const s = await getSettings()
+        const cloudOn = credencialesNubeValidas(s.nombreUsuario, s.backupCodigo)
         if (count === 0 && !didRecover) {
-          // Mostrar el aviso a lo sumo 1 vez por semana
-          const last = localStorage.getItem(EMPTY_DB_ALERT_KEY)
-          const since = last ? Date.now() - parseInt(last, 10) : Infinity
-          if (since > EMPTY_DB_ALERT_INTERVAL_MS) {
-            localStorage.setItem(EMPTY_DB_ALERT_KEY, String(Date.now()))
-            setEmptyDb(true)
+          // Si hay credenciales y EXISTE un respaldo en la nube, ofrecer restaurarlo;
+          // si no, el aviso de "sin datos" (a lo sumo 1 vez por semana).
+          let hayNube = false
+          if (cloudOn && quedanOperacionesNube()) {
+            try { hayNube = await existeBackupNube(s.nombreUsuario, s.backupCodigo) } catch { /* sin conexión */ }
           }
-        } else if (count > 0 && msSinceAutoBackup() > AUTO_BACKUP_INTERVAL_MS) {
-          setAutoBackupDue(true)
+          if (hayNube) {
+            setCloudRestoreOffer(true)
+          } else {
+            const last = localStorage.getItem(EMPTY_DB_ALERT_KEY)
+            const since = last ? Date.now() - parseInt(last, 10) : Infinity
+            if (since > EMPTY_DB_ALERT_INTERVAL_MS) {
+              localStorage.setItem(EMPTY_DB_ALERT_KEY, String(Date.now()))
+              setEmptyDb(true)
+            }
+          }
+        } else if (count > 0) {
+          if (cloudOn && msSinceCloudBackup() > CLOUD_BACKUP_INTERVAL_MS && quedanOperacionesNube()) {
+            // Respaldo automático y silencioso a la nube (cada >=3 días al abrir la app)
+            try {
+              await subirBackupNube(s.nombreUsuario, s.backupCodigo)
+              markCloudBackupDone()
+              setCloudBackupDone(true)
+            } catch { /* sin conexión: reintenta en el próximo arranque */ }
+          } else if (!cloudOn && msSinceAutoBackup() > AUTO_BACKUP_INTERVAL_MS) {
+            setAutoBackupDue(true)
+          }
+        }
+        // Usuarios con nombre pero sin respaldo en la nube (post-deploy): ofrecer configurarlo,
+        // salvo que vaya a arrancar el tour completo (1ª vez, cualquier usuario) o esté pospuesto.
+        const fullTourVaArrancar = !onboardingHecho()
+        if (s.nombreUsuario.trim() && !cloudOn && !fullTourVaArrancar && !cloudPromptSnoozed()) {
+          setCloudPromptOpen(true)
         }
       } catch {
         // non-fatal
@@ -124,6 +167,13 @@ function AppContent() {
     const t = setTimeout(() => setAutoBackupDue(false), 3000)
     return () => clearTimeout(t)
   }, [autoBackupDue])
+
+  // El toast "respaldado en la nube" se oculta solo a los 4s
+  useEffect(() => {
+    if (!cloudBackupDone) return
+    const t = setTimeout(() => setCloudBackupDone(false), 4000)
+    return () => clearTimeout(t)
+  }, [cloudBackupDone])
 
   // El aviso "sin datos guardados" también se oculta solo
   useEffect(() => {
@@ -186,6 +236,29 @@ function AppContent() {
     e.target.value = ''
   }
 
+  // Restaura desde la nube usando las credenciales ya guardadas (oferta en DB vacía).
+  async function handleCloudRestore() {
+    try {
+      const s = await getSettings()
+      const r = await restaurarBackupNube(s.nombreUsuario, s.backupCodigo)
+      setCloudRestoreOffer(false)
+      if (r === 'ok') setRecovered(true)
+    } catch {
+      // sin conexión: dejar la oferta para reintentar
+    }
+  }
+
+  // Modal "configurá el respaldo": llevar a Config + correr el mini-tour de nube.
+  function handleCloudConfigurar() {
+    setCloudPromptOpen(false)
+    setTab("settings")
+    onb.start("cloud")
+  }
+  function handleCloudMasTarde() {
+    snoozeCloudPrompt()
+    setCloudPromptOpen(false)
+  }
+
   // Show install gate if not running as installed PWA — after all hooks
   if (!isStandalone() && !gateSkipped) {
     return <InstallGate onSkip={() => setGateSkipped(true)} />
@@ -227,7 +300,7 @@ function AppContent() {
           <div className="mx-4 mt-2 rounded-lg bg-amber-500/10 border border-amber-500/20 overflow-hidden">
             <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-amber-300/90">
               <AlertTriangle size={14} className="shrink-0 text-amber-400/80" />
-              <span className="flex-1 leading-snug">Conviene descargar un backup.</span>
+              <span className="flex-1 leading-snug">Sin respaldo. Activá la nube en Config, o descargá un backup.</span>
               <button
                 onClick={handleAutoBackupDownload}
                 className="shrink-0 flex items-center gap-1 font-semibold text-amber-300 active:text-amber-200"
@@ -248,6 +321,26 @@ function AppContent() {
           <div className="mx-4 mt-3 p-3 rounded-xl bg-emerald-900/40 text-emerald-300 text-sm flex items-center gap-2">
             <Download size={16} className="shrink-0" />
             <span>Backup automático descargado correctamente.</span>
+          </div>
+        )}
+        {cloudBackupDone && (
+          <div className="mx-4 mt-3 p-3 rounded-xl bg-emerald-900/40 text-emerald-300 text-sm flex items-center gap-2">
+            <Cloud size={16} className="shrink-0" />
+            <span>Respaldado en la nube.</span>
+          </div>
+        )}
+        {cloudRestoreOffer && (
+          <div className="mx-4 mt-2 rounded-lg bg-blue-500/10 border border-blue-500/20 overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-blue-200">
+              <Cloud size={14} className="shrink-0 text-blue-300" />
+              <span className="flex-1 leading-snug">Hay un respaldo en la nube para tu usuario.</span>
+              <button onClick={handleCloudRestore} className="shrink-0 flex items-center gap-1 font-semibold text-blue-300 active:text-blue-200">
+                <Download size={13} /> Restaurar
+              </button>
+              <button onClick={() => setCloudRestoreOffer(false)} className="shrink-0 text-blue-400/70 active:text-blue-200" aria-label="Cerrar">
+                <X size={14} />
+              </button>
+            </div>
           </div>
         )}
         {emptyDb && (
@@ -292,6 +385,7 @@ function AppContent() {
       </nav>
 
       <GuideTooltip />
+      {cloudPromptOpen && <CloudSetupModal onConfigurar={handleCloudConfigurar} onMasTarde={handleCloudMasTarde} />}
     </div>
   )
 }

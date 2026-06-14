@@ -1,5 +1,7 @@
 // Ported from DiagramaPattern enum + esFrancoPorDiagrama() in HorasTrabajoViewModel.kt
 
+import { esFeriadoNacional } from './feriados'
+
 export type DiagramaPatternKey = 'LUNES_VIERNES' | 'D10X5' | 'D7X7' | 'D10X4'
 
 export interface DiagramaPattern {
@@ -40,28 +42,64 @@ export function esFrancoPorDiagrama(
   return pos >= pattern.diasTrabajo
 }
 
-/** Period 21 of previous month → 20 of current month */
+/**
+ * Día de cierre del período que termina en el mes `mes`/`anio` (0-indexed).
+ * Histórico hasta junio 2026: 20. Transición: julio 2026 cierra el 18, y desde agosto 2026
+ * en adelante el 15 (período "16 al 15"). Como el inicio de cada período es el día siguiente
+ * al cierre del anterior, la transición 19/7 → 15/8 sale sola.
+ */
+export function diaCierre(mes: number, anio: number): number {
+  const ym = anio * 12 + mes
+  if (ym <= 2026 * 12 + 5) return 20   // hasta junio 2026 (mes 5)
+  if (ym === 2026 * 12 + 6) return 18  // julio 2026 (mes 6)
+  return 15                             // agosto 2026 (mes 7) en adelante
+}
+
+/** Período "vigente" hoy: si hoy ya pasó el cierre de este mes, es el del mes siguiente. */
 export function defaultPeriodoMes(): number {
   const d = new Date()
-  return d.getDate() >= 21 ? (d.getMonth() + 1) % 12 : d.getMonth()
+  const m = d.getMonth()
+  return d.getDate() > diaCierre(m, d.getFullYear()) ? (m + 1) % 12 : m
 }
 
 export function defaultPeriodoAnio(): number {
   const d = new Date()
-  if (d.getDate() >= 21 && d.getMonth() === 11) return d.getFullYear() + 1
-  return d.getFullYear()
+  const m = d.getMonth()
+  const y = d.getFullYear()
+  return d.getDate() > diaCierre(m, y) && m === 11 ? y + 1 : y
 }
 
-/** Start of the 31-day billing period (day 21 prev month to day 20 current month) */
+/** Inicio del período = día siguiente al cierre del período anterior. */
 export function periodoStart(mes: number, anio: number): Date {
-  // mes is the "current" month of the period (0-indexed)
-  // period starts on day 21 of the previous month
-  const prev = new Date(anio, mes, 0) // last day of prev month
-  return new Date(prev.getFullYear(), prev.getMonth(), 21)
+  const prevMes = mes === 0 ? 11 : mes - 1
+  const prevAnio = mes === 0 ? anio - 1 : anio
+  const prevEnd = periodoEnd(prevMes, prevAnio)
+  return new Date(prevEnd.getFullYear(), prevEnd.getMonth(), prevEnd.getDate() + 1)
 }
 
+/** Fin del período = día de cierre de ese mes. */
 export function periodoEnd(mes: number, anio: number): Date {
-  return new Date(anio, mes, 20)
+  return new Date(anio, mes, diaCierre(mes, anio))
+}
+
+/**
+ * Fecha de cobro de un período: el 4º día hábil del mes siguiente al cierre
+ * (saltea sábados, domingos y feriados nacionales).
+ */
+export function fechaCobro(mes: number, anio: number): Date {
+  const payMes = mes === 11 ? 0 : mes + 1
+  const payAnio = mes === 11 ? anio + 1 : anio
+  const d = new Date(payAnio, payMes, 1)
+  let habiles = 0
+  for (;;) {
+    const dow = d.getDay()
+    const ms = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0).getTime()
+    if (dow !== 0 && dow !== 6 && !esFeriadoNacional(ms)) {
+      habiles++
+      if (habiles === 4) return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    }
+    d.setDate(d.getDate() + 1)
+  }
 }
 
 /** Array of all dates in the period sorted chronologically */

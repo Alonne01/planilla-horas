@@ -16,6 +16,19 @@ export function markAutoBackupDone(): void {
   localStorage.setItem(AUTO_BACKUP_KEY, String(Date.now()))
 }
 
+const CLOUD_BACKUP_KEY = 'planilla-cloud-backup-ts'
+
+/** Returns ms since last successful CLOUD backup, or Infinity if never */
+export function msSinceCloudBackup(): number {
+  const ts = localStorage.getItem(CLOUD_BACKUP_KEY)
+  return ts ? Date.now() - parseInt(ts, 10) : Infinity
+}
+
+/** Mark that a cloud backup was just uploaded successfully */
+export function markCloudBackupDone(): void {
+  localStorage.setItem(CLOUD_BACKUP_KEY, String(Date.now()))
+}
+
 export interface RegistroHoras {
   id: string
   fechaMs: number
@@ -58,6 +71,10 @@ export interface AppSettings {
   adicionalCampoRate: number
   bonoPazRate644: number
   solidaria644: number
+  // Respaldo en la nube (Firestore): identidad = nombre del empleado (nombreUsuario) + código de
+  // 6 dígitos. El "candado" bloquea el código para evitar cambios accidentales.
+  backupCodigo: string
+  backupBloqueado: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -79,6 +96,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   adicionalCampoRate: 0.30,
   bonoPazRate644: 0.1438,
   solidaria644: 0.022,
+  backupCodigo: '',
+  backupBloqueado: false,
 }
 
 class PlanillaDB extends Dexie {

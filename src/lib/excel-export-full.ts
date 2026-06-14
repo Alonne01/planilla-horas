@@ -2,7 +2,7 @@
 import * as XLSX from 'xlsx'
 import type { RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd, MESES_ES } from './diagrama'
-import { calcularHorasDia, esDiaNoTrabajado, type LineaTrabajo } from './calculo-horas'
+import { calcularHorasDia, esDiaNoTrabajado, sufijoTurnoCampo, type LineaTrabajo } from './calculo-horas'
 
 function fmtDate(d: Date): string {
   const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
@@ -57,7 +57,10 @@ export function exportarExcelCompleto(
       rows.push([fmtDate(new Date(cur)), '', 0, 0, 0, 0, 0, ''])
     } else {
       const h = calcularHorasDia(reg, linea)
-      const obs = [reg.proyecto, reg.observaciones].filter(Boolean).join(' — ')
+      let obs = [reg.proyecto, reg.observaciones].filter(Boolean).join(' — ')
+      // Campo: anexar el turno trabajado (TD/TN) al final (en Base no; ausencias sin horas).
+      const sufTurno = sufijoTurnoCampo(reg)
+      if (sufTurno) obs = obs ? `${obs} ${sufTurno}` : sufTurno
       rows.push([
         fmtDate(new Date(cur)),
         tipoLabel(reg),

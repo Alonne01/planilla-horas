@@ -72,6 +72,14 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
   100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
 }
 
+/* ─── Pulso "tocá Generar": invita a generar el código del respaldo cuando ya hay nombre ─── */
+@keyframes generar-pulse {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.55); }
+  50%      { transform: scale(1.06); box-shadow: 0 0 0 6px rgba(56, 189, 248, 0); }
+}
+.generar-pulse { animation: generar-pulse 1.5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .generar-pulse { animation: none; } }
+
 /* ─── Barra "modo aplicar" (banner superior) ─── */
 @keyframes apply-bar-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 

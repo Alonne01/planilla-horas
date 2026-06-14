@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays, Banknote } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
-import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros } from '../db/database'
+import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros, msSinceCloudBackup, markCloudBackupDone } from '../db/database'
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, type LineaTrabajo } from '../lib/calculo-horas'
+import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube } from '../lib/cloud-backup'
 import { useOnboarding } from '../onboarding/OnboardingContext'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
@@ -38,7 +39,7 @@ export function SettingsPage() {
   const [feriadosBusy, setFeriadosBusy] = useState(false)
   const [feriadosUpd, setFeriadosUpd] = useState(() => feriadosActualizadoMs())
 
-  // Local form state — only written to DB on explicit "Guardar"
+  // Estado local del formulario — auto-guardado (con debounce) tras cada cambio
   const [nombre, setNombre] = useState('')
   const [diagrama, setDiagrama] = useState<DiagramaPatternKey>('LUNES_VIERNES')
   const [diagramaFecha, setDiagramaFecha] = useState('')
@@ -51,10 +52,19 @@ export function SettingsPage() {
   const [tipoTurno, setTipoTurno] = useState<TipoTurno>('NINGUNO')
   const [zonaVM, setZonaVM] = useState(false)
   const [tasaDesarraigo, setTasaDesarraigo] = useState(0.20)
+  // Respaldo en la nube (identidad = nombre del empleado + código de 6 dígitos, con candado)
+  const [bkCodigo, setBkCodigo] = useState('')
+  const [bkBloqueado, setBkBloqueado] = useState(false)
+  const [cloudBusy, setCloudBusy] = useState(false)
+  const [restoreConfirm, setRestoreConfirm] = useState(false)
+  const [cloudMs, setCloudMs] = useState<number>(() => msSinceCloudBackup())
 
   useEffect(() => {
-    setBackupOverdue(msSinceLastBackup() > SEVEN_DAYS_MS)
-  }, [])
+    if (!loaded) return
+    // El aviso de "sin respaldo" sólo aplica si NO está configurado el respaldo en la nube.
+    const cloudOn = credencialesNubeValidas(settings.nombreUsuario, settings.backupCodigo)
+    setBackupOverdue(!cloudOn && msSinceLastBackup() > SEVEN_DAYS_MS)
+  }, [loaded])
 
   // Acciones del tour: actualizar feriados + guardar (referencias frescas cada render).
   const registrarTour = useOnboarding().registrar
@@ -75,6 +85,8 @@ export function SettingsPage() {
     setTipoTurno(settings.tipoTurno)
     setZonaVM(settings.zonaVacaMuerta)
     setTasaDesarraigo(settings.tasaDesarraigo644)
+    setBkCodigo(settings.backupCodigo)
+    setBkBloqueado(settings.backupBloqueado)
     setDirty(false)
   }, [loaded]) // intentionally only on mount
 
@@ -83,30 +95,45 @@ export function SettingsPage() {
     setTimeout(() => setMsg(null), 3000)
   }
 
+  // Persiste TODA la configuración del formulario (sin avisos). Reutilizado por el botón y el auto-guardado.
+  async function persistConfig() {
+    const nuevoBasico = parseBasicoInput(sueldoBasico)
+    // Si cambió el básico, lo anclamos a HOY para escalarlo por paritaria en otros meses.
+    const basicoCambio = nuevoBasico !== settings.sueldoBasico
+    await update({
+      nombreUsuario: nombre,
+      diagrama,
+      diagramaInicioMs: diagramaFecha ? parseDateLocal(diagramaFecha) : 0,
+      lineaTrabajo: linea,
+      convenio,
+      sueldoBasico: nuevoBasico,
+      ...(basicoCambio ? { sueldoBasicoVigenciaMs: Date.now() } : {}),
+      fechaIngresoMs: fechaIngreso ? parseDateLocal(fechaIngreso) : 0,
+      tipoTurno,
+      zonaVacaMuerta: zonaVM,
+      tasaDesarraigo644: tasaDesarraigo,
+    })
+    setDirty(false)
+  }
+
   async function handleGuardar() {
     try {
-      const nuevoBasico = parseBasicoInput(sueldoBasico)
-      // Si cambió el básico, lo anclamos a HOY para escalarlo por paritaria en otros meses.
-      const basicoCambio = nuevoBasico !== settings.sueldoBasico
-      await update({
-        nombreUsuario: nombre,
-        diagrama,
-        diagramaInicioMs: diagramaFecha ? parseDateLocal(diagramaFecha) : 0,
-        lineaTrabajo: linea,
-        convenio,
-        sueldoBasico: nuevoBasico,
-        ...(basicoCambio ? { sueldoBasicoVigenciaMs: Date.now() } : {}),
-        fechaIngresoMs: fechaIngreso ? parseDateLocal(fechaIngreso) : 0,
-        tipoTurno,
-        zonaVacaMuerta: zonaVM,
-        tasaDesarraigo644: tasaDesarraigo,
-      })
-      setDirty(false)
+      await persistConfig()
       flash('Configuración guardada ✓')
     } catch {
       flash('Error al guardar. Intentá de nuevo.', 'err')
     }
   }
+
+  // Auto-guardado: persiste los cambios del formulario (nombre, diagrama, inicio de diagrama,
+  // línea, salario) poco después de cada edición — sin tener que tocar "Guardar". El código de
+  // respaldo se guarda aparte (saveBackupCreds) y los feriados con su propio botón.
+  useEffect(() => {
+    if (!loaded || !dirty) return
+    const t = setTimeout(() => { persistConfig().catch(() => {}) }, 600)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, nombre, diagrama, diagramaFecha, linea, convenio, sueldoBasico, fechaIngreso, tipoTurno, zonaVM, tasaDesarraigo])
 
   async function handleExportBackup() {
     const json = await exportBackupJSON()
@@ -131,6 +158,87 @@ export function SettingsPage() {
       flash('Error: archivo inválido', 'err')
     }
     e.target.value = ''
+  }
+
+  // ── Respaldo en la nube ──────────────────────────────────────────────────
+  // Persiste código + candado. También guarda el nombre del empleado, que ES el usuario del
+  // respaldo, para que el auto-respaldo (que lee settings.nombreUsuario) use lo mismo.
+  function saveBackupCreds(next: { codigo?: string; bloqueado?: boolean } = {}) {
+    void update({
+      nombreUsuario: nombre.trim(),
+      backupCodigo: next.codigo ?? bkCodigo,
+      backupBloqueado: next.bloqueado ?? bkBloqueado,
+    })
+  }
+
+  // Genera un código de 6 dígitos, lo aplica y BLOQUEA (anti-cambios accidentales). Requiere nombre.
+  function generarCodigo() {
+    if (!nombre.trim()) return
+    const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')
+    setBkCodigo(code)
+    setBkBloqueado(true)
+    saveBackupCreds({ codigo: code, bloqueado: true })
+  }
+
+  function toggleLock() {
+    const next = !bkBloqueado
+    setBkBloqueado(next)
+    saveBackupCreds({ bloqueado: next })
+  }
+
+  async function handleRespaldarNube() {
+    if (!credencialesNubeValidas(nombre, bkCodigo)) {
+      flash('Completá tu nombre y un código de 6 dígitos', 'err')
+      return
+    }
+    if (!quedanOperacionesNube()) {
+      flash('Llegaste al límite de respaldos por hoy. Probá mañana.', 'err')
+      return
+    }
+    setCloudBusy(true)
+    try {
+      await subirBackupNube(nombre, bkCodigo)
+      markCloudBackupDone()
+      setCloudMs(0)
+      flash('Respaldado en la nube ✓')
+    } catch {
+      flash('No se pudo respaldar. Revisá tu conexión.', 'err')
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  async function handleRestaurarNube() {
+    setRestoreConfirm(false)
+    if (!credencialesNubeValidas(nombre, bkCodigo)) {
+      flash('Completá tu nombre y un código de 6 dígitos', 'err')
+      return
+    }
+    if (!quedanOperacionesNube()) {
+      flash('Llegaste al límite de operaciones de nube por hoy. Probá mañana.', 'err')
+      return
+    }
+    setCloudBusy(true)
+    try {
+      const r = await restaurarBackupNube(nombre, bkCodigo)
+      if (r === 'ok') flash('Datos restaurados de la nube ✓')
+      else if (r === 'no-existe') flash('No hay respaldo para ese usuario + código', 'err')
+      else flash('Código incorrecto para ese usuario', 'err')
+    } catch {
+      flash('No se pudo restaurar. Revisá tu conexión.', 'err')
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  function haceTexto(ms: number): string {
+    if (!isFinite(ms)) return 'nunca'
+    const d = Math.floor(ms / 86_400_000)
+    if (d > 0) return `hace ${d} día${d > 1 ? 's' : ''}`
+    const h = Math.floor(ms / 3_600_000)
+    if (h > 0) return `hace ${h} h`
+    const m = Math.floor(ms / 60_000)
+    return m > 0 ? `hace ${m} min` : 'recién'
   }
 
   async function handleClearAll() {
@@ -173,24 +281,93 @@ export function SettingsPage() {
 
       {backupOverdue && !msg && (
         <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-900/40 text-amber-300 text-sm flex items-start gap-2">
-          <span>Hace más de 7 días que no exportás un backup. Recomendamos hacerlo ahora.</span>
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>Tus datos no tienen respaldo. Activá el <strong>Respaldo en la nube</strong> (en Empleado, arriba) para que se guarden solos.</span>
         </div>
       )}
 
       <div className="px-4 py-4 space-y-6">
-        {/* Nombre */}
+        {/* Empleado + respaldo en la nube — en su propio recuadro para separarlo del resto */}
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
         <Section title="Empleado">
           <Field label="Nombre completo">
             <input
               type="text"
               data-tour="cfg-nombre"
               value={nombre}
+              disabled={bkBloqueado}
               onChange={e => { setNombre(e.target.value); setDirty(true) }}
-              className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
+              className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               placeholder="Ej: Juan Topo"
             />
+            <p className="text-[11px] text-slate-500 mt-1">Se usa en la planilla, en el Excel exportado y en el respaldo en la nube.</p>
           </Field>
+          {bkBloqueado && (
+            <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <Lock size={11} className="shrink-0" /> Nombre y código bloqueados. Tocá el candado para editarlos.
+            </p>
+          )}
+
+          {/* Respaldo en la nube — MISMO bloque que el empleado; el usuario ES el nombre de arriba */}
+          <p className="text-xs text-slate-400 leading-snug">
+            <span className="font-semibold text-slate-300">Respaldo en la nube:</span> se guarda una copia
+            cifrada con tu nombre + un código de 6 dígitos, sola cada pocos días al abrir la app.
+          </p>
+
+          <div data-tour="cfg-respaldo">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs text-slate-400">Código de respaldo (6 dígitos)</label>
+              {(bkBloqueado || !!bkCodigo) && (
+                <button
+                  onClick={toggleLock}
+                  className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg ${bkBloqueado ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}
+                >
+                  {bkBloqueado ? <><Lock size={12} /> Bloqueado</> : <><Unlock size={12} /> Desbloqueado</>}
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text" inputMode="numeric" value={bkCodigo} disabled={bkBloqueado || !nombre.trim()}
+                onChange={e => setBkCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onBlur={() => saveBackupCreds()}
+                placeholder={nombre.trim() ? '••••••' : 'completá tu nombre arriba'}
+                className="flex-1 bg-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono tracking-[0.3em] disabled:opacity-50 disabled:cursor-not-allowed placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {!bkBloqueado && (
+                <button onClick={generarCodigo} disabled={!nombre.trim()}
+                  className={`shrink-0 px-3 rounded-xl text-xs font-medium flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:animate-none ${nombre.trim() && !bkCodigo ? 'generar-pulse bg-blue-600 text-white' : 'bg-slate-600 text-slate-200 active:bg-slate-500'}`}>
+                  <Shuffle size={14} /> Generar
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-amber-300/80 leading-snug flex items-start gap-1.5 mt-1.5">
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+              Tu nombre + este código son la llave del respaldo. Anotalos: si los perdés, no vas a poder restaurar en otro dispositivo.
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <button onClick={handleRespaldarNube} disabled={cloudBusy || !nombre.trim() || !bkCodigo}
+              className="flex-1 py-3 rounded-xl bg-blue-600 text-white text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50">
+              <Cloud size={16} /> Respaldar ahora
+            </button>
+            <button
+              onClick={() => (restoreConfirm ? handleRestaurarNube() : setRestoreConfirm(true))}
+              disabled={cloudBusy || !nombre.trim() || !bkCodigo}
+              className={`flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 ${restoreConfirm ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-200'}`}>
+              <Download size={16} /> {restoreConfirm ? '¿Reemplazar todo?' : 'Restaurar de la nube'}
+            </button>
+          </div>
+          {restoreConfirm && (
+            <button onClick={() => setRestoreConfirm(false)} className="w-full text-xs text-slate-500 py-1">
+              Cancelar restauración
+            </button>
+          )}
+
+          <p className="text-xs text-slate-500 px-1">Último respaldo en la nube: {haceTexto(cloudMs)}.</p>
         </Section>
+        </div>
 
         {/* Línea de trabajo — afecta el conteo de horas (visible para todos) */}
         <Section title="Línea de trabajo">
@@ -305,9 +482,9 @@ export function SettingsPage() {
           data-tour="cfg-guardar"
           onClick={handleGuardar}
           disabled={!dirty}
-          className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${dirty ? 'bg-blue-600 text-white active:bg-blue-700' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}
+          className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${dirty ? 'bg-blue-600 text-white active:bg-blue-700' : 'bg-slate-700/60 text-slate-400 cursor-default'}`}
         >
-          {dirty ? 'Guardar cambios' : 'Sin cambios pendientes'}
+          {dirty ? 'Guardando…' : 'Cambios guardados ✓'}
         </button>
 
         {/* Feriados nacionales */}
@@ -343,23 +520,23 @@ export function SettingsPage() {
           />
         </Section>
 
-        {/* Backup */}
-        <Section title="Datos y backup">
-          <div className="space-y-2">
+        {/* Exportar / importar datos — backup manual a archivo; el respaldo principal es la nube */}
+        <Section title="Exportar / importar datos">
+          <div className="flex gap-2">
             <button onClick={handleExportBackup}
-              className="w-full py-3 rounded-xl bg-slate-700 text-slate-200 text-sm font-medium flex items-center justify-center gap-2">
-              <Download size={16} /> Exportar backup JSON
+              className="flex-1 py-2.5 rounded-xl bg-slate-700/70 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 active:bg-slate-600">
+              <Download size={14} /> Exportar
             </button>
-            <label className="block">
-              <span className="w-full py-3 rounded-xl bg-slate-700 text-slate-200 text-sm font-medium flex items-center justify-center gap-2 cursor-pointer">
-                <FolderOpen size={16} /> Importar backup JSON
+            <label className="flex-1">
+              <span className="w-full py-2.5 rounded-xl bg-slate-700/70 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer active:bg-slate-600">
+                <FolderOpen size={14} /> Importar
               </span>
               <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
             </label>
-            <p className="text-xs text-slate-500 px-1">
-              Importar reemplaza TODOS los datos actuales.
-            </p>
           </div>
+          <p className="text-[11px] text-slate-500 px-1">
+            Backup manual a un archivo. Importar reemplaza TODOS los datos. El respaldo automático es el de la nube (arriba).
+          </p>
         </Section>
 
         {/* Advertencia de almacenamiento */}
@@ -505,7 +682,7 @@ function StorageWarningBanner() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-amber-300">Consideraciones sobre tus datos</p>
           <p className="text-xs text-slate-400 mt-0.5 truncate">
-            Almacenamiento local · Sin sincronización entre dispositivos
+            Almacenamiento local · Respaldo en la nube disponible
           </p>
         </div>
         <span className="text-slate-500 ml-2">{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
@@ -530,7 +707,7 @@ function StorageWarningBanner() {
               </li>
               <li className="flex gap-2">
                 <span className="text-amber-400 mt-0.5 shrink-0">•</span>
-                <span>Ambas copias son <strong className="text-slate-200">locales</strong>; no existe servidor ni sincronización externa.</span>
+                <span><strong className="text-slate-200">Respaldo en la nube</strong> (opcional) — si lo activás, además se guarda una copia cifrada en la nube cada pocos días, recuperable con tu nombre + código.</span>
               </li>
             </ul>
           </div>
@@ -568,7 +745,7 @@ function StorageWarningBanner() {
             <ul className="space-y-1.5 text-xs text-slate-300">
               <li className="flex gap-2">
                 <span className="text-slate-500 mt-0.5 shrink-0">–</span>
-                <span>Sin sincronización entre dispositivos.</span>
+                <span>No hay sincronización en vivo: entre dispositivos se pasa restaurando el Respaldo en la nube (con tu nombre + código).</span>
               </li>
               <li className="flex gap-2">
                 <span className="text-slate-500 mt-0.5 shrink-0">–</span>
@@ -589,7 +766,7 @@ function StorageWarningBanner() {
             <ul className="space-y-1.5 text-xs text-slate-300">
               <li className="flex gap-2">
                 <span className="text-green-400 mt-0.5 shrink-0">✓</span>
-                <span>Exportar backup JSON cada 7 días y guardarlo en Google Drive, iCloud u otra nube.</span>
+                <span><strong className="text-slate-200">Activar el Respaldo en la nube</strong> (en Empleado): se respalda solo cada pocos días, sin manejar archivos.</span>
               </li>
               <li className="flex gap-2">
                 <span className="text-green-400 mt-0.5 shrink-0">✓</span>

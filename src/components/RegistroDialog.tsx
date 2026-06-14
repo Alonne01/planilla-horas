@@ -22,6 +22,8 @@ interface Props {
   onClose: () => void
   /** Tour: se dispara una vez cuando entrada y salida quedan cargadas (modo demo). */
   onTourReady?: () => void
+  /** Tour guiado: oculta Cancelar y la X (sólo se puede Guardar; para salir está "Omitir" del tour). */
+  ocultarCierre?: boolean
 }
 
 function timeToMs(base: Date, hhmm: string): number | null {
@@ -92,7 +94,7 @@ function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
   return null
 }
 
-export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose, onTourReady }: Props) {
+export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose, onTourReady, ocultarCierre }: Props) {
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
   const esFeriadoHoy = esFeriadoNacional(fecha.getTime())
   const nombreFeriadoHoy = nombreFeriado(fecha.getTime())
@@ -264,7 +266,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               </span>
             )}
           </div>
-          <button onClick={handleClose} className="text-slate-400 hover:text-white p-2"><X size={20} /></button>
+          {!ocultarCierre && <button onClick={handleClose} className="text-slate-400 hover:text-white p-2"><X size={20} /></button>}
         </div>
 
         {/* ── Recordatorio: el día anterior fue turno noche (se auto-oculta a los 5 s) ── */}
@@ -301,7 +303,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
         )}
 
         {/* ── Turno ── */}
-        <div className="mb-5" data-tour="dlg-turno">
+        <div className="mb-5" data-tour="dlg-turno" data-completo={e1 && s1 ? '1' : '0'}>
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Turno</p>
           <div className="grid grid-cols-2 gap-3">
             <TimeInput label="Entrada" value={e1} onChange={setE1} />
@@ -378,9 +380,12 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               </div>
             </div>
           )}
-          {isPartialEntry && (
-            <p className="text-xs text-red-400 mt-2">Ingresá tanto la Entrada como la Salida</p>
-          )}
+          {/* Slot de altura fija: evita que el aviso "media carga" empuje el resto del diálogo. */}
+          <div className="min-h-[1.15rem] mt-2">
+            {isPartialEntry && (
+              <p className="text-xs text-red-400">Ingresá tanto la Entrada como la Salida</p>
+            )}
+          </div>
           {isFrancoWorked && (
             <div className="mt-2 space-y-1">
               <p className="text-xs text-purple-400 flex items-center gap-1">
@@ -403,7 +408,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Lugar de Trabajo</p>
           <div className="flex gap-2">
             {(['Base', 'Campo'] as const).map(l => (
-              <button key={l} onClick={() => handleSetLugar(l)}
+              <button key={l} data-tour={`dlg-lugar-${l.toLowerCase()}`} onClick={() => handleSetLugar(l)}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${lugar === l ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
                 {l}
               </button>
@@ -451,7 +456,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
         {/* ── Pernocte / Maneja / Horas viaje — Campo only ── */}
         {!isDayOff && lugar === 'Campo' && (
           <div className="space-y-3 mb-4" data-tour="dlg-viaje">
-            <div>
+            <div data-tour="dlg-pernocte">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Pernocte</p>
               <div className="flex gap-2">
                 {(['NO', 'Hotel', 'Trailer'] as Pernocte[]).map(p => (
@@ -463,7 +468,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               </div>
             </div>
             {/* Slider de viaje: 0 = sin viaje; >0 = viaje + horas + maneja */}
-            <div>
+            <div data-tour="dlg-slider">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Viaje</span>
                 <span className="text-xs font-semibold text-slate-200">
@@ -511,7 +516,9 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
                     />
                   </div>
                 )}
-                <Toggle label="Manejó este día" value={maneja} onChange={setManeja} />
+                <div data-tour="dlg-maneja">
+                  <Toggle label="Manejó este día" value={maneja} onChange={setManeja} />
+                </div>
               </div>
             )}
           </div>
@@ -519,7 +526,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
         {/* ── Viaje a base (+1h) — Base only ── */}
         {!isDayOff && lugar === 'Base' && (
-          <div className="mb-4 space-y-2">
+          <div className="mb-4 space-y-2" data-tour="dlg-viaje-base">
             <Toggle label="Viaje a base (+1h)" value={viajeActivo} onChange={handleSetViaje} />
             {viajeActivo && (
               <p className="text-[11px] text-slate-400 leading-snug">
@@ -548,7 +555,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               Eliminar
             </button>
           )}
-          <button onClick={handleClose} className="flex-1 py-3 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">Cancelar</button>
+          {!ocultarCierre && <button onClick={handleClose} className="flex-1 py-3 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">Cancelar</button>}
           <button data-tour="dlg-guardar" onClick={handleSave} disabled={isPartialEntry}
             className={`flex-1 py-3 rounded-xl text-sm font-bold transition-colors ${isPartialEntry ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
             Guardar
@@ -561,29 +568,18 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div onClick={() => onChange(!value)} className="flex items-center justify-between gap-2 cursor-pointer select-none">
       <span className="text-sm text-slate-300 flex-1 min-w-0">{label}</span>
       {/* w-11=44px h-6=24px; knob w-5=20px h-5=20px, top-0.5=2px
           off: translate-x-0.5=2px  → knob [2px,22px] — 22px right clearance
           on:  translate-x-[22px]   → knob [22px,42px] — 2px right clearance + overflow-hidden */}
       <div
-        onClick={() => onChange(!value)}
-        className={`relative w-11 h-6 rounded-full flex-shrink-0 cursor-pointer overflow-hidden transition-colors duration-200 ${value ? 'bg-blue-600' : 'bg-slate-600'}`}
+        className={`relative w-11 h-6 rounded-full flex-shrink-0 overflow-hidden transition-colors duration-200 ${value ? 'bg-blue-600' : 'bg-slate-600'}`}
       >
         <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${value ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
       </div>
     </div>
   )
-}
-
-/** Snap minutes to nearest 15-min slot (0, 15, 30, 45). Handles rollover at 60→next hour. */
-function snapTo15(timeStr: string): string {
-  if (!timeStr) return timeStr
-  const [h, m] = timeStr.split(':').map(Number)
-  const snapped = Math.round(m / 15) * 15
-  const finalMin = snapped >= 60 ? 0 : snapped
-  const finalHour = snapped >= 60 ? (h + 1) % 24 : h
-  return `${String(finalHour).padStart(2, '0')}:${String(finalMin).padStart(2, '0')}`
 }
 
 function useIsMobile(): boolean {
@@ -599,23 +595,33 @@ function useIsMobile(): boolean {
   return mobile
 }
 
+const HORAS_PC = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+const MINUTOS_PC = ['00', '15', '30', '45']
+
 function TimeInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   const isMobile = useIsMobile()
   if (isMobile) return <TimeDrumPicker label={label} value={value} onChange={onChange} />
+  // PC: dos selectores 24 h (sin AM/PM, sin estados "media carga"). El minuto cae a :00 al elegir la hora.
+  const hh = value ? value.split(':')[0] : ''
+  const mm = value ? value.split(':')[1] : ''
+  const setPart = (h: string, m: string) => {
+    if (!h && !m) { onChange(''); return }
+    onChange(`${h || '00'}:${m || '00'}`)
+  }
+  const selCls = 'flex-1 min-w-0 bg-slate-700 text-white text-center font-mono text-lg rounded-xl py-2.5 [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors'
   return (
-    <div className="flex-1">
+    <div className="flex-1 min-w-0">
       <label className="text-xs text-slate-400 mb-1.5 block">{label}</label>
-      <div className="relative">
-        <input
-          type="time"
-          step="900"
-          value={value}
-          onChange={e => onChange(snapTo15(e.target.value))}
-          onBlur={e => { if (e.target.value) onChange(snapTo15(e.target.value)) }}
-          className="w-full bg-slate-700 text-white rounded-xl px-4 py-3 text-base font-mono
-                     [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
-        />
-        <Clock size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
+      <div className="flex items-stretch gap-1 rounded-2xl bg-slate-900/70 ring-1 ring-white/[0.06] p-1.5">
+        <select value={hh} onChange={e => setPart(e.target.value, mm)} className={selCls} aria-label={`${label} (hora)`}>
+          <option value="" disabled>– –</option>
+          {HORAS_PC.map(h => <option key={h} value={h}>{h}</option>)}
+        </select>
+        <span className="self-center font-mono font-bold text-slate-400 text-lg">:</span>
+        <select value={mm} onChange={e => setPart(hh, e.target.value)} className={selCls} aria-label={`${label} (minutos)`}>
+          <option value="" disabled>– –</option>
+          {MINUTOS_PC.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
       </div>
     </div>
   )

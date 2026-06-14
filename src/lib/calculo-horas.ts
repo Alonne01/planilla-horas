@@ -88,6 +88,38 @@ export function turnoCruzaMedianoche(reg: RegistroHoras): boolean {
 }
 
 /**
+ * Clasifica el turno principal de un registro como 'noche' o 'dia', o null si está
+ * incompleto. Es noche si cruza la medianoche o si la mitad o más de sus horas caen en la
+ * ventana nocturna 21:00–06:00 — mismo criterio que la nota del diálogo y EquipTrack.
+ */
+function clasificarTurnoReg(reg: RegistroHoras): 'noche' | 'dia' | null {
+  const e = reg.entradaInicioMs
+  const s = reg.salidaInicioMs
+  if (e == null || s == null) return null
+  const ed = new Date(e), sd = new Date(s)
+  const start = ed.getHours() + ed.getMinutes() / 60
+  let end = sd.getHours() + sd.getMinutes() / 60
+  const cruza = end < start
+  if (cruza) end += 24
+  const total = end - start
+  if (total <= 0) return null
+  let noct = Math.max(0, Math.min(end, 30) - Math.max(start, 21))
+  noct += Math.max(0, Math.min(end, 6) - Math.max(start, 0))
+  return cruza || noct >= total / 2 ? 'noche' : 'dia'
+}
+
+/**
+ * Sufijo de turno trabajado ('TD' día | 'TN' noche | '') para anexar al FINAL de las
+ * observaciones. SÓLO días de CAMPO: en Base siempre es día (no se anota) y las ausencias /
+ * francos no trabajados no tienen horas. Devuelve '' si no aplica o el turno está incompleto.
+ */
+export function sufijoTurnoCampo(reg: RegistroHoras): string {
+  if (reg.lugarTrabajo !== 'Campo') return ''
+  const t = clasificarTurnoReg(reg)
+  return t === 'noche' ? 'TN' : t === 'dia' ? 'TD' : ''
+}
+
+/**
  * Horas de viaje que se liquidan APARTE (ítem "Horas Viaje", ~47% del valor hora):
  * cualquier día con horasViaje > 0 (Campo, o la +1h del toggle "Viaje a base").
  * "Manejó" NO cambia esto: igual que en EquipTrack, las horas de viaje siempre van al
