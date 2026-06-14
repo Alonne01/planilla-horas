@@ -119,3 +119,8 @@ export const MESES_ES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
+
+/** Período sentinela para el tutorial: una "planilla de prueba" aislada que no colisiona con datos reales. */
+export const PERIODO_PRUEBA = { mes: 0, anio: 2999 }
+/** Cualquier registro con fechaMs ≥ esto es dato de prueba del tutorial (para limpiarlo al salir). */
+export const PRUEBA_CUTOFF_MS = new Date(2998, 11, 1).getTime()

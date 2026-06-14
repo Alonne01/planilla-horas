@@ -6,7 +6,7 @@ import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
 import { isSalaryUser } from "./lib/calculo-salarial"
 import { InstallGate } from "./components/InstallGate"
-import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, getSettings } from "./db/database"
+import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
 import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube } from "./lib/cloud-backup"
 import { useSettings } from "./hooks/useSettings"
@@ -108,6 +108,9 @@ function AppContent() {
 
       // Migrate old horasViaje=1 (boolean) to horasViaje=2 (hours)
       try { await migrateHorasViaje() } catch { /* non-fatal */ }
+
+      // Limpiar restos de la "planilla de prueba" del tutorial (si se salió sin completar).
+      try { await clearPeriodoPrueba() } catch { /* non-fatal */ }
 
       if (navigator.storage?.persist) {
         const granted = await navigator.storage.persist()

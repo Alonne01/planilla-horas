@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type { LineaTrabajo } from '../lib/calculo-horas'
+import { PRUEBA_CUTOFF_MS } from '../lib/diagrama'
 
 const SHADOW_KEY = 'planilla-shadow'
 const LAST_BACKUP_KEY = 'planilla-last-backup-ts'
@@ -221,6 +222,13 @@ export async function importBackupJSON(json: string): Promise<void> {
 export async function clearAllRegistros(): Promise<void> {
   await db.registros.clear()
   await shadowBackup()
+}
+
+/** Borra los registros del período de prueba del tutorial (sentinela lejano). Devuelve cuántos. */
+export async function clearPeriodoPrueba(): Promise<number> {
+  const deleted = await db.registros.where('fechaMs').aboveOrEqual(PRUEBA_CUTOFF_MS).delete()
+  if (deleted > 0) await shadowBackup()
+  return deleted
 }
 
 /** Delete records older than 6 months. Returns count of deleted records. */

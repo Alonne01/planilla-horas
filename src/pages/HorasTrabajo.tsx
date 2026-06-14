@@ -7,14 +7,14 @@ import { DayCard } from '../components/DayCard'
 import { CalendarGrid } from '../components/CalendarGrid'
 import { ResumenBar } from '../components/ResumenBar'
 import { calcularResumenPeriodo } from '../lib/calculo-horas'
-import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd, fechaCobro, esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
+import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd, fechaCobro, esFrancoPorDiagrama, PERIODO_PRUEBA, type DiagramaPatternKey } from '../lib/diagrama'
 import { esFeriadoNacional } from '../lib/feriados'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
 import { credencialesNubeValidas } from '../lib/cloud-backup'
 import { DonadorDonacion, DonadorGracias } from '../components/DonadorDonacion'
 import { useOnboarding } from '../onboarding/OnboardingContext'
-import { db, shadowBackup, getSettings, type RegistroHoras } from '../db/database'
+import { db, shadowBackup, getSettings, clearPeriodoPrueba, type RegistroHoras } from '../db/database'
 
 function dayKey(d: Date) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
@@ -175,6 +175,12 @@ export function HorasTrabajoPage() {
     setSelectedDate(dia)
   }
   function cerrarDialogoTour() { setSelectedDate(null); setTourExisting(undefined) }
+  // El tutorial corre en una "planilla de prueba" (período sentinela): no toca los datos reales.
+  function entrarPrueba() { setMes(PERIODO_PRUEBA.mes); setAnio(PERIODO_PRUEBA.anio) }
+  function salirPrueba() {
+    clearPeriodoPrueba().catch(() => { /* ignore */ })
+    setMes(defaultPeriodoMes()); setAnio(defaultPeriodoAnio())
+  }
   // Tour guiado "aprender haciendo": abre el día demo + offset (0=día1/1=día2/2=día3) VACÍO y real;
   // el usuario lo carga y se guarda de verdad (necesario para después pintar/borrar).
   function abrirDiaDemo(offset: number) {
@@ -185,7 +191,7 @@ export function HorasTrabajoPage() {
   }
   // Sin deps: re-registra el closure fresco en cada render para que abrirDiaTour/abrirDiaDemo usen el
   // diagrama/settings ACTUALES (si no, elige el día demo con datos viejos y cae en un franco).
-  useEffect(() => { onb.registrar({ abrirDiaTour, abrirDiaDemo, cerrarDialogo: cerrarDialogoTour }) })
+  useEffect(() => { onb.registrar({ abrirDiaTour, abrirDiaDemo, cerrarDialogo: cerrarDialogoTour, entrarPrueba, salirPrueba }) })
 
   // Ref siempre fresca a onb (para timeouts del tour que disparan onb.next() tras un retardo).
   const onbRef = useRef(onb)
@@ -511,8 +517,10 @@ export function HorasTrabajoPage() {
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={() => cambiarMes(-1)} className="p-2 text-slate-400 active:text-white">‹</button>
           <div className="text-center">
-            <div className="text-base font-bold text-white">{MESES_ES[mes]} {anio}</div>
-            <div className="text-xs text-slate-500">{periodoStartStr} – {periodoEndStr} · cobro: {cobroStr}</div>
+            <div className="text-base font-bold text-white">{anio === PERIODO_PRUEBA.anio ? 'Planilla de prueba' : `${MESES_ES[mes]} ${anio}`}</div>
+            {anio === PERIODO_PRUEBA.anio
+              ? <div className="text-xs text-amber-400/80">tutorial · no afecta tus datos</div>
+              : <div className="text-xs text-slate-500">{periodoStartStr} – {periodoEndStr} · cobro: {cobroStr}</div>}
           </div>
           <div className="flex items-center gap-1">
             <button

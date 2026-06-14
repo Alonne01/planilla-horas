@@ -10,6 +10,10 @@ export interface TourAcciones {
   /** Abre (vacío, real) el día demo elegido + offset (0=día1, 1=día2, 2=día3) para cargarlo de verdad. */
   abrirDiaDemo?: (offset: number) => void
   cerrarDialogo?: () => void
+  /** Cambia a la "planilla de prueba" (período sentinela aislado) para el tour sin tocar datos reales. */
+  entrarPrueba?: () => void
+  /** Sale de la planilla de prueba: borra sus datos y vuelve al período actual. */
+  salirPrueba?: () => void
 }
 
 export interface Paso {
@@ -303,6 +307,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     // Sólo el tour completo marca el onboarding como hecho (el mini-tour de nube no).
     if (modoRef.current === 'full') {
       try { localStorage.setItem(STORAGE_KEY, '1') } catch { /* ignore */ }
+      acciones.current.salirPrueba?.()  // borra la planilla de prueba y vuelve al período actual
     }
     acciones.current.cerrarDialogo?.()
   }, [])
@@ -330,6 +335,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     }
     // Saltear pasos iniciales con skipIf (p.ej. nombre ya cargado en el mini-tour).
     while (i < pasosRef.current.length && pasosRef.current[i].skipIf?.()) i++
+    // El tour completo corre en una "planilla de prueba" aislada (no toca los datos reales).
+    if (modo === 'full') acciones.current.entrarPrueba?.()
     setPasoIdx(i)
     setActivo(true)
     entrar(i)

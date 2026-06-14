@@ -14,6 +14,10 @@ export function GuideTooltip() {
   // Posición arrastrada de la tarjeta (se resetea por paso): permite correrla si tapa algo.
   const [drag, setDrag] = useState({ x: 0, y: 0 })
   const dragStart = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
+  // Para ubicar la tarjeta sin tapar el target: alto real medido + re-render al cambiar el viewport visible.
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [cardH, setCardH] = useState(180)
+  const [, setVvTick] = useState(0)
 
   // Sigue al target de forma CONTINUA (rAF): mide cada frame y actualiza el hueco sólo cuando cambia.
   // Así el spotlight queda SIEMPRE pegado al elemento aunque el diálogo entre animado (slide-in),
@@ -120,6 +124,19 @@ export function GuideTooltip() {
   // Al cambiar de paso, la tarjeta vuelve a su posición por defecto.
   useEffect(() => { setDrag({ x: 0, y: 0 }) }, [paso?.id])
 
+  // Medir el alto real de la tarjeta (cambia con el texto de cada paso) para posicionarla sin tapar.
+  useEffect(() => { if (cardRef.current) setCardH(cardRef.current.offsetHeight) }, [paso?.id, paso?.texto])
+
+  // Reposicionar al abrir/cerrar el teclado (cambia el viewport visible).
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const onVV = () => setVvTick(t => t + 1)
+    vv.addEventListener('resize', onVV)
+    vv.addEventListener('scroll', onVV)
+    return () => { vv.removeEventListener('resize', onVV); vv.removeEventListener('scroll', onVV) }
+  }, [])
+
   if (!activo || !paso) return null
 
   const esUltimo = pasoIdx === total - 1
@@ -131,8 +148,26 @@ export function GuideTooltip() {
   // Pasos "libre": no oscurecen ni bloquean (pintar/borrar y selector de hora necesitan interacción
   // libre); el avance lo dispara el estado (HorasTrabajo → onb.next()), con "Siguiente" como respaldo.
   const bloquea = !paso.libre
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 800
-  const cardAbajo = !rect || rect.top + rect.height / 2 < vh * 0.55
+
+  // Posición vertical de la tarjeta: relativa al target y dentro del viewport VISIBLE (respeta el
+  // teclado vía VisualViewport), sin tapar nunca el rect resaltado.
+  const vv = typeof window !== 'undefined' ? window.visualViewport : null
+  const visTop = vv?.offsetTop ?? 0
+  const visBottom = visTop + (vv?.height ?? (typeof window !== 'undefined' ? window.innerHeight : 800))
+  const gapCard = 12
+  const marginCard = 8
+  let cardTop: number
+  if (!rect) {
+    cardTop = visBottom - cardH - marginCard                            // sin target: al pie del área visible
+  } else if (rect.bottom + gapCard + cardH <= visBottom - marginCard) {
+    cardTop = rect.bottom + gapCard                                      // debajo del target
+  } else if (rect.top - gapCard - cardH >= visTop + marginCard) {
+    cardTop = rect.top - gapCard - cardH                                 // arriba del target
+  } else {
+    // No entra ni arriba ni abajo: el lado con más espacio.
+    cardTop = (rect.top - visTop) > (visBottom - rect.bottom) ? visTop + marginCard : visBottom - cardH - marginCard
+  }
+  cardTop = Math.max(visTop + marginCard, Math.min(cardTop, visBottom - cardH - marginCard))
 
   const pad = 6
   const hole = rect
@@ -183,11 +218,10 @@ export function GuideTooltip() {
           superior, por si tapa algo que el usuario necesita ver o tocar. */}
       <div
         key={paso.id}
-        className="pointer-events-auto fixed inset-x-3 mx-auto max-w-sm rounded-2xl border border-sky-500/30 bg-slate-800/85 p-3 pt-4 shadow-2xl shadow-black/50 backdrop-blur-sm animate-[gate-rise_240ms_ease_both] transition-[top,bottom] duration-300 ease-out"
+        ref={cardRef}
+        className="pointer-events-auto fixed inset-x-3 mx-auto max-w-sm rounded-2xl border border-sky-500/30 bg-slate-800/85 p-3 pt-4 shadow-2xl shadow-black/50 backdrop-blur-sm animate-[gate-rise_240ms_ease_both] transition-[top] duration-200 ease-out"
         style={{
-          ...(cardAbajo
-            ? { bottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }
-            : { top: 'calc(env(safe-area-inset-top) + 1rem)' }),
+          top: cardTop,
           ...(drag.x || drag.y ? { transform: `translate(${drag.x}px, ${drag.y}px)` } : null),
         }}
       >
