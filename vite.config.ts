@@ -6,6 +6,9 @@ import { VitePWA } from 'vite-plugin-pwa'
 // https://vite.dev/config/
 export default defineConfig({
   base: '/planilla-horas/',
+  // Sello de build: hace que cada compilación sea única → el service worker siempre detecta la
+  // versión nueva (y sirve de marcador de versión en consola).
+  define: { __BUILD_TIME__: JSON.stringify(new Date().toISOString()) },
   plugins: [
     react(),
     tailwindcss(),

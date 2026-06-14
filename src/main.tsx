@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 
+declare const __BUILD_TIME__: string
+console.info('[Planilla] build', __BUILD_TIME__)
+
 // Auto-actualización del PWA: detecta versiones nuevas y avisa a la UI (App muestra un toast y recarga).
 if ('serviceWorker' in navigator) {
   // 1) Cuando un SW nuevo toma el control, avisar a la UI — sólo en ACTUALIZACIONES, no en la 1ª
