@@ -5,15 +5,15 @@ import donadorSheet from '../assets/donador.png'
 
 // Frases del personaje (se elige una al azar cada vez que aparece).
 const DIALOGOS = [
-  "si querés podes darme un vueltito",
-  "si querés podes darme unos pesos",
-  "si querés podes pagarme el almuerzo",
-  "si querés podes invitarme un helado",
-  "si querés podes darme unos mangos",
-  "una monedita pa' la programacion loco",
+  "si querés podés darme un vueltito",
+  "si querés podés darme unos pesos",
+  "si querés podés pagarme el almuerzo",
+  "si querés podés invitarme un helado",
+  "si querés podés darme unos mangos",
+  "una monedita pa' la programación loco",
   "una monedita pal Nico",
-  "bailare por dinero",
-  "necesito dòlares y me conformo con centavos",
+  "bailaré por dinero",
+  "necesito dólares y me conformo con centavos",
 ]
 
 // Cuenta cuántas veces se montó la pantalla Horas en esta sesión de app. El
