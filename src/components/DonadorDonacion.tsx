@@ -1,5 +1,4 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { Coffee } from 'lucide-react'
 import { MERCADOPAGO_DONACION_URL } from '../lib/calculo-salarial'
 import donadorSheet from '../assets/donador.png'
 
@@ -87,16 +86,11 @@ export function DonadorDonacion() {
             ? 'donador-bubble-out 220ms ease-in forwards'
             : 'donador-bubble-in 340ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms both',
         }}
-        className="absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-[20px] bg-white px-3.5 py-2 shadow-[0_8px_20px_-6px_rgba(2,6,23,0.55)] ring-1 ring-slate-900/10"
+        className="absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-[20px] bg-slate-200 px-3.5 py-2 text-[11px] font-semibold leading-snug text-slate-800 shadow-[0_8px_20px_-6px_rgba(2,6,23,0.55)] ring-1 ring-slate-900/10"
       >
-        <span className="flex items-center gap-1.5 text-[11px] font-semibold leading-snug text-slate-700">
-          <span className="grid size-[18px] shrink-0 place-items-center rounded-full bg-sky-100 ring-1 ring-sky-200">
-            <Coffee size={11} className="text-sky-600" />
-          </span>
-          {dialogo}
-        </span>
+        {dialogo}
         {/* colita triangular que apunta al personaje */}
-        <span className="absolute -bottom-[7px] left-3 h-0 w-0 border-x-[7px] border-x-transparent border-t-[9px] border-t-white drop-shadow-[0_2px_1px_rgba(2,6,23,0.22)]" />
+        <span className="absolute -bottom-[7px] left-3 h-0 w-0 border-x-[7px] border-x-transparent border-t-[9px] border-t-slate-200 drop-shadow-[0_2px_1px_rgba(2,6,23,0.22)]" />
       </div>
     </a>
   )
