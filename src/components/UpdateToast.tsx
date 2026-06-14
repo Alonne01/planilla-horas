@@ -24,19 +24,19 @@ export function UpdateToast() {
       className="pointer-events-none fixed inset-x-0 z-[80] flex justify-center px-3"
       style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
     >
-      <div className="flex items-center gap-2 rounded-full border border-sky-500/30 bg-slate-800/95 py-1.5 pl-2 pr-3.5 shadow-lg shadow-black/40 backdrop-blur animate-[gate-rise_260ms_ease_both]">
+      <div className="flex items-center gap-2.5 rounded-2xl border border-sky-500/30 bg-slate-800/95 py-2 pl-2.5 pr-4 shadow-lg shadow-black/40 backdrop-blur animate-[gate-rise_260ms_ease_both]">
         <div
           ref={spriteRef}
           className="shrink-0"
           style={{
-            width: 30,             // proporción del cuadro (1085×1450 ≈ 3:4)
-            height: 40,
+            width: 42,             // proporción del cuadro (1085×1450 ≈ 3:4)
+            height: 56,
             backgroundImage: `url(${updateChar})`,
             backgroundRepeat: 'no-repeat',
             backgroundSize: `${FRAMES * 100}% 100%`,
           }}
         />
-        <span className="text-xs font-medium text-slate-200">Nueva versión — actualizando…</span>
+        <span className="text-sm font-medium text-slate-200">Nueva versión — actualizando…</span>
       </div>
     </div>
   )
