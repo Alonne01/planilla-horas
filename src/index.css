@@ -127,3 +127,17 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
   filter: url(#donador-wave); /* feDisplacementMap animado = ondas */
 }
 
+/* Hint "tocá": manito que hace tap sobre el globo + ondita del click. */
+@keyframes donador-tap {
+  0%   { transform: translate(0, 0) scale(1); }
+  10%  { transform: translate(-1.5px, -2.5px) scale(0.8); }   /* presiona */
+  22%  { transform: translate(0, 0) scale(1); }               /* suelta */
+  100% { transform: translate(0, 0) scale(1); }               /* descansa */
+}
+@keyframes donador-tap-ripple {
+  0%   { opacity: 0;   transform: scale(0.4); }
+  10%  { opacity: 0.5; transform: scale(0.5); }
+  35%  { opacity: 0;   transform: scale(1.5); }
+  100% { opacity: 0;   transform: scale(1.5); }
+}
+

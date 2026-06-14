@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { Pointer } from 'lucide-react'
 import { MERCADOPAGO_DONACION_URL } from '../lib/calculo-salarial'
 import donadorSheet from '../assets/donador.png'
 
@@ -169,6 +170,19 @@ export function DonadorDonacion() {
           {dialogo}
           {/* colita triangular que apunta al personaje */}
           <span className="absolute -bottom-[7px] left-3 h-0 w-0 border-x-[7px] border-x-transparent border-t-[9px] border-t-slate-200 drop-shadow-[0_2px_1px_rgba(2,6,23,0.22)]" />
+          {/* hint "tocá": ondita del click + manito que hace tap sobre el globo */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute bottom-1.5 right-2.5 h-3.5 w-3.5 rounded-full border-2 border-slate-500/70"
+            style={{ animation: 'donador-tap-ripple 1.4s ease-out infinite' }}
+          />
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -bottom-2.5 right-0 text-slate-700 [filter:drop-shadow(0_0_2px_rgba(255,255,255,0.7))]"
+            style={{ animation: 'donador-tap 1.4s ease-in-out infinite' }}
+          >
+            <Pointer size={16} strokeWidth={2.25} className="rotate-[6deg]" />
+          </span>
         </div>
       </a>
     </>
