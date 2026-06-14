@@ -455,8 +455,9 @@ export function HorasTrabajoPage() {
         </button>
       </div>
 
-      {/* Donador — pide una donación; gated por nombre, se va solo a los 10 s */}
-      {isDonationUser(settings.nombreUsuario) && !applySource && !deleteMode && <DonadorDonacion />}
+      {/* Donador — pide una donación; gated por nombre, se va solo a los 10 s.
+          Sin guard de apply/delete: así monta 1 sola vez por visita (cuenta bien). */}
+      {isDonationUser(settings.nombreUsuario) && <DonadorDonacion />}
 
       {/* Registro dialog */}
       {selectedDate && (

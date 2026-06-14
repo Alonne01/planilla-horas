@@ -3,25 +3,29 @@ import { Coffee } from 'lucide-react'
 import { MERCADOPAGO_DONACION_URL } from '../lib/calculo-salarial'
 import donadorSheet from '../assets/donador.png'
 
-// Aparece una sola vez por sesión de app y se desvanece a los 10 s (para no
-// molestar). Tocar el globo o el personaje abre el link de MercadoPago.
-let yaMostradoEnSesion = false
+// Cuenta cuántas veces se montó la pantalla Horas en esta sesión de app. El
+// personaje aparece en la 1ª visita (inicio) y luego cada 2 (3ª, 5ª, 7ª…), o sea
+// "cada inicio y cada 2 veces que vuelvo a la pantalla". Se reinicia al recargar.
+let visitasHoras = 0
 
 const FRAME = 100 // px en pantalla de cada cuadro (sheet nativo: 3 × 512×512)
 
 export function DonadorDonacion() {
-  const [mounted, setMounted] = useState(() => !yaMostradoEnSesion)
+  // Se decide en el montaje (1 vez por visita): impares muestran, pares ocultan.
+  const [visible, setVisible] = useState(() => {
+    visitasHoras += 1
+    return visitasHoras % 2 === 1
+  })
   const [leaving, setLeaving] = useState(false)
 
   useEffect(() => {
-    if (!mounted) return
-    yaMostradoEnSesion = true
+    if (!visible) return
     const tLeave = setTimeout(() => setLeaving(true), 10_000)
-    const tGone = setTimeout(() => setMounted(false), 10_400)
+    const tGone = setTimeout(() => setVisible(false), 10_400)
     return () => { clearTimeout(tLeave); clearTimeout(tGone) }
-  }, [mounted])
+  }, [visible])
 
-  if (!mounted) return null
+  if (!visible) return null
 
   const spriteStyle: CSSProperties = {
     width: `${FRAME}px`,
@@ -34,30 +38,34 @@ export function DonadorDonacion() {
   }
 
   return (
-    <div className="fixed bottom-20 left-3 z-40 select-none">
-      <a
-        href={MERCADOPAGO_DONACION_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Invitame un café — donación por MercadoPago"
-        className={`block origin-bottom-left transition-transform active:scale-95 ${
-          leaving
-            ? 'pointer-events-none animate-[donador-out_360ms_ease_both]'
-            : 'animate-[donador-in_280ms_ease_both]'
-        }`}
-      >
-        {/* Globo de diálogo */}
-        <div className="relative ml-2 mb-1 inline-block rounded-2xl bg-white px-3 py-1.5 shadow-lg ring-1 ring-black/10">
-          <span className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold text-slate-800">
-            <Coffee size={13} className="text-sky-600" /> ¿Me invitás un café?
-          </span>
-          {/* colita que apunta al personaje */}
-          <span className="absolute -bottom-1 left-5 h-3 w-3 rotate-45 rounded-[2px] bg-white" />
-        </div>
+    <a
+      href={MERCADOPAGO_DONACION_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Invitame un café — donación por MercadoPago"
+      style={{
+        width: `${FRAME}px`,
+        height: `${FRAME}px`,
+        left: '0.5rem',
+        bottom: 'calc(3.5rem + env(safe-area-inset-bottom))', // justo encima del nav
+      }}
+      className={`fixed z-40 block origin-bottom-left transition-transform active:scale-95 ${
+        leaving
+          ? 'pointer-events-none animate-[donador-out_360ms_ease_both]'
+          : 'animate-[donador-in_280ms_ease_both]'
+      }`}
+    >
+      {/* Personaje, apoyado sobre la barra de navegación */}
+      <div style={spriteStyle} className="absolute bottom-0 left-0" />
 
-        {/* Personaje animado */}
-        <div style={spriteStyle} />
-      </a>
-    </div>
+      {/* Globo de diálogo, arriba a la derecha del personaje */}
+      <div className="absolute bottom-[74px] left-[54px] inline-block rounded-2xl bg-white px-3 py-1.5 shadow-lg ring-1 ring-black/10">
+        <span className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold text-slate-800">
+          <Coffee size={13} className="text-sky-600" /> ¿Me invitás un café?
+        </span>
+        {/* colita que apunta al personaje (abajo-izquierda) */}
+        <span className="absolute -bottom-1 left-3 h-3 w-3 rotate-45 rounded-[2px] bg-white" />
+      </div>
+    </a>
   )
 }
