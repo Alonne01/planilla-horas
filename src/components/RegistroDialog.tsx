@@ -446,6 +446,9 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
             <Toggle label="Viaje" value={viajeActivo} onChange={handleSetViaje} />
             {viajeActivo && (
               <div className="ml-3 pl-3 border-l-2 border-slate-700 space-y-3">
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Las horas de viaje se suman aparte de las horas de trabajo (entrada/salida).
+                </p>
                 <div>
                   <p className="text-xs text-slate-400 mb-2">Distancia</p>
                   <div className="flex gap-2">
@@ -491,8 +494,13 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
         {/* ── Viaje a base (+1h) — Base only ── */}
         {!isDayOff && lugar === 'Base' && (
-          <div className="mb-4">
+          <div className="mb-4 space-y-2">
             <Toggle label="Viaje a base (+1h)" value={viajeActivo} onChange={handleSetViaje} />
+            {viajeActivo && (
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Las horas de viaje se suman aparte de las horas de trabajo (entrada/salida).
+              </p>
+            )}
           </div>
         )}
 
