@@ -57,6 +57,7 @@ export function SettingsPage() {
   const [bkBloqueado, setBkBloqueado] = useState(false)
   const [cloudBusy, setCloudBusy] = useState(false)
   const [restoreConfirm, setRestoreConfirm] = useState(false)
+  const [limiteMsg, setLimiteMsg] = useState<string | null>(null) // modal de tope diario de nube
   const [cloudMs, setCloudMs] = useState<number>(() => msSinceCloudBackup())
 
   useEffect(() => {
@@ -192,7 +193,7 @@ export function SettingsPage() {
       return
     }
     if (!quedanOperacionesNube()) {
-      flash('Llegaste al límite de respaldos por hoy. Probá mañana.', 'err')
+      setLimiteMsg('Por hoy no se pueden hacer más respaldos. Intentá de nuevo mañana.')
       return
     }
     setCloudBusy(true)
@@ -215,7 +216,7 @@ export function SettingsPage() {
       return
     }
     if (!quedanOperacionesNube()) {
-      flash('Llegaste al límite de operaciones de nube por hoy. Probá mañana.', 'err')
+      setLimiteMsg('Por hoy no se pueden hacer más restauraciones. Intentá de nuevo mañana.')
       return
     }
     setCloudBusy(true)
@@ -599,6 +600,25 @@ export function SettingsPage() {
           </p>
         </div>
       </div>
+
+      {/* Modal de tope diario de operaciones de nube (respaldar/restaurar) */}
+      {limiteMsg && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4" onClick={() => setLimiteMsg(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-amber-500/30 bg-slate-800 p-5 shadow-2xl shadow-black/50" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5 mb-2">
+              <AlertTriangle size={18} className="text-amber-400 shrink-0" />
+              <h2 className="text-base font-bold text-white leading-tight">Límite diario alcanzado</h2>
+            </div>
+            <p className="text-sm text-slate-300 leading-snug">{limiteMsg}</p>
+            <button
+              onClick={() => setLimiteMsg(null)}
+              className="mt-4 w-full py-2.5 rounded-xl bg-slate-700 text-slate-200 text-sm font-medium active:bg-slate-600"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
