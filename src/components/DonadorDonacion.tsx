@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { MERCADOPAGO_DONACION_URL } from '../lib/calculo-salarial'
 import donadorSheet from '../assets/donador.png'
 
@@ -21,6 +21,7 @@ const DIALOGOS = [
 let visitasHoras = 0
 
 const FRAME = 100 // px en pantalla de cada cuadro (sheet nativo: 3 × 512×512)
+const SWIPE_UMBRAL = 50 // px para descartar deslizando
 
 export function DonadorDonacion() {
   // Se decide en el montaje (1 vez por visita): impares muestran, pares ocultan.
@@ -32,6 +33,13 @@ export function DonadorDonacion() {
   const [dialogo] = useState(() => DIALOGOS[Math.floor(Math.random() * DIALOGOS.length)])
   const [leaving, setLeaving] = useState(false)
 
+  // Deslizar para descartar
+  const [dragX, setDragX] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const [dismissing, setDismissing] = useState(false)
+  const startRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
+  const suppressClickRef = useRef(false)
+
   useEffect(() => {
     if (!visible) return
     const tLeave = setTimeout(() => setLeaving(true), 10_000)        // empieza la muerte
@@ -41,6 +49,52 @@ export function DonadorDonacion() {
 
   if (!visible) return null
 
+  function onPointerDown(e: ReactPointerEvent<HTMLAnchorElement>) {
+    if (leaving || dismissing) return
+    startRef.current = { x: e.clientX, y: e.clientY, moved: false }
+    setDragging(true)
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+  }
+
+  function onPointerMove(e: ReactPointerEvent<HTMLAnchorElement>) {
+    const s = startRef.current
+    if (!s) return
+    const dx = e.clientX - s.x
+    const dy = e.clientY - s.y
+    if (!s.moved && Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) s.moved = true
+    if (s.moved) setDragX(dx)
+  }
+
+  function onPointerUp(e: ReactPointerEvent<HTMLAnchorElement>) {
+    const s = startRef.current
+    startRef.current = null
+    setDragging(false)
+    if (!s || !s.moved) { setDragX(0); return }
+    suppressClickRef.current = true // hubo arrastre: que el tap no abra el link
+    const dx = e.clientX - s.x
+    if (Math.abs(dx) > SWIPE_UMBRAL) {
+      // vuela hacia el lado y se desvanece, luego desmonta
+      setDismissing(true)
+      setDragX(dx > 0 ? 340 : -340)
+      setTimeout(() => setVisible(false), 300)
+    } else {
+      setDragX(0) // no alcanzó: vuelve a su lugar
+    }
+  }
+
+  function onPointerCancel() {
+    startRef.current = null
+    setDragging(false)
+    if (!dismissing) setDragX(0)
+  }
+
+  function onClick(e: ReactMouseEvent<HTMLAnchorElement>) {
+    if (suppressClickRef.current) {
+      e.preventDefault()
+      suppressClickRef.current = false
+    }
+  }
+
   const spriteBase: CSSProperties = {
     width: '100%',
     height: '100%',
@@ -49,6 +103,8 @@ export function DonadorDonacion() {
     backgroundSize: '300% 100%',
     backgroundPositionX: '0%',
   }
+
+  const dragOpacity = dismissing ? 0 : dragging ? Math.max(0.25, 1 - Math.abs(dragX) / 220) : 1
 
   return (
     <>
@@ -70,15 +126,22 @@ export function DonadorDonacion() {
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Donación por MercadoPago"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onClick={onClick}
         style={{
           width: `${FRAME}px`,
           height: `${FRAME}px`,
           left: '0.5rem',
           bottom: 'calc(2.5rem + env(safe-area-inset-bottom))', // sentado sobre el nav
+          transform: dragX ? `translateX(${dragX}px)` : undefined,
+          opacity: dragOpacity,
+          transition: dragging ? 'none' : 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1), opacity 300ms ease',
+          touchAction: 'pan-y', // arrastre horizontal nuestro; scroll vertical pasa
         }}
-        className={`fixed z-40 block origin-bottom-left transition-transform active:scale-95 ${
-          leaving ? 'pointer-events-none' : ''
-        }`}
+        className={`fixed z-40 block origin-bottom-left ${leaving || dismissing ? 'pointer-events-none' : ''}`}
       >
         {/* Contenedor del personaje. Al morir aplica la onda (displacement SVG). */}
         <div
