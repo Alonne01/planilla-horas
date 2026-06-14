@@ -116,40 +116,44 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
    con scanlines finas (mask de 2 capas) + hundida/escala. Si el navegador no
    soporta mask-composite, degrada a un fade con flash (opacity/filter igual corren). */
 @keyframes donador-death {
-  0%   { -webkit-mask-position: 50% 0%, 0 0;   mask-position: 50% 0%, 0 0;   opacity: 1; filter: brightness(1) saturate(1);            transform: translateY(0) scaleX(1) scaleY(1) skewX(0deg); }
-  12%  {                                                                      filter: brightness(3) saturate(0.12) contrast(1.3);     transform: translateY(-2px) scaleX(1.06) scaleY(1.06) skewX(0deg); }   /* flash */
-  30%  {                                                                      filter: brightness(1.25) saturate(0.55); }
-  100% { -webkit-mask-position: 50% 100%, 0 0; mask-position: 50% 100%, 0 0; opacity: 0; filter: brightness(1.7) saturate(0.25);       transform: translateY(-7px) scaleX(1.4) scaleY(0.03) skewX(10deg); }   /* se deforma/colapsa en la nada */
+  0%   { -webkit-mask-position: 50% 0%, 0 0;   mask-position: 50% 0%, 0 0;   opacity: 1; filter: brightness(1) saturate(1) drop-shadow(0 0 0 rgba(191,219,254,0));                          transform: translateY(0) scaleX(1) scaleY(1) skewX(0deg) rotate(0deg); }
+  12%  {                                                                      filter: brightness(2.5) saturate(0.25) contrast(1.2) drop-shadow(0 0 7px rgba(224,242,254,0.95));        transform: translateY(-2px) scale(1.07); }            /* flash + bloom */
+  32%  {                                                                      filter: brightness(1.3) saturate(0.6) drop-shadow(0 0 6px rgba(186,230,253,0.6)); }
+  100% { -webkit-mask-position: 50% 100%, 0 0; mask-position: 50% 100%, 0 0; opacity: 0; filter: brightness(1.5) saturate(0.3) drop-shadow(0 0 16px rgba(186,230,253,0));               transform: translateY(-18px) scaleX(0.5) scaleY(0.78) skewX(-7deg) rotate(-3deg); }   /* asciende, se afina y se va en la nada */
 }
 .donador-muriendo {
-  -webkit-mask-image: linear-gradient(to top, transparent, #000 32%), repeating-linear-gradient(0deg, #000 0 1.5px, transparent 1.5px 3px);
-          mask-image: linear-gradient(to top, transparent, #000 32%), repeating-linear-gradient(0deg, #000 0 1.5px, transparent 1.5px 3px);
+  -webkit-mask-image: linear-gradient(to top, transparent, #000 32%), repeating-linear-gradient(45deg, #000 0 1.5px, transparent 1.5px 3px);
+          mask-image: linear-gradient(to top, transparent, #000 32%), repeating-linear-gradient(45deg, #000 0 1.5px, transparent 1.5px 3px);
   -webkit-mask-size: 100% 220%, 100% 100%;
           mask-size: 100% 220%, 100% 100%;
   -webkit-mask-repeat: no-repeat, repeat;
           mask-repeat: no-repeat, repeat;
   -webkit-mask-composite: source-in;
           mask-composite: intersect;
-  transform-origin: 50% 52%; /* colapsa desde el centro del cuerpo visible */
-  animation: donador-death 820ms ease-in forwards;
+  transform-origin: 50% 62%; /* asciende/colapsa desde el cuerpo */
+  animation: donador-death 880ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 /* Chispas que suben mientras el cuerpo se disuelve (el "alma" que se va). */
 @keyframes donador-chispas {
-  0%   { opacity: 0; transform: translateY(2px) scale(0.9); }
-  22%  { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-30px) scale(1.15); }
+  0%   { opacity: 0; transform: translateY(4px) scale(0.85); }
+  20%  { opacity: 1; }
+  60%  { opacity: 0.95; }
+  100% { opacity: 0; transform: translateY(-34px) scale(1.2); }
 }
 .donador-chispas {
   pointer-events: none;
   background-repeat: no-repeat;
   background-image:
-    radial-gradient(circle, rgba(255,255,255,0.95) 0 1.6px, transparent 2.3px),
-    radial-gradient(circle, rgba(186,230,253,0.95) 0 1.4px, transparent 2px),
-    radial-gradient(circle, rgba(255,255,255,0.90) 0 1.2px, transparent 1.8px),
-    radial-gradient(circle, rgba(125,211,252,0.95) 0 1.6px, transparent 2.3px),
-    radial-gradient(circle, rgba(255,255,255,0.90) 0 1.3px, transparent 1.9px);
-  background-position: 28% 72%, 52% 62%, 42% 82%, 64% 74%, 36% 56%;
-  animation: donador-chispas 760ms ease-out forwards;
+    radial-gradient(circle, rgba(255,255,255,0.95) 0 1.3px, transparent 2px),
+    radial-gradient(circle, rgba(186,230,253,0.95) 0 1.1px, transparent 1.8px),
+    radial-gradient(circle, rgba(255,255,255,0.90) 0 1px,   transparent 1.6px),
+    radial-gradient(circle, rgba(125,211,252,0.95) 0 1.3px, transparent 2px),
+    radial-gradient(circle, rgba(255,255,255,0.90) 0 0.9px, transparent 1.5px),
+    radial-gradient(circle, rgba(224,242,254,0.95) 0 1.1px, transparent 1.8px),
+    radial-gradient(circle, rgba(255,255,255,0.85) 0 1px,   transparent 1.6px);
+  background-position: 26% 70%, 50% 60%, 40% 80%, 62% 72%, 34% 54%, 56% 84%, 70% 64%;
+  filter: drop-shadow(0 0 2px rgba(186,230,253,0.6));
+  animation: donador-chispas 900ms ease-out forwards;
 }
 

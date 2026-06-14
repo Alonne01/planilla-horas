@@ -35,7 +35,7 @@ export function DonadorDonacion() {
   useEffect(() => {
     if (!visible) return
     const tLeave = setTimeout(() => setLeaving(true), 10_000)        // empieza la muerte FF
-    const tGone = setTimeout(() => setVisible(false), 10_900)        // desmonta tras la animación (820ms)
+    const tGone = setTimeout(() => setVisible(false), 10_960)        // desmonta tras la animación (~900ms)
     return () => { clearTimeout(tLeave); clearTimeout(tGone) }
   }, [visible])
 
