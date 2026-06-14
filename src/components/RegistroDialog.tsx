@@ -67,7 +67,18 @@ function clasificarTurno(entrada: string, salida: string): 'noche' | 'dia' | nul
 
 type LugarTrabajo = 'Base' | 'Campo' | 'Franco'  // 'Franco' used only for saving absences
 type Pernocte = 'NO' | 'Hotel' | 'Trailer'
-type DistanciaViaje = 'CORTA' | 'MEDIA' | 'LARGA' | null
+// Viaje por slider: 100→350 km de a 50; 1,5 h por cada 100 km. El máximo (350) habilita hora manual.
+const KM_MIN = 100, KM_MAX = 350, KM_STEP = 50
+const STEPS = [0, 100, 150, 200, 250, 300, 350] // posiciones del slider de viaje (0 = sin viaje)
+const horasPorKm = (km: number) => (km / 100) * 1.5
+function fmtHorasViaje(h: number): string {
+  const s = Number.isInteger(h) ? String(h) : String(h).replace('.', ',')
+  return `${s} h`
+}
+function kmDesdeHoras(hv: number): number {
+  const km = Math.round((hv / 1.5) * 100)
+  return km >= KM_MIN && km < KM_MAX && (km - KM_MIN) % KM_STEP === 0 ? km : KM_MAX
+}
 /** Mutually-exclusive absence labels — shown only when no times entered */
 type SubFranco = 'COMP' | 'AUSENCIA' | 'FALTA' | null
 
@@ -94,28 +105,29 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   const [e1, setE1] = useState(msToTime(existing?.entradaInicioMs))
   const [s1, setS1] = useState(msToTime(existing?.salidaInicioMs))
   const [pernocte, setPernocte] = useState<Pernocte>(existing?.pernocte ?? 'NO')
-  // Viaje: en Campo, distancia CORTA(3h)/MEDIA(5h)/LARGA(manual); en Base, +1h fija.
-  // `distanciaViaje` no se persiste: se deriva de horasViaje al editar (3→CORTA, 5→MEDIA, >0→LARGA).
+  // Viaje. Campo: slider 0→350 (0 = sin viaje), 1,5 h c/100 km; el máximo habilita hora manual.
+  // Base: toggle +1 h fija (viajeActivo). km/horas se derivan de horasViaje al editar.
   const hvExisting = existing?.horasViaje ?? 0
-  const [viajeActivo, setViajeActivo] = useState(hvExisting > 0)
-  const [distancia, setDistancia] = useState<DistanciaViaje>(() => {
-    if (existing?.lugarTrabajo !== 'Campo' || hvExisting <= 0) return null
-    return hvExisting === 3 ? 'CORTA' : hvExisting === 5 ? 'MEDIA' : 'LARGA'
-  })
+  const [viajeActivo, setViajeActivo] = useState(existing?.lugarTrabajo === 'Base' && hvExisting > 0)
+  const [kmViaje, setKmViaje] = useState<number>(() =>
+    existing?.lugarTrabajo === 'Campo' && hvExisting > 0 ? kmDesdeHoras(hvExisting) : 0
+  )
   const [horasManuales, setHorasManuales] = useState(() =>
-    existing?.lugarTrabajo === 'Campo' && hvExisting > 0 && hvExisting !== 3 && hvExisting !== 5
-      ? String(hvExisting) : ''
+    existing?.lugarTrabajo === 'Campo' && hvExisting > 0 && kmDesdeHoras(hvExisting) === KM_MAX
+      ? String(hvExisting).replace('.', ',') : ''
   )
   const [maneja, setManeja] = useState(existing?.maneja ?? false)
 
-  function handleSetManeja(v: boolean) {
-    setManeja(v)
-    if (v) setViajeActivo(true)
+  function handleSetViaje(v: boolean) {
+    setViajeActivo(v) // sólo Base (+1 h)
   }
 
-  function handleSetViaje(v: boolean) {
-    setViajeActivo(v)
-    if (!v) { setDistancia(null); setHorasManuales(''); setManeja(false) }
+  function handleStepChange(i: number) {
+    const km = STEPS[i]
+    setKmViaje(km)
+    try { navigator.vibrate?.(8) } catch { /* sin vibración */ }
+    if (km === 0) { setManeja(false); setHorasManuales('') }
+    else if (km === KM_MAX && !horasManuales) setHorasManuales(String(horasPorKm(KM_MAX)).replace('.', ','))
   }
 
   function handleSetLugar(l: 'Base' | 'Campo') {
@@ -123,7 +135,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
     setLugar(l)
     // al cambiar de lugar se resetea el viaje: el usuario lo re-activa si corresponde
     setViajeActivo(false)
-    setDistancia(null)
+    setKmViaje(0)
     setHorasManuales('')
     setManeja(false)
   }
@@ -174,12 +186,11 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
   function handleSave() {
     if (isPartialEntry) return  // guarded by UI — button disabled when partial
-    const horasViajeFinal = isDayOff || !viajeActivo ? 0
-      : lugar === 'Base' ? 1
-      : distancia === 'CORTA' ? 3
-      : distancia === 'MEDIA' ? 5
-      : distancia === 'LARGA' ? (parseFloat(horasManuales.replace(',', '.')) || 0)
-      : 0
+    const horasViajeFinal = isDayOff ? 0
+      : lugar === 'Base' ? (viajeActivo ? 1 : 0)
+      : kmViaje === 0 ? 0
+      : kmViaje < KM_MAX ? horasPorKm(kmViaje)
+      : (parseFloat(horasManuales.replace(',', '.')) || horasPorKm(KM_MAX))
     const reg: RegistroHoras = {
       id: existing?.id ?? uuid(),
       fechaMs: fecha.getTime(),
@@ -189,7 +200,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       salidaFinMs: existing?.salidaFinMs ?? null,
       lugarTrabajo: (isDayOff ? 'Franco' : lugar) as LugarTrabajo,
       pernocte: (isDayOff || lugar === 'Base') ? 'NO' : pernocte,
-      maneja: (isDayOff || lugar === 'Base') ? false : maneja,
+      maneja: (isDayOff || lugar === 'Base') ? false : (kmViaje > 0 ? maneja : false),
       horasViaje: horasViajeFinal,
       observaciones: proyectoObs,
       proyecto: proyectoObs,
@@ -443,35 +454,41 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
                 ))}
               </div>
             </div>
-            <Toggle label="Viaje" value={viajeActivo} onChange={handleSetViaje} />
-            {viajeActivo && (
+            {/* Slider de viaje: 0 = sin viaje; >0 = viaje + horas + maneja */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Viaje</span>
+                <span className="text-xs font-semibold text-slate-200">
+                  {kmViaje === 0 ? 'Sin viaje' : kmViaje === KM_MAX ? '350+ km' : `${kmViaje} km`}
+                </span>
+              </div>
+              <input
+                type="range" min={0} max={STEPS.length - 1} step={1}
+                value={STEPS.indexOf(kmViaje)}
+                onChange={e => handleStepChange(Number(e.target.value))}
+                className="w-full accent-blue-500"
+              />
+              <div className="flex justify-between px-0.5 mt-1">
+                {STEPS.map((k, i) => (
+                  <span key={i} className={`text-[9px] ${kmViaje === k ? 'text-blue-400 font-semibold' : 'text-slate-500'}`}>
+                    {k === 0 ? 'No' : k === KM_MAX ? '350+' : k}
+                  </span>
+                ))}
+              </div>
+            </div>
+            {kmViaje > 0 && (
               <div className="ml-3 pl-3 border-l-2 border-slate-700 space-y-3">
                 <p className="text-[11px] text-slate-400 leading-snug">
                   Las horas de viaje se suman aparte de las horas de trabajo (entrada/salida).
                 </p>
-                <div>
-                  <p className="text-xs text-slate-400 mb-2">Distancia</p>
-                  <div className="flex gap-2">
-                    {([
-                      ['CORTA', '-250km'],
-                      ['MEDIA', '+350km'],
-                      ['LARGA', '+500km'],
-                    ] as [Exclude<DistanciaViaje, null>, string][]).map(([key, label]) => (
-                      <button key={key} onClick={() => setDistancia(key)}
-                        className={`flex-1 py-2 rounded-xl text-sm font-medium ${distancia === key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {(distancia === 'CORTA' || distancia === 'MEDIA') && (
+                {kmViaje < KM_MAX ? (
                   <p className="text-xs text-slate-400">
-                    Horas de viaje: <span className="font-semibold text-slate-200">{distancia === 'CORTA' ? '3h' : '5h'}</span>
+                    Horas de viaje: <span className="font-semibold text-slate-200">{fmtHorasViaje(horasPorKm(kmViaje))}</span>
+                    <span className="text-slate-500"> · 1,5 h c/100 km</span>
                   </p>
-                )}
-                {distancia === 'LARGA' && (
+                ) : (
                   <div>
-                    <label className="text-xs text-slate-400 mb-1 block">Horas de viaje</label>
+                    <label className="text-xs text-slate-400 mb-1 block">Horas de viaje (manual)</label>
                     <input
                       type="text" inputMode="decimal"
                       value={horasManuales}
@@ -479,14 +496,14 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
                       onBlur={() => {
                         const n = parseFloat(horasManuales.replace(',', '.'))
                         if (!Number.isFinite(n) || n < 0) { setHorasManuales(''); return }
-                        setHorasManuales(String(Math.min(24, Math.round(n * 2) / 2)))
+                        setHorasManuales(String(Math.min(24, Math.round(n * 4) / 4)).replace('.', ','))
                       }}
                       placeholder="0"
                       className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 )}
-                <Toggle label="Manejó este día" value={maneja} onChange={handleSetManeja} />
+                <Toggle label="Manejó este día" value={maneja} onChange={setManeja} />
               </div>
             )}
           </div>

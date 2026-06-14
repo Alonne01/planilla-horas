@@ -173,13 +173,13 @@ export function DonadorDonacion() {
           {/* hint "tocá": ondita del click + manito que hace tap sobre el globo */}
           <span
             aria-hidden
-            className="pointer-events-none absolute bottom-1.5 right-2.5 h-3.5 w-3.5 rounded-full border-2 border-slate-500/70"
-            style={{ animation: 'donador-tap-ripple 1.4s ease-out infinite' }}
+            className="pointer-events-none absolute bottom-6 right-7 h-3.5 w-3.5 rounded-full border-2 border-slate-500/70"
+            style={{ animation: 'donador-tap-ripple 1s ease-out infinite' }}
           />
           <span
             aria-hidden
-            className="pointer-events-none absolute -bottom-2.5 right-0 text-slate-700 [filter:drop-shadow(0_0_2px_rgba(255,255,255,0.7))]"
-            style={{ animation: 'donador-tap 1.4s ease-in-out infinite' }}
+            className="pointer-events-none absolute bottom-2.5 right-7 text-slate-700 [filter:drop-shadow(0_0_2px_rgba(255,255,255,0.7))]"
+            style={{ animation: 'donador-tap 1s ease-in-out infinite' }}
           >
             <Pointer size={16} strokeWidth={2.25} className="rotate-[6deg]" />
           </span>
