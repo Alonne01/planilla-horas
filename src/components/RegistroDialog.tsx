@@ -665,10 +665,20 @@ function ProjectInput({ value, onChange, suggestions }: { value: string; onChang
         value={value}
         onChange={e => onChange(e.target.value)}
         onFocus={e => {
-          // Que el campo quede visible sobre el teclado (móvil): desplazar el diálogo cuando el
-          // teclado ya subió.
+          // Que el campo quede BIEN visible sobre el teclado: desplazar el diálogo según el viewport
+          // visible (scrollIntoView 'center' a veces no alcanza cuando el teclado tapa medio diálogo).
           const el = e.currentTarget
-          setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 280)
+          setTimeout(() => {
+            const vv = window.visualViewport
+            const scroller = el.closest('.overflow-y-auto') as HTMLElement | null
+            if (vv && scroller) {
+              const r = el.getBoundingClientRect()
+              const objetivo = vv.offsetTop + vv.height * 0.35  // ~1/3 desde arriba del área visible
+              scroller.scrollTop += r.top - objetivo
+            } else {
+              el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+            }
+          }, 300)
         }}
         placeholder="Escribí o tocá un proyecto frecuente"
         className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
