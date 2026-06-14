@@ -525,6 +525,11 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
         <div className="mb-5">
           <label className="text-xs text-slate-400 mb-1 block">Proyecto / Observaciones</label>
           <ProjectInput value={proyectoObs} onChange={setProyectoObs} suggestions={proyectosFrecuentes} />
+          {proyectosFrecuentes.length === 0 && (
+            <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+              Podés agregar pozos u observaciones automáticas en Configuración → Proyectos frecuentes.
+            </p>
+          )}
         </div>
 
         {/* ── Actions ── */}
