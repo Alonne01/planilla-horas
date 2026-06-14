@@ -3,20 +3,16 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 
-// Auto-actualización del PWA SIN que el usuario tenga que recargar.
+// Auto-actualización del PWA: detecta versiones nuevas y avisa a la UI (App muestra un toast y recarga).
 if ('serviceWorker' in navigator) {
-  // 1) Recargar cuando un SW nuevo toma el control (nueva versión). Sólo en ACTUALIZACIONES:
-  //    si la página ya estaba controlada por un SW (no en la 1ª instalación, que reloadea de gusto).
+  // 1) Cuando un SW nuevo toma el control, avisar a la UI — sólo en ACTUALIZACIONES, no en la 1ª
+  //    instalación. App muestra el toast ~3 s y después recarga.
   if (navigator.serviceWorker.controller) {
-    let reloading = false
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloading) return
-      reloading = true
-      window.location.reload()
-    })
+      window.dispatchEvent(new Event('sw-updated'))
+    }, { once: true })
   }
   // 2) Buscar versiones nuevas al volver a la app y cada 30 min (apps/pestañas abiertas mucho tiempo).
-  //    Si hay una nueva, el SW se activa (skipWaiting/clientsClaim) → dispara el reload de arriba.
   navigator.serviceWorker.ready.then(reg => {
     const check = () => { reg.update().catch(() => {}) }
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check() })

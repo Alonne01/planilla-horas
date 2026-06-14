@@ -14,6 +14,7 @@ import "./index.css"
 import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding/OnboardingContext"
 import { GuideTooltip } from "./components/GuideTooltip"
 import { CloudSetupModal } from "./components/CloudSetupModal"
+import { UpdateToast } from "./components/UpdateToast"
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches ||
@@ -80,11 +81,22 @@ function AppContent() {
   const [cloudPromptOpen, setCloudPromptOpen] = useState(false)
   const [emptyDb, setEmptyDb] = useState(false)
   const [gateSkipped, setGateSkipped] = useState(false)
+  const [updateToast, setUpdateToast] = useState(false)
   const restoreRef = useRef<HTMLInputElement>(null)
 
   // ─── Walkthrough / onboarding: auto-arranca en el 1er inicio para CUALQUIER usuario (hasta completarlo/omitirlo) ───
   const onb = useOnboarding()
   useEffect(() => { onb.registrar({ setTab }) }, [])
+
+  // Aviso de actualización: al detectar una versión nueva (evento de main.tsx), mostrar el toast 3 s y recargar.
+  useEffect(() => {
+    const onUpd = () => {
+      setUpdateToast(true)
+      setTimeout(() => window.location.reload(), 3000)
+    }
+    window.addEventListener('sw-updated', onUpd)
+    return () => window.removeEventListener('sw-updated', onUpd)
+  }, [])
   useEffect(() => {
     if (!onboardingHecho()) onb.start()
   }, [])
@@ -389,6 +401,7 @@ function AppContent() {
 
       <GuideTooltip />
       {cloudPromptOpen && <CloudSetupModal onConfigurar={handleCloudConfigurar} onMasTarde={handleCloudMasTarde} />}
+      {updateToast && <UpdateToast />}
     </div>
   )
 }
