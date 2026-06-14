@@ -79,6 +79,10 @@ export function HorasTrabajoPage() {
   // Agradecimiento al volver de donar: si tocó el link y tardó >1 min en volver,
   // probablemente donó → el personaje agradece (heurística, sin backend).
   const [graciasVisible, setGraciasVisible] = useState(false)
+  // Si ya donó hoy (se mostró el "gracias"), no aparece más el donador en el día.
+  const [yaAgradecioHoy, setYaAgradecioHoy] = useState(() => {
+    try { return localStorage.getItem('planilla-gracias-dia') === dayKey(new Date()) } catch { return false }
+  })
   useEffect(() => {
     function check() {
       if (document.visibilityState !== 'visible') return
@@ -91,6 +95,7 @@ export function HorasTrabajoPage() {
         // Una sola vez por día: si ya se mostró hoy, no vuelve a salir.
         if (elapsed > 60_000 && elapsed < 30 * 60_000 && localStorage.getItem('planilla-gracias-dia') !== hoy) {
           localStorage.setItem('planilla-gracias-dia', hoy)
+          setYaAgradecioHoy(true)
           setGraciasVisible(true)
         }
       } catch { /* ignore */ }
@@ -483,11 +488,12 @@ export function HorasTrabajoPage() {
         </button>
       </div>
 
-      {/* Donador — pedido de donación; o agradecimiento al volver de donar (>1 min). */}
+      {/* Donador — pedido de donación; o agradecimiento al volver de donar (>1 min).
+          Si ya donó hoy (se mostró el gracias), no aparece el pedido el resto del día. */}
       {isDonationUser(settings.nombreUsuario) && (
         graciasVisible
           ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
-          : <DonadorDonacion />
+          : (!yaAgradecioHoy && <DonadorDonacion />)
       )}
 
       {/* Registro dialog */}
