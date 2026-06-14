@@ -71,9 +71,9 @@ function clasificarTurno(entrada: string, salida: string): 'noche' | 'dia' | nul
 
 type LugarTrabajo = 'Base' | 'Campo' | 'Franco'  // 'Franco' used only for saving absences
 type Pernocte = 'NO' | 'Hotel' | 'Trailer'
-// Viaje por slider: 100→350 km de a 50; 1,5 h por cada 100 km. El máximo (350) habilita hora manual.
-const KM_MIN = 100, KM_MAX = 350, KM_STEP = 50
-const STEPS = [0, 100, 150, 200, 250, 300, 350] // posiciones del slider de viaje (0 = sin viaje)
+// Viaje por slider: 100→500 km de a 100; 1,5 h por cada 100 km. El máximo (500) habilita hora manual.
+const KM_MIN = 100, KM_MAX = 500, KM_STEP = 100
+const STEPS = [0, 100, 200, 300, 400, 500] // posiciones del slider de viaje (0 = sin viaje)
 const horasPorKm = (km: number) => (km / 100) * 1.5
 function fmtHorasViaje(h: number): string {
   const s = Number.isInteger(h) ? String(h) : String(h).replace('.', ',')
@@ -472,7 +472,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Viaje</span>
                 <span className="text-xs font-semibold text-slate-200">
-                  {kmViaje === 0 ? 'Sin viaje' : kmViaje === KM_MAX ? '350+ km' : `${kmViaje} km`}
+                  {kmViaje === 0 ? 'Sin viaje' : kmViaje === KM_MAX ? '500+ km' : `${kmViaje} km`}
                 </span>
               </div>
               <input
@@ -484,7 +484,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               <div className="flex justify-between px-0.5 mt-1">
                 {STEPS.map((k, i) => (
                   <span key={i} className={`text-[9px] ${kmViaje === k ? 'text-blue-400 font-semibold' : 'text-slate-500'}`}>
-                    {k === 0 ? 'No' : k === KM_MAX ? '350+' : k}
+                    {k === 0 ? 'No' : k === KM_MAX ? '500+' : k}
                   </span>
                 ))}
               </div>

@@ -107,6 +107,9 @@ interface BackupDoc {
   data: string
   updatedAt: number
   schema: number
+  /** Nombre del usuario EN CLARO: sólo para identificar cada backup en la consola de Firebase.
+   *  Los datos siguen cifrados y el código sigue siendo secreto. */
+  usuario?: string
 }
 
 /** Cifra todo el respaldo (exportBackupJSON) y lo sube a Firestore. Lanza si falla la red. */
@@ -122,6 +125,7 @@ export async function subirBackupNube(usuario: string, codigo: string): Promise<
     data: bufToB64(ct),
     updatedAt: Date.now(),
     schema: 1,
+    usuario: usuario.trim(), // en claro, sólo para identificar el backup en la consola
   }
   await setDoc(doc(getDb(), COLLECTION, await computeDocId(usuario, codigo)), payload)
   registrarOperacionNube()

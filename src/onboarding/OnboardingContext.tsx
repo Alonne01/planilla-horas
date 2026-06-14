@@ -177,7 +177,7 @@ const PASOS: Paso[] = [
   },
   {
     id: 'g-campo-slider', tab: 'horas', target: '[data-tour="dlg-slider"]',
-    titulo: 'Viaje (slider)', texto: 'Deslizá los km de viaje: suma 1,5 h cada 100 km (aparte de las horas de trabajo). El máximo (350+) te deja cargar las horas a mano.',
+    titulo: 'Viaje (slider)', texto: 'Deslizá los km de viaje: de a 100 km, de 100 a 500. Suma 1,5 h cada 100 km (aparte de las horas de trabajo). El máximo (500+) te deja cargar las horas a mano.',
     avanzaAlTocar: true, debounce: true, delayMs: 1500, // avanza 1,5 s tras el último movimiento
   },
   {
