@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays, Banknote, Coffee } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays, Banknote } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros } from '../db/database'
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
-import { CONVENIOS, isSalaryUser, isDonationUser, MERCADOPAGO_DONACION_URL, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
+import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, type LineaTrabajo } from '../lib/calculo-horas'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
@@ -411,20 +411,6 @@ export function SettingsPage() {
             Desarrollado por <span className="text-slate-400 font-medium">Nicolas Vazquez</span>{' '}
             <span className="text-slate-500">{KAOMOJI}</span>
           </p>
-
-          {/* Donación — visible sólo para el usuario gated (ver isDonationUser) */}
-          {isDonationUser(nombre) && (
-            <div className="pt-3">
-              <a
-                href={MERCADOPAGO_DONACION_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-xl bg-sky-600/90 px-4 py-2 text-xs font-semibold text-white active:bg-sky-700 transition-colors"
-              >
-                <Coffee size={14} /> Invitame un café
-              </a>
-            </div>
-          )}
         </div>
       </div>
     </div>
