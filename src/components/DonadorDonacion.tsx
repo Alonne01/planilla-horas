@@ -16,24 +16,25 @@ const DIALOGOS = [
   "necesito dólares y me conformo con centavos",
 ]
 
-// Cuenta cuántas veces se montó la pantalla Horas en esta sesión de app. El personaje aparece al
-// abrir la app (1ª visita) y cada 3ª vuelta a la pantalla (visitas 4, 7, 10…). Se reinicia al recargar.
+// Cuenta cuántas veces se montó la pantalla Horas en esta sesión de app. El personaje aparece 1 de cada
+// 3 veces al abrir (visita 1) y cada 3ª vuelta a la pantalla (visitas 4, 7, 10…). Se reinicia al recargar.
 let visitasHoras = 0
 
 const FRAME = 100 // px en pantalla de cada cuadro (sheet nativo: 3 × 512×512)
 const SWIPE_UMBRAL = 50 // px para descartar deslizando
 
-export function DonadorDonacion({ idKey }: { idKey: string }) {
-  // Se decide en el montaje (1 vez por visita).
+export function DonadorDonacion({ idKey, forzar }: { idKey: string; forzar?: boolean }) {
+  // Se decide en el montaje.
   const [visible, setVisible] = useState(() => {
     // Si ya donó en las últimas 24 h (por usuario+código), el donador no aparece.
     try {
       const ts = Number(localStorage.getItem(`planilla-dono-ts:${idKey}`) || 0)
       if (ts > 0 && Date.now() - ts < 24 * 60 * 60 * 1000) return false
     } catch { /* ignore */ }
+    if (forzar) return true // al exportar: SIEMPRE aparece (no cuenta como visita)
     visitasHoras += 1
-    // Aparece al abrir la app (visita 1) y cada 3ª vuelta a la pantalla (visitas 4, 7, 10…).
-    return (visitasHoras - 1) % 3 === 0
+    // Al abrir la app (visita 1): 1 de cada 3 al azar. Vueltas: cada 3ª (visitas 4, 7, 10…).
+    return visitasHoras === 1 ? Math.random() < 1 / 3 : (visitasHoras - 1) % 3 === 0
   })
   // Frase al azar, fija mientras está en pantalla; nueva en cada aparición.
   const [dialogo] = useState(() => DIALOGOS[Math.floor(Math.random() * DIALOGOS.length)])

@@ -27,6 +27,9 @@ function beggarIdKey(usuario: string, codigo: string): string {
   return u && c ? `${u}|${c}` : 'anon'
 }
 
+/** El beggar (pedido de donación) se habilita para todos a partir de esta fecha. */
+const BEGGAR_DESDE_MS = new Date(2026, 5, 21).getTime() // 21/6/2026
+
 /** Reconstruye la fecha (mediodía) desde una clave `año-mes-día`. */
 function dateFromKey(key: string): Date {
   const [y, m, d] = key.split('-').map(Number)
@@ -91,6 +94,9 @@ export function HorasTrabajoPage() {
   // Agradecimiento al volver de donar: si tocó el link y tardó >1 min en volver,
   // probablemente donó → el personaje agradece (heurística, sin backend).
   const [graciasVisible, setGraciasVisible] = useState(false)
+  // El donador se fuerza al exportar remontándolo con una key nueva (sin contar como "visita").
+  const [beggarKey, setBeggarKey] = useState(0)
+  const [beggarForzar, setBeggarForzar] = useState(false)
   // Si ya donó en las últimas 24 h (por usuario+código), no aparece más el donador.
   // Se inicializa en el effect de identidad (depende de settings, que carga async).
   const [yaAgradecioHoy, setYaAgradecioHoy] = useState(false)
@@ -475,6 +481,8 @@ export function HorasTrabajoPage() {
       if (!o.activo) {
         setExportHecho(true)
         try { localStorage.setItem(`planilla-export-hecho:${idKeyRef.current}`, '1') } catch { /* ignore */ }
+        setBeggarForzar(true)     // el donador SIEMPRE aparece al exportar
+        setBeggarKey(k => k + 1)  // remonta el donador para mostrarlo de nuevo
       } else if (o.paso?.id === 'g-export-normal') {
         o.next()
       }
@@ -649,11 +657,11 @@ export function HorasTrabajoPage() {
         </button>
       </div>
 
-      {/* Donador — pedido de donación; o agradecimiento al volver de donar (>1 min).
-          Si ya donó hoy (se mostró el gracias), no aparece el pedido el resto del día. */}
-      {graciasVisible
+      {/* Donador — pedido de donación (habilitado para todos desde el 21/6); o agradecimiento al
+          volver de donar (>1 min). Si donó en las últimas 24 h, no aparece. */}
+      {Date.now() >= BEGGAR_DESDE_MS && (graciasVisible
         ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
-        : (!yaAgradecioHoy && exportHecho && <DonadorDonacion idKey={idKey} />)}
+        : (!yaAgradecioHoy && exportHecho && <DonadorDonacion key={beggarKey} idKey={idKey} forzar={beggarForzar} />))}
 
       {/* Registro dialog */}
       {selectedDate && (
