@@ -20,6 +20,8 @@ interface Props {
   onSave: (reg: RegistroHoras) => void
   onDelete?: (id: string) => void
   onClose: () => void
+  /** Tour: se dispara una vez cuando entrada y salida quedan cargadas (modo demo). */
+  onTourReady?: () => void
 }
 
 function timeToMs(base: Date, hhmm: string): number | null {
@@ -90,7 +92,7 @@ function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
   return null
 }
 
-export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose }: Props) {
+export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose, onTourReady }: Props) {
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
   const esFeriadoHoy = esFeriadoNacional(fecha.getTime())
   const nombreFeriadoHoy = nombreFeriado(fecha.getTime())
@@ -117,6 +119,12 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       ? String(hvExisting).replace('.', ',') : ''
   )
   const [maneja, setManeja] = useState(existing?.maneja ?? false)
+
+  // Tour: avisar una vez cuando se cargan entrada y salida.
+  const tourReadyFired = useRef(false)
+  useEffect(() => {
+    if (onTourReady && e1 && s1 && !tourReadyFired.current) { tourReadyFired.current = true; onTourReady() }
+  }, [e1, s1])
 
   function handleSetViaje(v: boolean) {
     setViajeActivo(v) // sólo Base (+1 h)
@@ -541,7 +549,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
             </button>
           )}
           <button onClick={handleClose} className="flex-1 py-3 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">Cancelar</button>
-          <button onClick={handleSave} disabled={isPartialEntry}
+          <button data-tour="dlg-guardar" onClick={handleSave} disabled={isPartialEntry}
             className={`flex-1 py-3 rounded-xl text-sm font-bold transition-colors ${isPartialEntry ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
             Guardar
           </button>

@@ -118,12 +118,21 @@ export function HorasTrabajoPage() {
   const [exportHecho, setExportHecho] = useState(() => {
     try { return localStorage.getItem('planilla-export-hecho') === '1' } catch { return false }
   })
+  function elegirDiaDemo(): Date {
+    // Primer día trabajable (no franco/feriado) y sin datos del período; fallback hoy.
+    const hit = dias.find(d => {
+      const ms = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0).getTime()
+      const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+      return !esFrancoPorDiagrama(ms, settings.diagrama, settings.diagramaInicioMs) && !esFeriadoNacional(ms) && !byDay.has(k)
+    })
+    return hit ?? new Date()
+  }
   function abrirDiaTour(modo: 'ausencia' | 'trabajo') {
-    const d = new Date()
-    const dia = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0)
+    const base = elegirDiaDemo()
+    const dia = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 12, 0, 0)
     if (modo === 'trabajo') {
-      const e = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8, 0, 0).getTime()
-      const s = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 16, 0, 0).getTime()
+      const e = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 8, 0, 0).getTime()
+      const s = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 16, 0, 0).getTime()
       setTourExisting({
         id: 'tour-demo', fechaMs: dia.getTime(),
         entradaInicioMs: e, salidaInicioMs: s, entradaFinMs: null, salidaFinMs: null,
@@ -233,6 +242,7 @@ export function HorasTrabajoPage() {
 
   /** Tap de un día: en modo aplicar no hace nada (lo maneja el pintado); si no, abre el diálogo. */
   function handleDayTap(date: Date) {
+    if (onb.activo && onb.paso?.id === 'hrs-dia') { onb.next(); return }  // tour: tocar el día avanza
     if (deleteMode) { toggleDeleteDay(date); return }
     if (applySource) return
     setSelectedDate(date)
@@ -388,6 +398,7 @@ export function HorasTrabajoPage() {
 
   const periodoStartStr = periodoStart(mes, anio).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
   const periodoEndStr = periodoEnd(mes, anio).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
+  const tourDiaKey = onb.activo && onb.paso?.id === 'hrs-dia' ? dayKey(elegirDiaDemo()) : null
 
   return (
     <div className={`h-[100dvh] ${viewMode === 'list' ? 'overflow-y-auto' : 'overflow-hidden'} bg-slate-900 pb-24`}>
@@ -457,6 +468,7 @@ export function HorasTrabajoPage() {
               paintedKeys={paintedKeys}
               onPaint={paintDay}
               pulseKey={pulseKey}
+              tourDayKey={tourDiaKey}
               deleteMode={deleteMode}
               selectedDeleteKeys={selectedToDelete}
               onDeletePaint={paintDeleteDay}
@@ -544,9 +556,10 @@ export function HorasTrabajoPage() {
           diagrama={settings.diagrama}
           diagramaInicioMs={settings.diagramaInicioMs}
           francosDisponibles={francosDisponibles}
-          onSave={async (reg) => { if (tourExisting !== undefined) { cerrarDialogoTour(); return } await upsert(reg); setSelectedDate(null) }}
-          onDelete={async (id) => { if (tourExisting !== undefined) { cerrarDialogoTour(); return } await remove(id); setSelectedDate(null) }}
-          onClose={() => { if (tourExisting !== undefined) cerrarDialogoTour(); else setSelectedDate(null) }}
+          onSave={async (reg) => { if (tourExisting !== undefined) { onb.next(); return } await upsert(reg); setSelectedDate(null) }}
+          onDelete={async (id) => { if (tourExisting !== undefined) { onb.skip(); return } await remove(id); setSelectedDate(null) }}
+          onClose={() => { if (tourExisting !== undefined) { onb.skip(); return } setSelectedDate(null) }}
+          onTourReady={() => { if (onb.activo && onb.paso?.id === 'dlg-turno') onb.next() }}
         />
       )}
 

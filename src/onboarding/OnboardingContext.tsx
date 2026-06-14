@@ -29,11 +29,6 @@ export function onboardingHecho(): boolean {
   try { return localStorage.getItem(STORAGE_KEY) === '1' } catch { return false }
 }
 
-function hoyKey(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-}
-
 const PASOS: Paso[] = [
   {
     id: 'bienvenida',
@@ -68,8 +63,8 @@ const PASOS: Paso[] = [
     onEnter: a => { a.guardarConfig?.() },
   },
   {
-    id: 'hrs-dia', tab: 'horas', target: `[data-daykey="${hoyKey()}"]`,
-    titulo: 'Cargar un día', texto: 'Para cargar un día, tocalo (este queda iluminado de ejemplo).',
+    id: 'hrs-dia', tab: 'horas', target: '[data-tour="hrs-dia"]',
+    titulo: 'Cargar un día', texto: 'Tocá el día iluminado para cargarlo.',
   },
   {
     id: 'dlg-ausencia', tab: 'horas', target: '[data-tour="dlg-ausencia"]',
@@ -92,6 +87,10 @@ const PASOS: Paso[] = [
   {
     id: 'dlg-obs', tab: 'horas', target: '[data-tour="dlg-obs"]',
     titulo: 'Observaciones', texto: 'Anotá el pozo o una observación del día.',
+  },
+  {
+    id: 'dlg-guardar', tab: 'horas', target: '[data-tour="dlg-guardar"]',
+    titulo: 'Guardar el día', texto: 'Cuando esté listo, guardás el día con este botón.',
   },
   {
     id: 'hrs-pintar', tab: 'horas',

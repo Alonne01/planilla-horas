@@ -21,6 +21,8 @@ interface Props {
   onPaint?: (date: Date, mode: 'add' | 'remove') => void
   /** Clave del día que debe reproducir la animación de aplicado */
   pulseKey?: string | null
+  /** Clave del día resaltado durante el tour (le pone data-tour="hrs-dia") */
+  tourDayKey?: string | null
   /** Modo "borrar días" activo: se pintan (tocando o arrastrando) los días a borrar */
   deleteMode?: boolean
   /** Claves de los días seleccionados para borrar (resaltados en rojo) */
@@ -63,7 +65,7 @@ function cellStyle(fecha: Date, reg: RegistroHoras | undefined, diagrama: Diagra
   return { bg: 'bg-slate-700/20 border-slate-600/30', label: '', labelColor: '' }
 }
 
-export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, paintedKeys = null, onPaint, pulseKey = null, deleteMode = false, selectedDeleteKeys = null, onDeletePaint, lineaTrabajo = 'SURFACE_WELL_TESTING' }: Props) {
+export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelectDate, onContext, applyMode = false, sourceKey = null, paintedKeys = null, onPaint, pulseKey = null, tourDayKey = null, deleteMode = false, selectedDeleteKeys = null, onDeletePaint, lineaTrabajo = 'SURFACE_WELL_TESTING' }: Props) {
   // Single ref for long-press tracking (only one touch at a time)
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpFired = useRef(false)
@@ -178,6 +180,7 @@ export function CalendarGrid({ dias, byDay, diagrama, diagramaInicioMs, onSelect
                 <button
                   key={di}
                   data-daykey={key}
+                  data-tour={key === tourDayKey ? 'hrs-dia' : undefined}
                   onClick={() => {
                     if (paintEnabled) return  // aplicar/borrar se manejan con pointer events (pintado)
                     if (lpFired.current) { lpFired.current = false; return }
