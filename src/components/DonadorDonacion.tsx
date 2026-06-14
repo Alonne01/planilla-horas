@@ -34,16 +34,16 @@ export function DonadorDonacion() {
 
   useEffect(() => {
     if (!visible) return
-    const tLeave = setTimeout(() => setLeaving(true), 10_000)        // empieza la muerte FF
-    const tGone = setTimeout(() => setVisible(false), 10_960)        // desmonta tras la animación (~900ms)
+    const tLeave = setTimeout(() => setLeaving(true), 10_000)        // empieza la muerte
+    const tGone = setTimeout(() => setVisible(false), 11_060)        // desmonta tras la animación (~1s)
     return () => { clearTimeout(tLeave); clearTimeout(tGone) }
   }, [visible])
 
   if (!visible) return null
 
   const spriteBase: CSSProperties = {
-    width: `${FRAME}px`,
-    height: `${FRAME}px`,
+    width: '100%',
+    height: '100%',
     backgroundImage: `url(${donadorSheet})`,
     backgroundRepeat: 'no-repeat',
     backgroundSize: '300% 100%',
@@ -51,47 +51,63 @@ export function DonadorDonacion() {
   }
 
   return (
-    <a
-      href={MERCADOPAGO_DONACION_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="Donación por MercadoPago"
-      style={{
-        width: `${FRAME}px`,
-        height: `${FRAME}px`,
-        left: '0.5rem',
-        bottom: 'calc(2.5rem + env(safe-area-inset-bottom))', // sentado sobre el nav
-      }}
-      className={`fixed z-40 block origin-bottom-left transition-transform active:scale-95 ${
-        leaving ? 'pointer-events-none' : ''
-      }`}
-    >
-      {/* Personaje. Vivo: sube y camina. Muriendo: disolución estilo Final Fantasy. */}
-      <div
-        style={leaving ? spriteBase : { ...spriteBase, animation: 'donador-rise 360ms ease-out both, donador-walk 1s steps(3) infinite' }}
-        className={`absolute bottom-0 left-0 ${leaving ? 'donador-muriendo' : ''}`}
-      />
-
-      {/* Chispas que suben mientras se disuelve */}
+    <>
+      {/* Filtro de ondas (displacement animado). Sólo en el DOM mientras muere,
+          así el SMIL arranca con la muerte. */}
       {leaving && (
-        <span className="donador-chispas absolute bottom-0 left-0" style={{ width: `${FRAME}px`, height: `${FRAME}px` }} />
+        <svg aria-hidden width="0" height="0" style={{ position: 'absolute' }}>
+          <filter id="donador-wave" x="-20%" y="-20%" width="140%" height="140%" colorInterpolationFilters="sRGB">
+            <feTurbulence type="turbulence" baseFrequency="0.01 0.022" numOctaves={2} seed={7} result="noise">
+              <animate attributeName="baseFrequency" dur="1.3s" values="0.01 0.022; 0.016 0.034; 0.01 0.022" repeatCount="indefinite" />
+            </feTurbulence>
+            <feDisplacementMap in="SourceGraphic" in2="noise" scale={16} xChannelSelector="R" yChannelSelector="G" />
+          </filter>
+        </svg>
       )}
 
-      {/* Globo de diálogo, arriba a la derecha del personaje.
-          w-max + max-w fuerza ancho intrínseco (evita el colapso a ~46px del
-          contenedor de 100px) → frases largas en 2 líneas anchas, no 6 angostas. */}
-      <div
+      <a
+        href={MERCADOPAGO_DONACION_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Donación por MercadoPago"
         style={{
-          animation: leaving
-            ? 'donador-bubble-out 220ms ease-in forwards'
-            : 'donador-bubble-in 340ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms both',
+          width: `${FRAME}px`,
+          height: `${FRAME}px`,
+          left: '0.5rem',
+          bottom: 'calc(2.5rem + env(safe-area-inset-bottom))', // sentado sobre el nav
         }}
-        className="absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-[20px] bg-slate-200 px-3.5 py-2 text-[11px] font-semibold leading-snug text-slate-800 shadow-[0_8px_20px_-6px_rgba(2,6,23,0.55)] ring-1 ring-slate-900/10"
+        className={`fixed z-40 block origin-bottom-left transition-transform active:scale-95 ${
+          leaving ? 'pointer-events-none' : ''
+        }`}
       >
-        {dialogo}
-        {/* colita triangular que apunta al personaje */}
-        <span className="absolute -bottom-[7px] left-3 h-0 w-0 border-x-[7px] border-x-transparent border-t-[9px] border-t-slate-200 drop-shadow-[0_2px_1px_rgba(2,6,23,0.22)]" />
-      </div>
-    </a>
+        {/* Contenedor del personaje. Al morir aplica la onda (displacement SVG). */}
+        <div
+          className={`absolute bottom-0 left-0 ${leaving ? 'donador-ondeando' : ''}`}
+          style={{ width: `${FRAME}px`, height: `${FRAME}px` }}
+        >
+          {/* Vivo: sube y camina. Muriendo: flash rojo → borroso + se desvanece. */}
+          <div
+            style={leaving ? spriteBase : { ...spriteBase, animation: 'donador-rise 360ms ease-out both, donador-walk 1s steps(3) infinite' }}
+            className={leaving ? 'donador-muriendo' : ''}
+          />
+        </div>
+
+        {/* Globo de diálogo, arriba a la derecha del personaje.
+            w-max + max-w fuerza ancho intrínseco (evita el colapso a ~46px del
+            contenedor de 100px) → frases largas en 2 líneas anchas, no 6 angostas. */}
+        <div
+          style={{
+            animation: leaving
+              ? 'donador-bubble-out 220ms ease-in forwards'
+              : 'donador-bubble-in 340ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms both',
+          }}
+          className="absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-[20px] bg-slate-200 px-3.5 py-2 text-[11px] font-semibold leading-snug text-slate-800 shadow-[0_8px_20px_-6px_rgba(2,6,23,0.55)] ring-1 ring-slate-900/10"
+        >
+          {dialogo}
+          {/* colita triangular que apunta al personaje */}
+          <span className="absolute -bottom-[7px] left-3 h-0 w-0 border-x-[7px] border-x-transparent border-t-[9px] border-t-slate-200 drop-shadow-[0_2px_1px_rgba(2,6,23,0.22)]" />
+        </div>
+      </a>
+    </>
   )
 }

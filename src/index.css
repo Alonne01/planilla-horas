@@ -112,48 +112,18 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
 @keyframes donador-bubble-in { 0% { opacity: 0; transform: translateY(6px) scale(0.7); } 55% { opacity: 1; } 100% { opacity: 1; transform: none; } }
 @keyframes donador-bubble-out { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(-5px) scale(0.94); } }
 
-/* Muerte estilo Final Fantasy: doble fogonazo + disolución en barrido ascendente
-   con scanlines finas (mask de 2 capas) + hundida/escala. Si el navegador no
-   soporta mask-composite, degrada a un fade con flash (opacity/filter igual corren). */
+/* Muerte: flash ROJO → se pone borrosa y ondea mientras se desvanece. Sin escala.
+   La onda la da .donador-ondeando (filtro SVG #donador-wave) en el contenedor. */
 @keyframes donador-death {
-  0%   { -webkit-mask-position: 50% 0%, 0 0;   mask-position: 50% 0%, 0 0;   opacity: 1; filter: brightness(1) saturate(1) drop-shadow(0 0 0 rgba(191,219,254,0));                          transform: translateY(0) scaleX(1) scaleY(1) skewX(0deg) rotate(0deg); }
-  12%  {                                                                      filter: brightness(2.5) saturate(0.25) contrast(1.2) drop-shadow(0 0 7px rgba(224,242,254,0.95));        transform: translateY(-2px) scale(1.07); }            /* flash + bloom */
-  32%  {                                                                      filter: brightness(1.3) saturate(0.6) drop-shadow(0 0 6px rgba(186,230,253,0.6)); }
-  100% { -webkit-mask-position: 50% 100%, 0 0; mask-position: 50% 100%, 0 0; opacity: 0; filter: brightness(1.5) saturate(0.3) drop-shadow(0 0 16px rgba(186,230,253,0));               transform: translateY(-18px) scaleX(0.5) scaleY(0.78) skewX(-7deg) rotate(-3deg); }   /* asciende, se afina y se va en la nada */
+  0%   { opacity: 1; filter: brightness(1)    sepia(0)    saturate(1)   hue-rotate(0deg)   blur(0px); }
+  14%  { opacity: 1; filter: brightness(1.45) sepia(1)    saturate(8)   hue-rotate(-40deg) blur(0px); }   /* flash rojo */
+  30%  { opacity: 1; filter: brightness(1.15) sepia(0.55) saturate(3.5) hue-rotate(-28deg) blur(1.5px); }
+  100% { opacity: 0; filter: brightness(1.1)  sepia(0.15) saturate(1.3) hue-rotate(-14deg) blur(6px); }
 }
 .donador-muriendo {
-  -webkit-mask-image: linear-gradient(to top, transparent, #000 32%), repeating-linear-gradient(45deg, #000 0 1.5px, transparent 1.5px 3px);
-          mask-image: linear-gradient(to top, transparent, #000 32%), repeating-linear-gradient(45deg, #000 0 1.5px, transparent 1.5px 3px);
-  -webkit-mask-size: 100% 220%, 100% 100%;
-          mask-size: 100% 220%, 100% 100%;
-  -webkit-mask-repeat: no-repeat, repeat;
-          mask-repeat: no-repeat, repeat;
-  -webkit-mask-composite: source-in;
-          mask-composite: intersect;
-  transform-origin: 50% 62%; /* asciende/colapsa desde el cuerpo */
-  animation: donador-death 880ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: donador-death 1000ms ease-out forwards;
 }
-
-/* Chispas que suben mientras el cuerpo se disuelve (el "alma" que se va). */
-@keyframes donador-chispas {
-  0%   { opacity: 0; transform: translateY(4px) scale(0.85); }
-  20%  { opacity: 1; }
-  60%  { opacity: 0.95; }
-  100% { opacity: 0; transform: translateY(-34px) scale(1.2); }
-}
-.donador-chispas {
-  pointer-events: none;
-  background-repeat: no-repeat;
-  background-image:
-    radial-gradient(circle, rgba(255,255,255,0.95) 0 1.3px, transparent 2px),
-    radial-gradient(circle, rgba(186,230,253,0.95) 0 1.1px, transparent 1.8px),
-    radial-gradient(circle, rgba(255,255,255,0.90) 0 1px,   transparent 1.6px),
-    radial-gradient(circle, rgba(125,211,252,0.95) 0 1.3px, transparent 2px),
-    radial-gradient(circle, rgba(255,255,255,0.90) 0 0.9px, transparent 1.5px),
-    radial-gradient(circle, rgba(224,242,254,0.95) 0 1.1px, transparent 1.8px),
-    radial-gradient(circle, rgba(255,255,255,0.85) 0 1px,   transparent 1.6px);
-  background-position: 26% 70%, 50% 60%, 40% 80%, 62% 72%, 34% 54%, 56% 84%, 70% 64%;
-  filter: drop-shadow(0 0 2px rgba(186,230,253,0.6));
-  animation: donador-chispas 900ms ease-out forwards;
+.donador-ondeando {
+  filter: url(#donador-wave); /* feDisplacementMap animado = ondas */
 }
 
