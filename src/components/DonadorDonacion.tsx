@@ -16,24 +16,24 @@ const DIALOGOS = [
   "necesito dólares y me conformo con centavos",
 ]
 
-// Cuenta cuántas veces se montó la pantalla Horas en esta sesión de app. El
-// personaje aparece en la 1ª visita (inicio) y luego cada 2 (3ª, 5ª, 7ª…), o sea
-// "cada inicio y cada 2 veces que vuelvo a la pantalla". Se reinicia al recargar.
+// Cuenta cuántas veces se montó la pantalla Horas en esta sesión de app. El personaje aparece al
+// abrir la app (1ª visita) y cada 3ª vuelta a la pantalla (visitas 4, 7, 10…). Se reinicia al recargar.
 let visitasHoras = 0
 
 const FRAME = 100 // px en pantalla de cada cuadro (sheet nativo: 3 × 512×512)
 const SWIPE_UMBRAL = 50 // px para descartar deslizando
 
-export function DonadorDonacion() {
-  // Se decide en el montaje (1 vez por visita): impares muestran, pares ocultan.
+export function DonadorDonacion({ idKey }: { idKey: string }) {
+  // Se decide en el montaje (1 vez por visita).
   const [visible, setVisible] = useState(() => {
-    // Si ya donó hoy (se mostró el "gracias"), el donador no aparece en todo el día.
+    // Si ya donó en las últimas 24 h (por usuario+código), el donador no aparece.
     try {
-      const d = new Date()
-      if (localStorage.getItem('planilla-gracias-dia') === `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`) return false
+      const ts = Number(localStorage.getItem(`planilla-dono-ts:${idKey}`) || 0)
+      if (ts > 0 && Date.now() - ts < 24 * 60 * 60 * 1000) return false
     } catch { /* ignore */ }
     visitasHoras += 1
-    return visitasHoras % 2 === 1
+    // Aparece al abrir la app (visita 1) y cada 3ª vuelta a la pantalla (visitas 4, 7, 10…).
+    return (visitasHoras - 1) % 3 === 0
   })
   // Frase al azar, fija mientras está en pantalla; nueva en cada aparición.
   const [dialogo] = useState(() => DIALOGOS[Math.floor(Math.random() * DIALOGOS.length)])
@@ -48,8 +48,8 @@ export function DonadorDonacion() {
 
   useEffect(() => {
     if (!visible) return
-    const tLeave = setTimeout(() => setLeaving(true), 10_000)        // empieza la muerte
-    const tGone = setTimeout(() => setVisible(false), 11_060)        // desmonta tras la animación (~1s)
+    const tLeave = setTimeout(() => setLeaving(true), 7_000)         // 7 s en pantalla, luego empieza la muerte
+    const tGone = setTimeout(() => setVisible(false), 8_060)         // desmonta tras la animación (~1s)
     return () => { clearTimeout(tLeave); clearTimeout(tGone) }
   }, [visible])
 

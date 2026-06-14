@@ -332,7 +332,7 @@ export function SettingsPage() {
                 onChange={e => setBkCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 onBlur={() => saveBackupCreds()}
                 placeholder={nombre.trim() ? '••••••' : 'completá tu nombre arriba'}
-                className="flex-1 bg-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono tracking-[0.3em] disabled:opacity-50 disabled:cursor-not-allowed placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 min-w-0 bg-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono tracking-[0.3em] disabled:opacity-50 disabled:cursor-not-allowed placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               {!bkBloqueado && (
                 <button onClick={generarCodigo} disabled={!nombre.trim()}

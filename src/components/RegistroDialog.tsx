@@ -664,6 +664,12 @@ function ProjectInput({ value, onChange, suggestions }: { value: string; onChang
         type="text"
         value={value}
         onChange={e => onChange(e.target.value)}
+        onFocus={e => {
+          // Que el campo quede visible sobre el teclado (móvil): desplazar el diálogo cuando el
+          // teclado ya subió.
+          const el = e.currentTarget
+          setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 280)
+        }}
         placeholder="Escribí o tocá un proyecto frecuente"
         className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
       />

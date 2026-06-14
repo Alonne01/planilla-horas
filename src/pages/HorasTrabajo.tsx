@@ -20,6 +20,13 @@ function dayKey(d: Date) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
 
+/** Clave del estado del beggar por IDENTIDAD (usuario+código), no por dispositivo. */
+function beggarIdKey(usuario: string, codigo: string): string {
+  const u = (usuario || '').trim().toLowerCase()
+  const c = (codigo || '').trim()
+  return u && c ? `${u}|${c}` : 'anon'
+}
+
 /** Reconstruye la fecha (mediodía) desde una clave `año-mes-día`. */
 function dateFromKey(key: string): Date {
   const [y, m, d] = key.split('-').map(Number)
@@ -62,6 +69,10 @@ export function HorasTrabajoPage() {
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const { registros, loading, upsert, remove, reload } = useHoras(mes, anio)
   const { settings } = useSettings()
+  // El beggar decide su aparición por usuario+código (no por dispositivo). idKeyRef = siempre fresco.
+  const idKey = useMemo(() => beggarIdKey(settings.nombreUsuario, settings.backupCodigo), [settings.nombreUsuario, settings.backupCodigo])
+  const idKeyRef = useRef(idKey)
+  idKeyRef.current = idKey
   const francosDisponibles = useFrancoCounter(registros)
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -80,10 +91,9 @@ export function HorasTrabajoPage() {
   // Agradecimiento al volver de donar: si tocó el link y tardó >1 min en volver,
   // probablemente donó → el personaje agradece (heurística, sin backend).
   const [graciasVisible, setGraciasVisible] = useState(false)
-  // Si ya donó hoy (se mostró el "gracias"), no aparece más el donador en el día.
-  const [yaAgradecioHoy, setYaAgradecioHoy] = useState(() => {
-    try { return localStorage.getItem('planilla-gracias-dia') === dayKey(new Date()) } catch { return false }
-  })
+  // Si ya donó en las últimas 24 h (por usuario+código), no aparece más el donador.
+  // Se inicializa en el effect de identidad (depende de settings, que carga async).
+  const [yaAgradecioHoy, setYaAgradecioHoy] = useState(false)
   useEffect(() => {
     function check() {
       if (document.visibilityState !== 'visible') return
@@ -92,10 +102,12 @@ export function HorasTrabajoPage() {
         if (!ts) return
         localStorage.removeItem('planilla-donacion-ts')
         const elapsed = Date.now() - ts
-        const hoy = dayKey(new Date())
-        // Una sola vez por día: si ya se mostró hoy, no vuelve a salir.
-        if (elapsed > 60_000 && elapsed < 30 * 60_000 && localStorage.getItem('planilla-gracias-dia') !== hoy) {
-          localStorage.setItem('planilla-gracias-dia', hoy)
+        const donoKey = `planilla-dono-ts:${idKeyRef.current}`
+        const donoTs = Number(localStorage.getItem(donoKey) || 0)
+        const yaDono24h = donoTs > 0 && Date.now() - donoTs < 24 * 60 * 60 * 1000
+        // Mostrar el "gracias" sólo una vez por 24 h (por usuario+código).
+        if (elapsed > 60_000 && elapsed < 30 * 60_000 && !yaDono24h) {
+          localStorage.setItem(donoKey, String(Date.now()))
           setYaAgradecioHoy(true)
           setGraciasVisible(true)
         }
@@ -115,9 +127,15 @@ export function HorasTrabajoPage() {
   // ─── Tour / walkthrough: abrir un diálogo demo y registrar acciones ───
   const onb = useOnboarding()
   const [tourExisting, setTourExisting] = useState<RegistroHoras | null | undefined>(undefined)
-  const [exportHecho, setExportHecho] = useState(() => {
-    try { return localStorage.getItem('planilla-export-hecho') === '1' } catch { return false }
-  })
+  // exportHecho/yaAgradecioHoy se deciden por usuario+código: se sincronizan según la identidad.
+  const [exportHecho, setExportHecho] = useState(false)
+  useEffect(() => {
+    try { setExportHecho(localStorage.getItem(`planilla-export-hecho:${idKey}`) === '1') } catch { /* ignore */ }
+    try {
+      const ts = Number(localStorage.getItem(`planilla-dono-ts:${idKey}`) || 0)
+      setYaAgradecioHoy(ts > 0 && Date.now() - ts < 24 * 60 * 60 * 1000)
+    } catch { /* ignore */ }
+  }, [idKey])
   function elegirDiaDemo(): Date {
     // Día de TRABAJO garantizado para la demo: lunes (si el diagrama es Lun-Vie) o el primer día
     // no-franco (= día del diagrama) si es otro. Así nunca cae en un franco (que ocultaría los
@@ -450,7 +468,7 @@ export function HorasTrabajoPage() {
       const o = onbRef.current
       if (!o.activo) {
         setExportHecho(true)
-        try { localStorage.setItem('planilla-export-hecho', '1') } catch { /* ignore */ }
+        try { localStorage.setItem(`planilla-export-hecho:${idKeyRef.current}`, '1') } catch { /* ignore */ }
       } else if (o.paso?.id === 'g-export-normal') {
         o.next()
       }
@@ -627,7 +645,7 @@ export function HorasTrabajoPage() {
           Si ya donó hoy (se mostró el gracias), no aparece el pedido el resto del día. */}
       {graciasVisible
         ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
-        : (!yaAgradecioHoy && exportHecho && <DonadorDonacion />)}
+        : (!yaAgradecioHoy && exportHecho && <DonadorDonacion idKey={idKey} />)}
 
       {/* Registro dialog */}
       {selectedDate && (

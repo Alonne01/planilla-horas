@@ -126,7 +126,7 @@ const PASOS: Paso[] = [
     id: 'g-base-turno', tab: 'horas', target: '[data-tour="dlg-turno"]',
     titulo: 'Trabajo en base', texto: 'Cargá la entrada y la salida. Si es turno noche, cargá el turno COMPLETO (ej. 19:00 → 07:00); no lo cortes en 00:00 — la app reparte las horas sola.',
     done: () => qs('[data-tour="dlg-turno"]')?.dataset.completo === '1',
-    delayMs: 1000, // 1 s tras cargar ambas horas
+    debounce: true, delayMs: 1500, // avanza 1,5 s tras el último cambio del horario (salida)
   },
   {
     id: 'g-base-lugar', tab: 'horas', target: '[data-tour="dlg-lugar-base"]',
@@ -159,7 +159,7 @@ const PASOS: Paso[] = [
     id: 'g-campo-turno', tab: 'horas', target: '[data-tour="dlg-turno"]',
     titulo: 'Trabajo en campo', texto: 'Cargá la entrada y la salida. Si es turno noche, cargá el turno COMPLETO (ej. 19:00 → 07:00); no lo cortes en 00:00 — la app reparte las horas sola.',
     done: () => qs('[data-tour="dlg-turno"]')?.dataset.completo === '1',
-    delayMs: 1000, // 1 s tras cargar ambas horas
+    debounce: true, delayMs: 1500, // avanza 1,5 s tras el último cambio del horario (salida)
   },
   {
     id: 'g-campo-lugar', tab: 'horas', target: '[data-tour="dlg-lugar-campo"]',
@@ -180,7 +180,7 @@ const PASOS: Paso[] = [
     // Sólo aparece si marcó viaje (>0 km). Opcional: avanza al tocar el toggle o solo a los 5 s.
     id: 'g-campo-maneja', tab: 'horas', target: '[data-tour="dlg-maneja"]',
     titulo: '¿Manejaste?', texto: 'Si manejaste vos hasta el lugar, activá "Manejó este día". Si no, dejalo apagado: sigue solo.',
-    avanzaAlTocar: true, delayMs: 700, autoMs: 5000,
+    avanzaAlTocar: true, delayMs: 700, autoMs: 10000,
     skipIf: () => !document.querySelector('[data-tour="dlg-maneja"]'),
   },
   {
