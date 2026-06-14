@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb, MoreVertical, Trash2, CalendarX2, Download } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
@@ -12,7 +12,7 @@ import { esFeriadoNacional } from '../lib/feriados'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
 import { isDonationUser } from '../lib/calculo-salarial'
-import { DonadorDonacion } from '../components/DonadorDonacion'
+import { DonadorDonacion, DonadorGracias } from '../components/DonadorDonacion'
 import { db, shadowBackup, type RegistroHoras } from '../db/database'
 
 function dayKey(d: Date) {
@@ -75,6 +75,29 @@ export function HorasTrabajoPage() {
     setShowCopyTip(false)
     try { localStorage.setItem('planilla-tip-copiar', 'dismissed') } catch { /* ignore */ }
   }
+
+  // Agradecimiento al volver de donar: si tocó el link y tardó >1 min en volver,
+  // probablemente donó → el personaje agradece (heurística, sin backend).
+  const [graciasVisible, setGraciasVisible] = useState(false)
+  useEffect(() => {
+    function check() {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const ts = Number(localStorage.getItem('planilla-donacion-ts') || 0)
+        if (!ts) return
+        localStorage.removeItem('planilla-donacion-ts')
+        const elapsed = Date.now() - ts
+        if (elapsed > 60_000 && elapsed < 2 * 60 * 60_000) setGraciasVisible(true)
+      } catch { /* ignore */ }
+    }
+    document.addEventListener('visibilitychange', check)
+    window.addEventListener('focus', check)
+    check()
+    return () => {
+      document.removeEventListener('visibilitychange', check)
+      window.removeEventListener('focus', check)
+    }
+  }, [])
 
   // ─── Modo "aplicar datos a otro día": se pintan los días destino (tocando o arrastrando) ───
   const [applySource, setApplySource] = useState<RegistroHoras | null>(null)
@@ -455,9 +478,12 @@ export function HorasTrabajoPage() {
         </button>
       </div>
 
-      {/* Donador — pide una donación; gated por nombre, se va solo a los 10 s.
-          Sin guard de apply/delete: así monta 1 sola vez por visita (cuenta bien). */}
-      {isDonationUser(settings.nombreUsuario) && <DonadorDonacion />}
+      {/* Donador — pedido de donación; o agradecimiento al volver de donar (>1 min). */}
+      {isDonationUser(settings.nombreUsuario) && (
+        graciasVisible
+          ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
+          : <DonadorDonacion />
+      )}
 
       {/* Registro dialog */}
       {selectedDate && (

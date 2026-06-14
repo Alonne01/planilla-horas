@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { Pointer } from 'lucide-react'
+import { Pointer, Heart } from 'lucide-react'
 import { MERCADOPAGO_DONACION_URL } from '../lib/calculo-salarial'
 import donadorSheet from '../assets/donador.png'
 
@@ -93,7 +93,10 @@ export function DonadorDonacion() {
     if (suppressClickRef.current) {
       e.preventDefault()
       suppressClickRef.current = false
+      return
     }
+    // Tap real → abre MercadoPago. Marco la hora para detectar "volvió de donar".
+    try { localStorage.setItem('planilla-donacion-ts', String(Date.now())) } catch { /* ignore */ }
   }
 
   const spriteBase: CSSProperties = {
@@ -186,5 +189,70 @@ export function DonadorDonacion() {
         </div>
       </a>
     </>
+  )
+}
+
+// Agradecimiento: aparece al volver de donar (heurística >1 min). El personaje
+// dice "gracias" + kaomoji y suben corazones a su alrededor; se va solo a los 5 s.
+export function DonadorGracias({ onDone }: { onDone?: () => void }) {
+  const [leaving, setLeaving] = useState(false)
+  useEffect(() => {
+    const t1 = setTimeout(() => setLeaving(true), 5_000)
+    const t2 = setTimeout(() => onDone?.(), 5_600)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [onDone])
+
+  return (
+    <div
+      aria-hidden
+      style={{
+        width: `${FRAME}px`,
+        height: `${FRAME}px`,
+        left: '0.5rem',
+        bottom: 'calc(2.5rem + env(safe-area-inset-bottom))',
+      }}
+      className={`pointer-events-none fixed z-40 ${
+        leaving ? 'animate-[donador-bubble-out_420ms_ease-in_forwards]' : 'animate-[donador-in_280ms_ease_both]'
+      }`}
+    >
+      {/* Corazones que suben alrededor del personaje */}
+      {[0, 1, 2, 3, 4, 5].map(i => (
+        <span
+          key={i}
+          className="absolute"
+          style={{
+            left: `${6 + i * 16}px`,
+            bottom: `${24 + (i % 3) * 12}px`,
+            color: i % 2 ? '#fb7185' : '#f472b6',
+            animation: `donador-corazon ${1.5 + (i % 3) * 0.3}s ease-out ${i * 0.2}s infinite`,
+          }}
+        >
+          <Heart size={11 + (i % 3) * 3} fill="currentColor" strokeWidth={0} />
+        </span>
+      ))}
+
+      {/* Personaje */}
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          backgroundImage: `url(${donadorSheet})`,
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: '300% 100%',
+          backgroundPositionX: '0%',
+          animation: 'donador-walk 1s steps(3) infinite',
+        }}
+        className="absolute bottom-0 left-0"
+      />
+
+      {/* Globo de agradecimiento */}
+      <div
+        style={{ animation: 'donador-bubble-in 340ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms both' }}
+        className="absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-[20px] bg-slate-200 px-3.5 py-2 text-[11px] font-semibold leading-snug text-slate-800 shadow-[0_8px_20px_-6px_rgba(2,6,23,0.55)] ring-1 ring-slate-900/10"
+      >
+        ¡Gracias! (｡♥‿♥｡)
+        <span className="absolute -bottom-[7px] left-3 h-0 w-0 border-x-[7px] border-x-transparent border-t-[9px] border-t-slate-200 drop-shadow-[0_2px_1px_rgba(2,6,23,0.22)]" />
+      </div>
+    </div>
   )
 }

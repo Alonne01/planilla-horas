@@ -141,3 +141,10 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
   100% { opacity: 0;   transform: scale(1.5); }
 }
 
+/* Corazones de agradecimiento que suben alrededor del personaje. */
+@keyframes donador-corazon {
+  0%   { opacity: 0; transform: translateY(2px) scale(0.5); }
+  20%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-44px) scale(1.05); }
+}
+
