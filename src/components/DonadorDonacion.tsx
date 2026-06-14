@@ -27,6 +27,11 @@ const SWIPE_UMBRAL = 50 // px para descartar deslizando
 export function DonadorDonacion() {
   // Se decide en el montaje (1 vez por visita): impares muestran, pares ocultan.
   const [visible, setVisible] = useState(() => {
+    // Si ya donó hoy (se mostró el "gracias"), el donador no aparece en todo el día.
+    try {
+      const d = new Date()
+      if (localStorage.getItem('planilla-gracias-dia') === `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`) return false
+    } catch { /* ignore */ }
     visitasHoras += 1
     return visitasHoras % 2 === 1
   })

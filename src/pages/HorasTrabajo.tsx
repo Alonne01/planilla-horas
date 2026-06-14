@@ -102,10 +102,12 @@ export function HorasTrabajoPage() {
     }
     document.addEventListener('visibilitychange', check)
     window.addEventListener('focus', check)
+    window.addEventListener('pageshow', check)
     check()
     return () => {
       document.removeEventListener('visibilitychange', check)
       window.removeEventListener('focus', check)
+      window.removeEventListener('pageshow', check)
     }
   }, [])
 
