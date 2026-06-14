@@ -73,8 +73,10 @@ export function DonadorDonacion() {
       {/* Personaje, apoyado sobre la barra de navegación */}
       <div style={spriteStyle} className="absolute bottom-0 left-0" />
 
-      {/* Globo de diálogo, arriba a la derecha del personaje */}
-      <div className="absolute bottom-[74px] left-[54px] inline-block max-w-[230px] rounded-2xl bg-white px-3 py-1.5 shadow-lg ring-1 ring-black/10">
+      {/* Globo de diálogo, arriba a la derecha del personaje.
+          w-max + max-w fuerza ancho intrínseco (evita el colapso a ~46px del
+          contenedor de 100px) → frases largas en 2 líneas anchas, no 6 angostas. */}
+      <div className="absolute bottom-[74px] left-[54px] w-max max-w-[200px] rounded-2xl bg-white px-3 py-1.5 shadow-lg ring-1 ring-black/10">
         <span className="flex items-start gap-1.5 text-[11px] font-semibold leading-snug text-slate-800">
           <Coffee size={13} className="mt-px shrink-0 text-sky-600" /> {dialogo}
         </span>
