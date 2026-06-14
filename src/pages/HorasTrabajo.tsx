@@ -87,7 +87,7 @@ export function HorasTrabajoPage() {
         if (!ts) return
         localStorage.removeItem('planilla-donacion-ts')
         const elapsed = Date.now() - ts
-        if (elapsed > 60_000 && elapsed < 2 * 60 * 60_000) setGraciasVisible(true)
+        if (elapsed > 60_000 && elapsed < 30 * 60_000) setGraciasVisible(true)
       } catch { /* ignore */ }
     }
     document.addEventListener('visibilitychange', check)
