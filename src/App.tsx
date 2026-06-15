@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react"
-import { Clock, Settings2, Banknote, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X, Database, Cloud } from "lucide-react"
+import { Clock, Settings2, Banknote, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X, Database, Cloud, Users } from "lucide-react"
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
+import { AdminPage } from "./pages/Admin"
 import { isSalaryUser, esAdminNube } from "./lib/calculo-salarial"
 import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
@@ -51,8 +52,8 @@ const SALARY_UNLOCK_KEY = "planilla-salary-unlocked"
 // código "000000". Su flag persistido vive en cloud-backup (esAdminDispositivo/marcarAdminDispositivo),
 // que además exime a ese dispositivo del tope diario de nube.
 
-type Tab = "horas" | "analytics" | "settings" | "salary"
-const TAB_ORDER: Tab[] = ["horas", "analytics", "settings", "salary"]
+type Tab = "horas" | "analytics" | "settings" | "salary" | "admin"
+const TAB_ORDER: Tab[] = ["horas", "analytics", "settings", "salary", "admin"]
 
 function goToTab(next: Tab, current: Tab, setter: (t: Tab) => void) {
   if (next === current) return
@@ -133,7 +134,7 @@ function AppContent() {
     const ro = new ResizeObserver(medir)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [showSalary])
+  }, [showSalary, showAdmin])
 
   // iOS Safari can silently erase PWA storage after 7 days of inactivity
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
@@ -438,8 +439,9 @@ function AppContent() {
 
         {tab === "horas" && <HorasTrabajoPage />}
         {tab === "analytics" && <AnalyticsPage />}
-        {tab === "settings" && <SettingsPage adminUnlocked={showAdmin} />}
+        {tab === "settings" && <SettingsPage />}
         {tab === "salary" && showSalary && <ProyeccionSalarialPage />}
+        {tab === "admin" && showAdmin && <AdminPage />}
       </div>
 
       <nav ref={navRef} className="vt-bottom-nav fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30 pb-[env(safe-area-inset-bottom)]">
@@ -449,6 +451,9 @@ function AppContent() {
           <NavTab icon={<Settings2 size={22} />} label="Config" active={tab === "settings"} onClick={() => goToTab("settings", tab, setTab)} />
           {showSalary && (
             <NavTab icon={<Banknote size={22} />} label="Sueldo" active={tab === "salary"} onClick={() => goToTab("salary", tab, setTab)} />
+          )}
+          {showAdmin && (
+            <NavTab icon={<Users size={22} />} label="Admin" active={tab === "admin"} onClick={() => goToTab("admin", tab, setTab)} />
           )}
         </div>
       </nav>

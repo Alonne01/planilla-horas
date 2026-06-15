@@ -60,6 +60,14 @@ export function marcarAdminDispositivo(): void {
 export function quedanOperacionesNube(): boolean {
   return esAdminDispositivo() || opsHoy() < MAX_OPS_DIA
 }
+
+/** Uso de operaciones de nube de HOY en este dispositivo, para el medidor de admin (estilo "usage").
+ *  El tope se reinicia a la medianoche local. */
+export function usoNubeHoy(): { usadas: number; tope: number; sinTope: boolean; resetEnMs: number } {
+  const now = new Date()
+  const manana = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime()
+  return { usadas: opsHoy(), tope: MAX_OPS_DIA, sinTope: esAdminDispositivo(), resetEnMs: manana - now.getTime() }
+}
 /** Cuenta una operación de nube (lectura o escritura) contra el tope diario. */
 function registrarOperacionNube(): void {
   try { localStorage.setItem(OPS_KEY, `${hoyKey()}|${opsHoy() + 1}`) } catch { /* ignore */ }

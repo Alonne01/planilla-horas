@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Users, Heart, Sparkles } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
@@ -7,7 +7,7 @@ import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, 
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
-import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, listarPadronNube, type PadronEntry } from '../lib/cloud-backup'
+import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube } from '../lib/cloud-backup'
 import { useOnboarding } from '../onboarding/OnboardingContext'
 import { APP_VERSION } from '../version'
 
@@ -34,17 +34,7 @@ function parseDateLocal(dateStr: string): number {
   return new Date(y, m - 1, d).getTime()
 }
 
-/** Agrupa el padrón por línea (etiqueta) y devuelve [línea, cantidad] de mayor a menor. */
-function contarPorLinea(p: PadronEntry[]): [string, number][] {
-  const m = new Map<string, number>()
-  for (const e of p) {
-    const k = e.linea || '(sin línea)'
-    m.set(k, (m.get(k) ?? 0) + 1)
-  }
-  return [...m.entries()].sort((a, b) => b[1] - a[1])
-}
-
-export function SettingsPage({ adminUnlocked = false }: { adminUnlocked?: boolean }) {
+export function SettingsPage() {
   const { settings, update, loaded } = useSettings()
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
   const [backupOverdue, setBackupOverdue] = useState(false)
@@ -72,9 +62,6 @@ export function SettingsPage({ adminUnlocked = false }: { adminUnlocked?: boolea
   const [restoreConfirm, setRestoreConfirm] = useState(false)
   const [limiteMsg, setLimiteMsg] = useState<string | null>(null) // modal de tope diario de nube
   const [cloudMs, setCloudMs] = useState<number>(() => msSinceCloudBackup())
-  // Padrón de admin (sólo usuario whitelisteado): conteo de usuarios y líneas desde la nube.
-  const [padron, setPadron] = useState<PadronEntry[] | null>(null)
-  const [padronBusy, setPadronBusy] = useState(false)
 
   useEffect(() => {
     if (!loaded) return
@@ -245,24 +232,6 @@ export function SettingsPage({ adminUnlocked = false }: { adminUnlocked?: boolea
       flash('No se pudo restaurar. Revisá tu conexión.', 'err')
     } finally {
       setCloudBusy(false)
-    }
-  }
-
-  // Admin: trae el padrón (nombre + línea) de la nube y lo ordena por nombre.
-  async function handleVerUsuarios() {
-    if (!quedanOperacionesNube()) {
-      setLimiteMsg('Por hoy no se pueden hacer más operaciones de nube. Intentá de nuevo mañana.')
-      return
-    }
-    setPadronBusy(true)
-    try {
-      const list = await listarPadronNube()
-      list.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
-      setPadron(list)
-    } catch {
-      flash('No se pudo leer el padrón. ¿Publicaste las reglas de Firestore para "padron"?', 'err')
-    } finally {
-      setPadronBusy(false)
     }
   }
 
@@ -481,84 +450,6 @@ export function SettingsPage({ adminUnlocked = false }: { adminUnlocked?: boolea
               <Banknote size={13} className="text-slate-600 shrink-0 mt-0.5" />
               Las horas, viaje y nocturnas salen de la planilla. El detalle se ve en la pestaña Sueldo y el resumen en Análisis.
             </p>
-          </Section>
-        )}
-
-        {/* Usuarios (admin) — desbloqueado con el gesto del caracol (3 toques) + nombre/código admin; lee el padrón EN CLARO de la nube */}
-        {adminUnlocked && (
-          <Section title="Usuarios (admin)">
-            <p className="text-xs text-slate-400 leading-snug">
-              Conteo de quién usa la app, de cada línea y de los toques al botón de donaciones, leído del
-              padrón en la nube (nombre + línea + toques, sin datos sensibles).
-            </p>
-            <button
-              onClick={handleVerUsuarios}
-              disabled={padronBusy}
-              className="w-full py-3 rounded-xl bg-slate-700 text-slate-200 text-sm font-medium flex items-center justify-center gap-2 active:bg-slate-600 disabled:opacity-50"
-            >
-              <Users size={16} /> {padronBusy ? 'Cargando…' : padron ? 'Actualizar' : 'Ver usuarios'}
-            </button>
-
-            {padron && (
-              <div className="space-y-3">
-                <div className="rounded-xl bg-slate-800/60 border border-slate-700/80 px-3 py-2.5">
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <p className="text-base font-semibold text-white tabular-nums">{padron.length}</p>
-                      <p className="text-[10px] text-slate-500 leading-tight">{padron.length === 1 ? 'persona' : 'personas'}</p>
-                    </div>
-                    <div>
-                      <p className="text-base font-semibold text-pink-300 tabular-nums">{padron.reduce((s, e) => s + (e.donaciones ?? 0), 0)}</p>
-                      <p className="text-[10px] text-slate-500 leading-tight">toques a donar</p>
-                    </div>
-                    <div>
-                      <p className="text-base font-semibold text-amber-300 tabular-nums">{padron.reduce((s, e) => s + (e.gracias ?? 0), 0)}</p>
-                      <p className="text-[10px] text-slate-500 leading-tight">gracias</p>
-                    </div>
-                  </div>
-                </div>
-
-                {padron.length > 0 ? (
-                  <>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Por línea</p>
-                      <div className="space-y-1">
-                        {contarPorLinea(padron).map(([lin, n]) => (
-                          <div key={lin} className="flex items-center justify-between bg-slate-700/40 rounded-lg px-3 py-1.5">
-                            <span className="text-sm text-slate-200">{lin}</span>
-                            <span className="text-sm font-semibold text-blue-300 tabular-nums">{n}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Lista</p>
-                      <div className="space-y-1">
-                        {padron.map((e, i) => (
-                          <div key={i} className="flex items-center justify-between gap-2 bg-slate-700/40 rounded-lg px-3 py-1.5">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm text-slate-200 truncate">{e.nombre || '(sin nombre)'}</p>
-                              <p className="text-[11px] text-slate-500 truncate">{e.linea || '—'}</p>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0 text-[11px] tabular-nums">
-                              {(e.donaciones ?? 0) > 0 && (
-                                <span className="flex items-center gap-0.5 text-pink-300"><Heart size={11} /> {e.donaciones}</span>
-                              )}
-                              {(e.gracias ?? 0) > 0 && (
-                                <span className="flex items-center gap-0.5 text-amber-300"><Sparkles size={11} /> {e.gracias}</span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-xs text-slate-500">Todavía no hay usuarios en el padrón (aparecen cuando respaldan en la nube).</p>
-                )}
-              </div>
-            )}
           </Section>
         )}
 
