@@ -5,12 +5,12 @@ import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
 import { AdminPage } from "./pages/Admin"
-import { isSalaryUser, esAdminNube, esDifusionTest } from "./lib/calculo-salarial"
+import { isSalaryUser, esAdminNube } from "./lib/calculo-salarial"
 import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
-import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo, leerConfigNube, configCacheada, type AppConfig } from "./lib/cloud-backup"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, type AppConfig } from "./lib/cloud-backup"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding/OnboardingContext"
@@ -52,10 +52,6 @@ const SALARY_UNLOCK_KEY = "planilla-salary-unlocked"
 // La pantalla de ADMIN (padrón) se desbloquea con 3 toques al caracol + nombre "Nicolas Vazquez" +
 // código "000000". Su flag persistido vive en cloud-backup (esAdminDispositivo/marcarAdminDispositivo),
 // que además exime a ese dispositivo del tope diario de nube.
-
-// Mensaje de difusión: se muestra UNA sola vez por usuario. Guardamos el id del último visto;
-// si el de la nube es distinto, se muestra (y al cerrarlo se persiste el id).
-const DIFUSION_VISTA_KEY = "planilla-difusion-vista"
 
 type Tab = "horas" | "analytics" | "settings" | "salary" | "admin"
 const TAB_ORDER: Tab[] = ["horas", "analytics", "settings", "salary", "admin"]
@@ -141,13 +137,11 @@ function AppContent() {
       let cfg: AppConfig
       try { cfg = await leerConfigNube() } catch { return /* offline: queda la config cacheada */ }
       setConfig(cfg)
-      // PRUEBA INTERNA (build 1.3.1): el cartel de difusión sólo se MUESTRA al tester (Yoseli Colaneri +
-      // 709846). El mensaje igual viaja a todos vía config/global; para liberarlo a todos, borrar este gate.
+      // Si hay un mensaje de difusión que este usuario no vio, mostrarlo (una sola vez para todos).
       try {
-        if (!cfg.difusionId || localStorage.getItem(DIFUSION_VISTA_KEY) === cfg.difusionId) return
-        const s = await getSettings()
-        if (!esDifusionTest(s.nombreUsuario, s.backupCodigo)) return
-        setBroadcast({ id: cfg.difusionId, titulo: cfg.difusionTitulo, cuerpo: cfg.difusionCuerpo })
+        if (cfg.difusionId && localStorage.getItem(DIFUSION_VISTA_KEY) !== cfg.difusionId) {
+          setBroadcast({ id: cfg.difusionId, titulo: cfg.difusionTitulo, cuerpo: cfg.difusionCuerpo })
+        }
       } catch { /* ignore */ }
     })()
   }, [])

@@ -183,6 +183,13 @@ interface BackupDoc {
   linea?: string
 }
 
+/** Clave localStorage del último mensaje de difusión VISTO por este dispositivo (lo setea App al
+ *  cerrar el cartel). Se sube en el padrón para que el admin sepa quién vio la última difusión. */
+export const DIFUSION_VISTA_KEY = 'planilla-difusion-vista'
+function difusionVistaLocal(): string {
+  try { return localStorage.getItem(DIFUSION_VISTA_KEY) ?? '' } catch { return '' }
+}
+
 /** Entrada del padrón (datos NO sensibles): para el conteo de usuarios y líneas en la pantalla admin. */
 export interface PadronEntry {
   nombre: string
@@ -195,6 +202,8 @@ export interface PadronEntry {
   gracias?: number
   /** Veces que exportó la planilla a Excel (acumulado por dispositivo). */
   exportaciones?: number
+  /** Id del último mensaje de difusión que vio este usuario (para "vieron la última difusión"). */
+  difusionVista?: string
 }
 
 /**
@@ -225,6 +234,7 @@ export async function subirBackupNube(usuario: string, codigo: string, linea?: s
     const { donaciones, gracias, exportaciones } = leerMetricas()
     const entry: PadronEntry = {
       nombre: usuario.trim(), linea: lineaTxt, updatedAt: Date.now(), version: APP_VERSION, donaciones, gracias, exportaciones,
+      difusionVista: difusionVistaLocal(),
     }
     await setDoc(doc(getDb(), PADRON, docId), entry)
   } catch { /* el padrón es secundario: si falla, el respaldo igual quedó subido */ }
@@ -251,6 +261,7 @@ export async function listarPadronNube(): Promise<PadronEntry[]> {
       donaciones: typeof x.donaciones === 'number' ? x.donaciones : 0,
       gracias: typeof x.gracias === 'number' ? x.gracias : 0,
       exportaciones: typeof x.exportaciones === 'number' ? x.exportaciones : 0,
+      difusionVista: typeof x.difusionVista === 'string' ? x.difusionVista : '',
     }
   })
 }

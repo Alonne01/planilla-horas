@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser } from 'lucide-react'
+import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye } from 'lucide-react'
 import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry } from '../lib/cloud-backup'
 import { APP_VERSION } from '../version'
 
@@ -144,6 +144,9 @@ export function AdminPage() {
   const totalDon = filtrado.reduce((s, e) => s + (e.donaciones ?? 0), 0)
   const totalGra = filtrado.reduce((s, e) => s + (e.gracias ?? 0), 0)
   const totalExp = filtrado.reduce((s, e) => s + (e.exportaciones ?? 0), 0)
+  // Difusión actual + cuántos la vieron (según su último respaldo). '' = no hay difusión activa.
+  const difusionActivaId = config?.difusionId ?? ''
+  const vieronDifusion = difusionActivaId ? filtrado.filter(e => e.difusionVista === difusionActivaId).length : 0
   const activos = useMemo(() => filtrado.filter(e => Date.now() - e.updatedAt <= ACTIVO_MS).length, [filtrado])
   const desactualizados = useMemo(() => filtrado.filter(e => e.version && e.version !== APP_VERSION).length, [filtrado])
   const porLinea = useMemo(() => agrupar(filtrado, lineaDe), [filtrado])
@@ -192,6 +195,7 @@ export function AdminPage() {
           <Stat icon={<FileSpreadsheet size={15} />} valor={totalExp} label="exportaciones" color="text-emerald-300" />
           <Stat icon={<Heart size={15} />} valor={totalDon} label="toques a donar" color="text-pink-300" />
           <Stat icon={<Sparkles size={15} />} valor={totalGra} label='veces "gracias"' color="text-amber-300" />
+          <Stat icon={<Eye size={15} />} valor={vieronDifusion} label="vieron difusión" sub={difusionActivaId ? `de ${filtrado.length}` : 'sin difusión activa'} color="text-sky-300" />
         </div>
 
         {/* Acciones globales: donador on/off + difusión a todos */}
@@ -268,6 +272,7 @@ export function AdminPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 text-[11px] tabular-nums">
+                      {difusionActivaId !== '' && e.difusionVista === difusionActivaId && <span className="flex items-center text-sky-300" title="Vio la última difusión"><Eye size={11} /></span>}
                       {(e.exportaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-emerald-300"><FileSpreadsheet size={11} /> {e.exportaciones}</span>}
                       {(e.donaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-pink-300"><Heart size={11} /> {e.donaciones}</span>}
                       {(e.gracias ?? 0) > 0 && <span className="flex items-center gap-0.5 text-amber-300"><Sparkles size={11} /> {e.gracias}</span>}

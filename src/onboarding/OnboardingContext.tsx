@@ -116,7 +116,7 @@ const PASOS: Paso[] = [
     id: 'g-aus-obs', tab: 'horas', target: '[data-tour="dlg-obs"]',
     titulo: 'Observación', texto: 'Anotá una observación (ej: "médico").',
     done: () => valDe('[data-tour="dlg-obs"] input').trim().length > 0,
-    delayMs: 5000, debounce: true, // avanza recién tras 5 s sin tipear
+    delayMs: 4000, debounce: true, // avanza recién tras 4 s sin tipear
   },
   {
     id: 'g-aus-guardar', tab: 'horas', target: '[data-tour="dlg-guardar"]', accionExterna: true,
@@ -133,7 +133,7 @@ const PASOS: Paso[] = [
     id: 'g-base-turno', tab: 'horas', target: '[data-tour="dlg-turno"]',
     titulo: 'Trabajo en base', texto: 'Cargá la entrada y la salida. Si es turno noche, cargá el turno COMPLETO (ej. 19:00 → 07:00); no lo cortes en 00:00 — la app reparte las horas sola.',
     done: () => qs('[data-tour="dlg-turno"]')?.dataset.completo === '1',
-    debounce: true, delayMs: 1500, // avanza 1,5 s tras soltar el horario (salida)
+    debounce: true, delayMs: 3500, // avanza 3,5 s tras soltar el horario (salida)
   },
   {
     id: 'g-base-lugar', tab: 'horas', target: '[data-tour="dlg-lugar-base"]',
@@ -149,7 +149,7 @@ const PASOS: Paso[] = [
     id: 'g-base-obs', tab: 'horas', target: '[data-tour="dlg-obs"]',
     titulo: 'Observación', texto: 'Anotá una observación (ej: el pozo).',
     done: () => valDe('[data-tour="dlg-obs"] input').trim().length > 0,
-    delayMs: 5000, debounce: true, // avanza recién tras 5 s sin tipear
+    delayMs: 4000, debounce: true, // avanza recién tras 4 s sin tipear
   },
   {
     id: 'g-base-guardar', tab: 'horas', target: '[data-tour="dlg-guardar"]', accionExterna: true,
@@ -166,7 +166,7 @@ const PASOS: Paso[] = [
     id: 'g-campo-turno', tab: 'horas', target: '[data-tour="dlg-turno"]',
     titulo: 'Trabajo en campo', texto: 'Cargá la entrada y la salida. Si es turno noche, cargá el turno COMPLETO (ej. 19:00 → 07:00); no lo cortes en 00:00 — la app reparte las horas sola.',
     done: () => qs('[data-tour="dlg-turno"]')?.dataset.completo === '1',
-    debounce: true, delayMs: 1500, // avanza 1,5 s tras soltar el horario (salida)
+    debounce: true, delayMs: 3500, // avanza 3,5 s tras soltar el horario (salida)
   },
   {
     id: 'g-campo-lugar', tab: 'horas', target: '[data-tour="dlg-lugar-campo"]',
@@ -194,7 +194,7 @@ const PASOS: Paso[] = [
     id: 'g-campo-obs', tab: 'horas', target: '[data-tour="dlg-obs"]',
     titulo: 'Observación', texto: 'Anotá una observación (ej: el pozo).',
     done: () => valDe('[data-tour="dlg-obs"] input').trim().length > 0,
-    delayMs: 5000, debounce: true, // avanza recién tras 5 s sin tipear
+    delayMs: 4000, debounce: true, // avanza recién tras 4 s sin tipear
   },
   {
     id: 'g-campo-guardar', tab: 'horas', target: '[data-tour="dlg-guardar"]', accionExterna: true,

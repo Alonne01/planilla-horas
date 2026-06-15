@@ -28,7 +28,7 @@ service cloud.firestore {
     match /padron/{id} {
       allow read: if true;
       allow create, update: if
-        request.resource.data.keys().hasOnly(['nombre','linea','updatedAt','version','donaciones','gracias','exportaciones'])
+        request.resource.data.keys().hasOnly(['nombre','linea','updatedAt','version','donaciones','gracias','exportaciones','difusionVista'])
         && request.resource.data.nombre is string && request.resource.data.nombre.size() < 200
         && request.resource.data.linea is string && request.resource.data.linea.size() < 200;
       allow delete: if false;
