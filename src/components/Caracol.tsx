@@ -44,7 +44,7 @@ export function Caracol({ navH }: { navH: number }) {
           transform: visible ? 'translateY(0)' : 'translateY(130%)',
           opacity: visible ? 1 : 0,
           transition: 'transform 600ms cubic-bezier(0.22,1,0.36,1), opacity 350ms ease',
-          animation: 'caracol-idle 1s steps(2) infinite', // 2 cuadros / 1 s = 2 fps
+          animation: 'caracol-idle 0.5s steps(2) infinite', // 2 cuadros / 0,5 s = 4 fps
         }}
       />
     </div>
