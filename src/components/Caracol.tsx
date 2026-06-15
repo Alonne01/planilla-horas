@@ -57,8 +57,8 @@ export function Caracol({ navH, onSecret }: { navH: number; onSecret?: () => voi
         style={{
           right: 12,
           bottom: navH - 1,                       // base apoyada justo en el borde superior del nav
-          width: 38,
-          height: 35,                             // ratio del cuadro (150/139 ≈ 1.08)
+          width: 46,
+          height: 43,                             // ratio del cuadro (150/139 ≈ 1.08)
           backgroundImage: `url(${caracol})`,
           backgroundRepeat: 'no-repeat',
           backgroundSize: `${FRAMES * 100}% 100%`,
@@ -66,7 +66,7 @@ export function Caracol({ navH, onSecret }: { navH: number; onSecret?: () => voi
           transform: visible ? 'translateY(0)' : 'translateY(130%)',
           opacity: visible ? 1 : 0,
           transition: 'transform 600ms cubic-bezier(0.22,1,0.36,1), opacity 350ms ease',
-          animation: 'caracol-idle 0.5s steps(2) infinite', // 2 cuadros / 0,5 s = 4 fps
+          animation: 'caracol-idle 0.333s steps(2) infinite', // 2 cuadros / 0,333 s ≈ 6 fps
         }}
       />
     </div>
