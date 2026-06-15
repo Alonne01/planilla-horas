@@ -1,74 +1,88 @@
 rules_version = '2';
 
 // Reglas de Firestore del proyecto `planillas-backups-986dd`.
-// NO se despliegan solas: copialas/pegalas en Firebase → Firestore → Reglas → Publicar.
-// (Este archivo es sólo la copia versionada de referencia.)
+// NO se despliegan solas: copialas/pegalas en Firebase -> Firestore -> Reglas -> Publicar.
+// (Este archivo es solo la copia versionada de referencia.)
+// Formateado en lineas cortas a proposito: las lineas largas se parten al copiar/pegar
+// desde el chat y rompen los strings entre comillas. No volver a juntar en una sola linea.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Respaldos CIFRADOS ──────────────────────────────────────────────────
-    // Contenido cifrado con AES-GCM; el id del doc es SHA-256("usuario:codigo"), así que sin el
-    // código no se puede ni calcular el id ni descifrar. get sí, list/delete no; create/update
-    // exige los campos del backup y topea el tamaño en ~900 KB. (hasAll permite extras: usuario, linea, schema.)
+    // Respaldos CIFRADOS (AES-GCM; id = SHA-256("usuario:codigo")).
+    // get si, list/delete no; create/update exige los campos + tope ~900 KB.
     match /backups/{id} {
       allow get: if true;
       allow list: if false;
+      allow delete: if false;
       allow create, update: if
-        request.resource.data.keys().hasAll(['iv','salt','data','updatedAt'])
+        request.resource.data.keys().hasAll(['iv', 'salt', 'data', 'updatedAt'])
         && request.resource.data.data is string
         && request.resource.data.data.size() < 900000;
-      allow delete: if false;
     }
 
-    // ── Padrón EN CLARO (datos NO sensibles) ────────────────────────────────
-    // Sólo nombre + línea + métricas (toques a donar / "gracias") + versión + fecha. SIN horas,
-    // SIN salario, SIN nada cifrado. Es legible y LISTABLE para el conteo de la pantalla de admin.
-    // hasOnly limita a las claves esperadas (que no se use como storage público) y topea los strings.
+    // Padron EN CLARO (datos NO sensibles): nombre + linea + metricas + version.
+    // Legible y LISTABLE para el conteo de la pantalla de admin.
     match /padron/{id} {
       allow read: if true;
-      allow create, update: if
-        request.resource.data.keys().hasOnly(['nombre','linea','updatedAt','version','donaciones','gracias','exportaciones','difusionVista'])
-        && request.resource.data.nombre is string && request.resource.data.nombre.size() < 200
-        && request.resource.data.linea is string && request.resource.data.linea.size() < 200;
       allow delete: if false;
+      allow create, update: if
+        request.resource.data.keys().hasOnly([
+          'nombre', 'linea', 'updatedAt', 'version',
+          'donaciones', 'gracias', 'exportaciones', 'difusionVista'
+        ])
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() < 200
+        && request.resource.data.linea is string
+        && request.resource.data.linea.size() < 200;
     }
 
-    // ── Config GLOBAL (un único doc `global`) ───────────────────────────────
-    // La leen TODOS los clientes al abrir (1 lectura): si el donador está activo y el mensaje de
-    // difusión actual. La escribe el admin (toggle / enviar). Escrituras parciales con merge, así
-    // que sólo se validan los tipos/tamaños de los campos presentes y se limitan las claves.
+    // Config GLOBAL (un unico doc `global`): donador on/off + difusion actual.
+    // La leen todos al abrir; la escribe el admin (merge: campos parciales).
     match /config/{id} {
       allow read: if true;
-      allow create, update: if
-        request.resource.data.keys().hasOnly(['beggarActivo','difusionId','difusionTitulo','difusionCuerpo','difusionCreatedAt','updatedAt'])
-        && (!('difusionTitulo' in request.resource.data) || (request.resource.data.difusionTitulo is string && request.resource.data.difusionTitulo.size() < 300))
-        && (!('difusionCuerpo' in request.resource.data) || (request.resource.data.difusionCuerpo is string && request.resource.data.difusionCuerpo.size() < 4000));
       allow delete: if false;
+      allow create, update: if
+        request.resource.data.keys().hasOnly([
+          'beggarActivo', 'difusionId', 'difusionTitulo',
+          'difusionCuerpo', 'difusionCreatedAt', 'updatedAt'
+        ])
+        && (
+          !('difusionTitulo' in request.resource.data)
+          || (
+            request.resource.data.difusionTitulo is string
+            && request.resource.data.difusionTitulo.size() < 300
+          )
+        )
+        && (
+          !('difusionCuerpo' in request.resource.data)
+          || (
+            request.resource.data.difusionCuerpo is string
+            && request.resource.data.difusionCuerpo.size() < 4000
+          )
+        );
     }
 
-    // ── Difusión: historial de mensajes enviados (sólo el admin lo lista) ────
-    // Cada doc es un mensaje. Inmutable: no se edita ni borra. El "actual" viaja embebido en
-    // config/global para que cada usuario lo vea sin leer toda la colección.
+    // Difusion: historial de mensajes enviados (inmutable).
     match /difusion/{id} {
       allow read: if true;
-      allow create: if
-        request.resource.data.keys().hasOnly(['titulo','cuerpo','createdAt'])
-        && request.resource.data.titulo is string && request.resource.data.titulo.size() < 300
-        && request.resource.data.cuerpo is string && request.resource.data.cuerpo.size() < 4000;
       allow update, delete: if false;
+      allow create: if
+        request.resource.data.keys().hasOnly(['titulo', 'cuerpo', 'createdAt'])
+        && request.resource.data.titulo is string
+        && request.resource.data.titulo.size() < 300
+        && request.resource.data.cuerpo is string
+        && request.resource.data.cuerpo.size() < 4000;
     }
 
-    // ── Uso GLOBAL de Firebase (contador del día, hora del Pacífico) ─────────
-    // Estima el consumo de la cuota gratis sumando lecturas/escrituras de todos los dispositivos.
-    // Sólo campos numéricos; legible para el medidor de admin; se incrementa con FieldValue.increment.
+    // Uso GLOBAL de Firebase (contador del dia, hora del Pacifico).
     match /uso/{id} {
       allow read: if true;
+      allow delete: if false;
       allow create, update: if
-        request.resource.data.keys().hasOnly(['reads','writes','updatedAt'])
+        request.resource.data.keys().hasOnly(['reads', 'writes', 'updatedAt'])
         && request.resource.data.reads is number
         && request.resource.data.writes is number;
-      allow delete: if false;
     }
   }
 }
