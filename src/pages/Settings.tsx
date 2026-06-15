@@ -15,6 +15,17 @@ declare const __BUILD_TIME__: string
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
+// Candado de la configuración de trabajo (línea de trabajo / diagrama / fecha de inicio): evita
+// toques accidentales que cambien el conteo de horas. Device-local (no se sincroniza); por defecto
+// BLOQUEADO. Se ignora durante el tour guiado (que necesita tocar esos controles para configurar).
+const CONFIG_LOCK_KEY = 'planilla-config-lock'
+function leerConfigLock(): boolean {
+  try { return localStorage.getItem(CONFIG_LOCK_KEY) !== '0' } catch { return true }
+}
+function guardarConfigLock(bloqueado: boolean): void {
+  try { localStorage.setItem(CONFIG_LOCK_KEY, bloqueado ? '1' : '0') } catch { /* ignore */ }
+}
+
 // Kaomoji elegido una vez por inicio de app (constante a nivel de módulo)
 const KAOMOJIS = [
   '(づ｡◕‿‿◕｡)づ', '(◕‿◕)', '(｡♥‿♥｡)', '٩(◕‿◕)۶', '(★^O^★)',
@@ -71,8 +82,18 @@ export function SettingsPage() {
   }, [loaded])
 
   // Acciones del tour: actualizar feriados + guardar (referencias frescas cada render).
-  const registrarTour = useOnboarding().registrar
-  useEffect(() => { registrarTour({ actualizarFeriados: handleActualizarFeriados, guardarConfig: handleGuardar }) })
+  const onb = useOnboarding()
+  useEffect(() => { onb.registrar({ actualizarFeriados: handleActualizarFeriados, guardarConfig: handleGuardar }) })
+
+  // Candado de línea/diagrama/fecha. Bloqueado por defecto; durante el tour se ignora para poder
+  // configurar. `cfgEditable` = se pueden tocar esos controles.
+  const [cfgBloqueado, setCfgBloqueado] = useState(leerConfigLock)
+  const cfgEditable = !cfgBloqueado || onb.activo
+  function toggleConfigLock() {
+    const next = !cfgBloqueado
+    setCfgBloqueado(next)
+    guardarConfigLock(next)
+  }
 
   // Sync local state once settings load from DB
   useEffect(() => {
@@ -374,13 +395,19 @@ export function SettingsPage() {
         </div>
 
         {/* Línea de trabajo — afecta el conteo de horas (visible para todos) */}
-        <Section title="Línea de trabajo">
+        <Section title="Línea de trabajo" action={<CandadoChip bloqueado={cfgBloqueado} onToggle={toggleConfigLock} />}>
+          {!cfgEditable && (
+            <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <Lock size={11} className="shrink-0" /> Tocá el candado para cambiar la línea.
+            </p>
+          )}
           <div className="space-y-2" data-tour="cfg-linea">
             {LINEAS_TRABAJO.map(l => (
               <button
                 key={l.key}
                 onClick={() => { setLinea(l.key); setDirty(true) }}
-                className={`w-full py-2.5 px-3 rounded-xl text-left transition-colors ${linea === l.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                disabled={!cfgEditable}
+                className={`w-full py-2.5 px-3 rounded-xl text-left transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${linea === l.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
               >
                 <div className="text-sm font-medium">{l.label}</div>
                 <div className={`text-xs mt-0.5 ${linea === l.key ? 'text-blue-100/80' : 'text-slate-400'}`}>{l.desc}</div>
@@ -454,13 +481,19 @@ export function SettingsPage() {
         )}
 
         {/* Diagrama */}
-        <Section title="Diagrama de trabajo">
+        <Section title="Diagrama de trabajo" action={<CandadoChip bloqueado={cfgBloqueado} onToggle={toggleConfigLock} />}>
+          {!cfgEditable && (
+            <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <Lock size={11} className="shrink-0" /> Tocá el candado para cambiar el diagrama o la fecha.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-2" data-tour="cfg-diagrama">
             {DIAGRAMAS.map(d => (
               <button
                 key={d.key}
                 onClick={() => { setDiagrama(d.key); setDirty(true) }}
-                className={`py-3 px-4 rounded-xl text-sm font-medium text-left transition-colors ${diagrama === d.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                disabled={!cfgEditable}
+                className={`py-3 px-4 rounded-xl text-sm font-medium text-left transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${diagrama === d.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
               >
                 <div className="font-bold">{d.label}</div>
                 <div className="text-xs opacity-70 mt-0.5">{d.diasTrabajo} trabajo · {d.diasFranco} franco</div>
@@ -474,8 +507,9 @@ export function SettingsPage() {
                 type="date"
                 data-tour="cfg-fecha"
                 value={diagramaFecha}
+                disabled={!cfgEditable}
                 onChange={e => { setDiagramaFecha(e.target.value); setDirty(true) }}
-                className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
+                className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </Field>
           )}
@@ -685,12 +719,29 @@ function InstallSection() {
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div>
-      <h2 className="text-xs font-bold uppercase text-slate-500 mb-3 tracking-wider">{title}</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-xs font-bold uppercase text-slate-500 tracking-wider">{title}</h2>
+        {action}
+      </div>
       <div className="space-y-3">{children}</div>
     </div>
+  )
+}
+
+// Chip de candado para bloquear/desbloquear la configuración de trabajo (mismo estilo que el del
+// código de respaldo). Bloqueado = verde (protegido); desbloqueado = ámbar (editable, ojo).
+function CandadoChip({ bloqueado, onToggle }: { bloqueado: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`flex shrink-0 items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg ${bloqueado ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}
+      aria-label={bloqueado ? 'Desbloquear para editar' : 'Bloquear para evitar cambios'}
+    >
+      {bloqueado ? <><Lock size={12} /> Bloqueado</> : <><Unlock size={12} /> Desbloqueado</>}
+    </button>
   )
 }
 

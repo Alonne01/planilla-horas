@@ -5,7 +5,7 @@ import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
 import { AdminPage } from "./pages/Admin"
-import { isSalaryUser, esAdminNube } from "./lib/calculo-salarial"
+import { isSalaryUser, esAdminNube, esDifusionTest } from "./lib/calculo-salarial"
 import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
@@ -137,14 +137,19 @@ function AppContent() {
   // Config global desde la nube: actualiza el flag del donador y, si hay un mensaje de difusión que
   // este usuario no vio, lo muestra (una sola vez). Lectura automática (no cuenta contra el tope diario).
   useEffect(() => {
-    leerConfigNube().then(cfg => {
+    void (async () => {
+      let cfg: AppConfig
+      try { cfg = await leerConfigNube() } catch { return /* offline: queda la config cacheada */ }
       setConfig(cfg)
+      // PRUEBA INTERNA (build 1.3.1): el cartel de difusión sólo se MUESTRA al tester (Yoseli Colaneri +
+      // 709846). El mensaje igual viaja a todos vía config/global; para liberarlo a todos, borrar este gate.
       try {
-        if (cfg.difusionId && localStorage.getItem(DIFUSION_VISTA_KEY) !== cfg.difusionId) {
-          setBroadcast({ id: cfg.difusionId, titulo: cfg.difusionTitulo, cuerpo: cfg.difusionCuerpo })
-        }
+        if (!cfg.difusionId || localStorage.getItem(DIFUSION_VISTA_KEY) === cfg.difusionId) return
+        const s = await getSettings()
+        if (!esDifusionTest(s.nombreUsuario, s.backupCodigo)) return
+        setBroadcast({ id: cfg.difusionId, titulo: cfg.difusionTitulo, cuerpo: cfg.difusionCuerpo })
       } catch { /* ignore */ }
-    }).catch(() => { /* offline: queda la config cacheada */ })
+    })()
   }, [])
 
   // Cierra el cartel de difusión y lo marca como visto (no vuelve a salir para este usuario).

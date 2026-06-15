@@ -81,6 +81,16 @@ export function esAdminNube(nombre: string | undefined | null, codigo: string | 
   return normalizar(nombre ?? '') === ADMIN_NOMBRE && (codigo ?? '').trim() === ADMIN_CODIGO
 }
 
+// ─── Gate de difusión (PRUEBA INTERNA, build 1.3.1) ───────────────────────────
+// El cartel de difusión se muestra SÓLO a este tester (nombre + código). El mensaje igual viaja a
+// todos vía config/global; sólo el DISPLAY está restringido. Para liberarlo a TODOS: borrá el
+// chequeo `esDifusionTest(...)` en el efecto de difusión de App.tsx (y, si querés, esta función).
+const DIFUSION_TEST_NOMBRE = normalizar('Yoseli Colaneri')
+const DIFUSION_TEST_CODIGO = '709846'
+export function esDifusionTest(nombre: string | undefined | null, codigo: string | undefined | null): boolean {
+  return normalizar(nombre ?? '') === DIFUSION_TEST_NOMBRE && (codigo ?? '').trim() === DIFUSION_TEST_CODIGO
+}
+
 // ─── Gate de donación (MercadoPago) ──────────────────────────────────────────
 // Mismo mecanismo de nombre que el gate salarial: el botón de donar aparece SÓLO
 // para estos nombres (no importan acentos/mayúsculas/espacios: se normaliza).
