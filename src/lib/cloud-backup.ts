@@ -43,9 +43,22 @@ function opsHoy(): number {
     return dia === hoyKey() ? (parseInt(n, 10) || 0) : 0
   } catch { return 0 }
 }
-/** ¿Quedan operaciones de nube disponibles hoy en este dispositivo? (anti-abuso de cuota) */
+// Dispositivo admin: el que desbloqueó la pantalla de admin (Nicolas Vazquez + 000000 + 3 toques al
+// caracol). NO tiene tope diario de nube — puede listar el padrón y respaldar/restaurar sin límite.
+const ADMIN_KEY = 'planilla-admin-unlocked'
+/** ¿Este dispositivo desbloqueó el modo admin? (sin tope diario de nube). */
+export function esAdminDispositivo(): boolean {
+  try { return localStorage.getItem(ADMIN_KEY) === '1' } catch { return false }
+}
+/** Marca este dispositivo como admin (lo llama App.tsx al validar el gesto del caracol). */
+export function marcarAdminDispositivo(): void {
+  try { localStorage.setItem(ADMIN_KEY, '1') } catch { /* ignore */ }
+}
+
+/** ¿Quedan operaciones de nube disponibles hoy en este dispositivo? (anti-abuso de cuota).
+ *  El dispositivo admin no tiene tope. */
 export function quedanOperacionesNube(): boolean {
-  return opsHoy() < MAX_OPS_DIA
+  return esAdminDispositivo() || opsHoy() < MAX_OPS_DIA
 }
 /** Cuenta una operación de nube (lectura o escritura) contra el tope diario. */
 function registrarOperacionNube(): void {

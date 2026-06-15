@@ -9,7 +9,7 @@ import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
-import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube } from "./lib/cloud-backup"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo } from "./lib/cloud-backup"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding/OnboardingContext"
@@ -47,9 +47,9 @@ const EMPTY_DB_AUTOHIDE_MS = 8000
 // Easter egg: la pestaña "Sueldo" se desbloquea con 15 toques al caracol (si el nombre es la
 // palabra clave) y queda persistida acá — así no se re-chequea el nombre en cada cambio de pestaña.
 const SALARY_UNLOCK_KEY = "planilla-salary-unlocked"
-// Easter egg de la pantalla de ADMIN (padrón), independiente del salario: 3 toques al caracol con
-// nombre "Nicolas Vazquez" + código "000000". Queda persistido para no repetir el gesto.
-const ADMIN_UNLOCK_KEY = "planilla-admin-unlocked"
+// La pantalla de ADMIN (padrón) se desbloquea con 3 toques al caracol + nombre "Nicolas Vazquez" +
+// código "000000". Su flag persistido vive en cloud-backup (esAdminDispositivo/marcarAdminDispositivo),
+// que además exime a ese dispositivo del tope diario de nube.
 
 type Tab = "horas" | "analytics" | "settings" | "salary"
 const TAB_ORDER: Tab[] = ["horas", "analytics", "settings", "salary"]
@@ -85,9 +85,7 @@ function AppContent() {
     try { return localStorage.getItem(SALARY_UNLOCK_KEY) === "1" } catch { return false }
   })
   // Pantalla de admin (padrón) desbloqueada: persistida, independiente del salario.
-  const [showAdmin, setShowAdmin] = useState(() => {
-    try { return localStorage.getItem(ADMIN_UNLOCK_KEY) === "1" } catch { return false }
-  })
+  const [showAdmin, setShowAdmin] = useState(esAdminDispositivo)
   const [recovered, setRecovered] = useState(false)
   const [persistDenied, setPersistDenied] = useState(false)
   const [autoBackupDue, setAutoBackupDue] = useState(false)
@@ -266,7 +264,7 @@ function AppContent() {
     try {
       const s = await getSettings()
       if (esAdminNube(s.nombreUsuario, s.backupCodigo)) {
-        try { localStorage.setItem(ADMIN_UNLOCK_KEY, "1") } catch { /* ignore */ }
+        marcarAdminDispositivo()
         setShowAdmin(true)
       }
     } catch { /* ignore */ }
