@@ -15,6 +15,7 @@ import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding
 import { GuideTooltip } from "./components/GuideTooltip"
 import { CloudSetupModal } from "./components/CloudSetupModal"
 import { UpdateToast } from "./components/UpdateToast"
+import { registerSW } from "virtual:pwa-register"
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches ||
@@ -88,14 +89,22 @@ function AppContent() {
   const onb = useOnboarding()
   useEffect(() => { onb.registrar({ setTab }) }, [])
 
-  // Aviso de actualización: al detectar una versión nueva (evento de main.tsx), mostrar el toast 3 s y recargar.
+  // Actualización del PWA (modo prompt): onNeedRefresh se dispara cuando hay una versión nueva LISTA
+  // (callback propio de vite-plugin-pwa, sin carreras) → mostramos el toast 3 s y aplicamos con
+  // updateSW(true) (skipWaiting + recarga). onRegisteredSW busca versiones al volver/cada 30 min.
   useEffect(() => {
-    const onUpd = () => {
-      setUpdateToast(true)
-      setTimeout(() => window.location.reload(), 3000)
-    }
-    window.addEventListener('sw-updated', onUpd)
-    return () => window.removeEventListener('sw-updated', onUpd)
+    const updateSW = registerSW({
+      onNeedRefresh() {
+        setUpdateToast(true)
+        window.setTimeout(() => { updateSW(true) }, 3000)
+      },
+      onRegisteredSW(_swUrl, reg) {
+        if (!reg) return
+        const check = () => { reg.update().catch(() => {}) }
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check() })
+        window.setInterval(check, 30 * 60 * 1000)
+      },
+    })
   }, [])
   useEffect(() => {
     if (!onboardingHecho()) onb.start()
