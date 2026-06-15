@@ -15,6 +15,7 @@ import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding
 import { GuideTooltip } from "./components/GuideTooltip"
 import { CloudSetupModal } from "./components/CloudSetupModal"
 import { UpdateToast } from "./components/UpdateToast"
+import { Caracol } from "./components/Caracol"
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches ||
@@ -83,6 +84,9 @@ function AppContent() {
   const [gateSkipped, setGateSkipped] = useState(false)
   const [updateToast, setUpdateToast] = useState(false)
   const restoreRef = useRef<HTMLInputElement>(null)
+  // Alto real del nav (incluye safe-area) para apoyar el caracol del easter egg en su borde.
+  const navRef = useRef<HTMLElement>(null)
+  const [navH, setNavH] = useState(56)
 
   // ─── Walkthrough / onboarding: auto-arranca en el 1er inicio para CUALQUIER usuario (hasta completarlo/omitirlo) ───
   const onb = useOnboarding()
@@ -106,6 +110,17 @@ function AppContent() {
   useEffect(() => {
     if (!onboardingHecho()) onb.start()
   }, [])
+
+  // Medir el alto del nav (cambia con el safe-area y si aparece la pestaña Sueldo) para el caracol.
+  useEffect(() => {
+    const el = navRef.current
+    if (!el) return
+    const medir = () => setNavH(el.offsetHeight)
+    medir()
+    const ro = new ResizeObserver(medir)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [showSalary])
 
   // iOS Safari can silently erase PWA storage after 7 days of inactivity
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
@@ -394,7 +409,7 @@ function AppContent() {
         {tab === "salary" && showSalary && <ProyeccionSalarialPage />}
       </div>
 
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30 pb-[env(safe-area-inset-bottom)]">
+      <nav ref={navRef} className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30 pb-[env(safe-area-inset-bottom)]">
         <div className="flex">
           <NavTab icon={<Clock size={22} />} label="Horas" active={tab === "horas"} onClick={() => goToTab("horas", tab, setTab)} />
           <NavTab icon={<BarChart3 size={22} />} label="Análisis" active={tab === "analytics"} onClick={() => goToTab("analytics", tab, setTab)} />
@@ -404,6 +419,9 @@ function AppContent() {
           )}
         </div>
       </nav>
+
+      {/* Easter egg: el caracol sólo en Configuración, asomando al scrollear hasta el fondo. */}
+      {tab === "settings" && <Caracol navH={navH} />}
 
       <GuideTooltip />
       {cloudPromptOpen && <CloudSetupModal onConfigurar={handleCloudConfigurar} onMasTarde={handleCloudMasTarde} />}

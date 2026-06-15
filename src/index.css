@@ -111,6 +111,10 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
 /* Timer del tutorial: anillo pequeño que se va "abriendo" (se dibuja) hasta avanzar al siguiente paso */
 @keyframes tour-ring { to { stroke-dashoffset: 0; } }
 
+/* ─── Easter egg: caracol (2 cuadros a 2 fps). El sheet ocupa 200% (2 cuadros); con steps(2) la
+   posición salta 0% → 100% (cada cuadro centrado); el 200% del final loopea al inicio. ─── */
+@keyframes caracol-idle { from { background-position-x: 0%; } to { background-position-x: 200%; } }
+
 /* ─── Donador (personaje que pide una donación; sprite de 3 frames a 3 fps) ─── */
 /* El sheet ocupa 300% del ancho (3 cuadros). Con steps(3) la posición salta
    0% → 50% → 100% (cada cuadro centrado); el 150% del final nunca se ve (loopea). */
