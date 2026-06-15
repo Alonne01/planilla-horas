@@ -14,6 +14,7 @@ import { exportarExcelCompleto } from '../lib/excel-export-full'
 import { credencialesNubeValidas } from '../lib/cloud-backup'
 import { registrarExportacion } from '../lib/metricas'
 import { DonadorDonacion, DonadorGracias } from '../components/DonadorDonacion'
+import { esBeggarUnlock } from '../lib/calculo-salarial'
 import { useOnboarding } from '../onboarding/OnboardingContext'
 import { db, shadowBackup, getSettings, clearPeriodoPrueba, type RegistroHoras } from '../db/database'
 
@@ -28,8 +29,6 @@ function beggarIdKey(usuario: string, codigo: string): string {
   return u && c ? `${u}|${c}` : 'anon'
 }
 
-/** El beggar (pedido de donación) se habilita para todos a partir de esta fecha. */
-const BEGGAR_DESDE_MS = new Date(2026, 5, 21).getTime() // 21/6/2026
 
 /** Reconstruye la fecha (mediodía) desde una clave `año-mes-día`. */
 function dateFromKey(key: string): Date {
@@ -68,7 +67,7 @@ function cloneForDate(source: RegistroHoras, target: Date, diagrama: DiagramaPat
   }
 }
 
-export function HorasTrabajoPage({ beggarActivo = true }: { beggarActivo?: boolean }) {
+export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: boolean }) {
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const { registros, loading, upsert, remove, reload } = useHoras(mes, anio)
@@ -659,10 +658,11 @@ export function HorasTrabajoPage({ beggarActivo = true }: { beggarActivo?: boole
         </button>
       </div>
 
-      {/* Donador — pedido de donación (habilitado para todos desde el 21/6, salvo que el admin lo
-          desactive globalmente vía beggarActivo); o agradecimiento al volver de donar (>1 min).
-          Si donó en las últimas 24 h, no aparece. */}
-      {Date.now() >= BEGGAR_DESDE_MS && beggarActivo && (graciasVisible
+      {/* Donador — pedido de donación. Aparece sólo si el admin lo ACTIVÓ globalmente (beggarActivo,
+          apagado por defecto) O si esta identidad está en la whitelist de desbloqueo (esBeggarUnlock,
+          vista previa para el admin aunque esté apagado para todos). O agradecimiento al volver de
+          donar (>1 min). Si donó en las últimas 24 h, no aparece. */}
+      {(beggarActivo || esBeggarUnlock(settings.nombreUsuario)) && (graciasVisible
         ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
         : (!yaAgradecioHoy && exportHecho && <DonadorDonacion key={beggarKey} idKey={idKey} forzar={beggarForzar} />))}
 

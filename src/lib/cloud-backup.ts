@@ -5,7 +5,7 @@
 // puede ni calcular el id ni descifrar el contenido. Espeja el enfoque PBKDF2 de EquipTrack
 // (util/BackupPinManager.kt). La privacidad la completan las reglas Firestore (get sí, list/delete no).
 import { initializeApp, type FirebaseApp } from 'firebase/app'
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, increment, type Firestore } from 'firebase/firestore/lite'
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, increment, type Firestore } from 'firebase/firestore/lite'
 import { exportBackupJSON, importBackupJSON } from '../db/database'
 import { APP_VERSION } from '../version'
 import { leerMetricas } from './metricas'
@@ -53,6 +53,18 @@ export function esAdminDispositivo(): boolean {
 /** Marca este dispositivo como admin (lo llama App.tsx al validar el gesto del caracol). */
 export function marcarAdminDispositivo(): void {
   try { localStorage.setItem(ADMIN_KEY, '1') } catch { /* ignore */ }
+}
+
+// ── Último nombre con el que se respaldó en la nube (para detectar correcciones de nombre) ──────
+// El respaldo se direcciona por hash(nombre:código). Si el usuario corrige su nombre (mismo código),
+// el id cambia y queda un respaldo huérfano. Guardamos acá el último nombre respaldado para poder
+// migrarlo (ver migrarBackupNube en Settings). Se setea en cada subida/migración exitosa.
+const ULTIMO_USUARIO_KEY = 'planilla-cloud-ultimo-usuario'
+export function ultimoUsuarioNube(): string {
+  try { return localStorage.getItem(ULTIMO_USUARIO_KEY) ?? '' } catch { return '' }
+}
+export function setUltimoUsuarioNube(usuario: string): void {
+  try { localStorage.setItem(ULTIMO_USUARIO_KEY, usuario.trim()) } catch { /* ignore */ }
 }
 
 /** ¿Quedan operaciones de nube disponibles hoy en este dispositivo? (anti-abuso de cuota).
@@ -192,6 +204,9 @@ function difusionVistaLocal(): string {
 
 /** Entrada del padrón (datos NO sensibles): para el conteo de usuarios y líneas en la pantalla admin. */
 export interface PadronEntry {
+  /** Id del documento (= SHA-256("usuario:codigo") en base64url). El admin lo usa para enviarle un
+   *  mensaje individual a ESTE usuario (mensajes/{id}) sin conocer su código. No revela el código. */
+  id?: string
   nombre: string
   linea: string
   updatedAt: number
@@ -238,6 +253,7 @@ export async function subirBackupNube(usuario: string, codigo: string, linea?: s
     }
     await setDoc(doc(getDb(), PADRON, docId), entry)
   } catch { /* el padrón es secundario: si falla, el respaldo igual quedó subido */ }
+  setUltimoUsuarioNube(usuario.trim()) // recordar bajo qué nombre quedó el respaldo (para migrar si lo corrige)
   registrarOperacionNube()
   contarUso(0, 2) // backup + padrón (escrituras)
 }
@@ -254,6 +270,7 @@ export async function listarPadronNube(): Promise<PadronEntry[]> {
   return snap.docs.map(d => {
     const x = d.data() as Partial<PadronEntry>
     return {
+      id: d.id,
       nombre: String(x.nombre ?? '').trim(),
       linea: String(x.linea ?? '').trim(),
       updatedAt: typeof x.updatedAt === 'number' ? x.updatedAt : 0,
@@ -287,12 +304,13 @@ export interface AppConfig {
 }
 
 const CONFIG_DEFAULT: AppConfig = {
-  beggarActivo: true, difusionId: '', difusionTitulo: '', difusionCuerpo: '', difusionCreatedAt: 0,
+  beggarActivo: false, difusionId: '', difusionTitulo: '', difusionCuerpo: '', difusionCreatedAt: 0,
 }
 
 function parseConfig(x: Record<string, unknown>): AppConfig {
   return {
-    beggarActivo: typeof x.beggarActivo === 'boolean' ? x.beggarActivo : true,
+    // Donador APAGADO por defecto: aparece sólo cuando el admin lo activa (toggle en Admin).
+    beggarActivo: typeof x.beggarActivo === 'boolean' ? x.beggarActivo : false,
     difusionId: typeof x.difusionId === 'string' ? x.difusionId : '',
     difusionTitulo: typeof x.difusionTitulo === 'string' ? x.difusionTitulo : '',
     difusionCuerpo: typeof x.difusionCuerpo === 'string' ? x.difusionCuerpo : '',
@@ -426,4 +444,178 @@ export async function fechaBackupNube(usuario: string, codigo: string): Promise<
   registrarOperacionNube()
   contarUso(1, 0)
   return snap.exists() ? ((snap.data() as BackupDoc).updatedAt ?? null) : null
+}
+
+/**
+ * Verifica que EXISTE un respaldo para esas credenciales y que se DESCIFRA con el código (sin
+ * importarlo). Sirve como prueba de propiedad antes de migrar/borrar un respaldo viejo: solo el
+ * dueño (con el código correcto) puede descifrarlo. Devuelve 'ok' | 'no-existe' | 'clave-incorrecta'.
+ */
+export async function verificarBackupNube(usuario: string, codigo: string): Promise<ResultadoRestore> {
+  const snap = await getDoc(doc(getDb(), COLLECTION, await computeDocId(usuario, codigo)))
+  contarUso(1, 0)
+  if (!snap.exists()) return 'no-existe'
+  const d = snap.data() as BackupDoc
+  try {
+    const key = await deriveKey(usuario, codigo, b64ToBytes(d.salt))
+    await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(d.iv) }, key, b64ToBytes(d.data))
+    return 'ok'
+  } catch {
+    return 'clave-incorrecta'
+  }
+}
+
+/** Borra el respaldo + su entrada de padrón para esas credenciales (requiere reglas con delete). */
+export async function borrarBackupNube(usuario: string, codigo: string): Promise<void> {
+  const docId = await computeDocId(usuario, codigo)
+  await deleteDoc(doc(getDb(), COLLECTION, docId))
+  try { await deleteDoc(doc(getDb(), PADRON, docId)) } catch { /* el padrón es secundario */ }
+  contarUso(0, 2)
+}
+
+export interface ResultadoMigracion {
+  estado: 'migrado' | 'verificado-sin-viejo' | 'codigo-incorrecto' | 'error'
+  desde: string
+  hacia: string
+}
+
+/**
+ * Corrige el NOMBRE de un usuario que escribió mal el suyo (mismo código), sin perder su respaldo
+ * ni dejar un duplicado en la nube:
+ *   1) Verifica que el respaldo VIEJO (nombreViejo+código) se descifra con el código (prueba de dueño).
+ *   2) Sube el respaldo actual bajo el nombre NUEVO (re-cifrado con la clave del nombre nuevo).
+ *   3) Borra el respaldo + padrón VIEJOS, así queda una sola entrada limpia.
+ * Si no hay respaldo viejo (o no descifra), igual sube bajo el nombre nuevo y NO borra nada.
+ */
+export async function migrarBackupNube(
+  nombreViejo: string, nombreNuevo: string, codigo: string, linea?: string,
+): Promise<ResultadoMigracion> {
+  const desde = nombreViejo.trim(), hacia = nombreNuevo.trim()
+  if (!credencialesNubeValidas(hacia, codigo)) return { estado: 'error', desde, hacia }
+  // Sin nombre viejo distinto: nada que migrar (solo asegurar el respaldo nuevo).
+  if (!desde || credKey(desde, codigo) === credKey(hacia, codigo)) {
+    try { await subirBackupNube(hacia, codigo, linea) } catch { return { estado: 'error', desde, hacia } }
+    return { estado: 'verificado-sin-viejo', desde, hacia }
+  }
+  let verif: ResultadoRestore
+  try { verif = await verificarBackupNube(desde, codigo) } catch { return { estado: 'error', desde, hacia } }
+  try {
+    await subirBackupNube(hacia, codigo, linea) // SIEMPRE: respaldo bajo el nombre nuevo (no se pierde nada)
+    if (verif === 'ok') await borrarBackupNube(desde, codigo) // borra el viejo SOLO si verificó (mismo dueño)
+  } catch {
+    return { estado: 'error', desde, hacia }
+  }
+  registrarOperacionNube()
+  if (verif === 'ok') return { estado: 'migrado', desde, hacia }
+  if (verif === 'clave-incorrecta') return { estado: 'codigo-incorrecto', desde, hacia }
+  return { estado: 'verificado-sin-viejo', desde, hacia }
+}
+
+// ── Mensajes INDIVIDUALES (admin → un usuario) ──────────────────────────────────
+// Mismo modelo que la difusión pero direccionado: el doc vive en `mensajes/{docId}` donde docId =
+// hash(usuario:código) del destinatario. El admin lo obtiene del padrón (PadronEntry.id) SIN conocer
+// el código. El usuario lo lee con su propio docId y, al cerrarlo, escribe `recibidoAt` (acuse). El
+// cuerpo viaja en claro como la difusión, pero solo quien conoce nombre+código (o el padrón admin)
+// puede ubicar el doc.
+const MENSAJES = 'mensajes'
+
+export interface MensajeIndividual {
+  id: string
+  titulo: string
+  cuerpo: string
+  createdAt: number
+  /** ms en que el usuario tocó OK (0 = todavía no lo recibió/cerró). */
+  recibidoAt: number
+}
+
+function parseMensaje(id: string, x: Record<string, unknown>): MensajeIndividual {
+  return {
+    id: typeof x.id === 'string' ? x.id : id,
+    titulo: String(x.titulo ?? ''),
+    cuerpo: String(x.cuerpo ?? ''),
+    createdAt: typeof x.createdAt === 'number' ? x.createdAt : 0,
+    recibidoAt: typeof x.recibidoAt === 'number' ? x.recibidoAt : 0,
+  }
+}
+
+/** [admin] Envía un mensaje individual al usuario cuyo docId viene del padrón. Pisa el anterior. */
+export async function enviarMensajeIndividual(docId: string, titulo: string, cuerpo: string): Promise<MensajeIndividual> {
+  const createdAt = Date.now()
+  const msg: MensajeIndividual = { id: String(createdAt), titulo: titulo.trim(), cuerpo: cuerpo.trim(), createdAt, recibidoAt: 0 }
+  await setDoc(doc(getDb(), MENSAJES, docId), msg)
+  registrarOperacionNube()
+  contarUso(0, 1)
+  return msg
+}
+
+/** [admin] Lee el mensaje individual + su acuse para un docId (para mostrar "Recibido hace X"). */
+export async function leerRecepcionMensaje(docId: string): Promise<MensajeIndividual | null> {
+  const snap = await getDoc(doc(getDb(), MENSAJES, docId))
+  registrarOperacionNube()
+  contarUso(1, 0)
+  return snap.exists() ? parseMensaje(docId, snap.data() as Record<string, unknown>) : null
+}
+
+/** [usuario] Lee SU mensaje individual (si hay). Lectura automática al abrir (no cuenta contra el tope). */
+export async function leerMensajeIndividual(usuario: string, codigo: string): Promise<MensajeIndividual | null> {
+  try {
+    const docId = await computeDocId(usuario, codigo)
+    const snap = await getDoc(doc(getDb(), MENSAJES, docId))
+    contarUso(1, 0)
+    return snap.exists() ? parseMensaje(docId, snap.data() as Record<string, unknown>) : null
+  } catch { return null }
+}
+
+/** [usuario] Marca su mensaje individual como recibido (acuse al admin). Best-effort. */
+export async function marcarMensajeRecibido(usuario: string, codigo: string): Promise<void> {
+  try {
+    const docId = await computeDocId(usuario, codigo)
+    await setDoc(doc(getDb(), MENSAJES, docId), { recibidoAt: Date.now() }, { merge: true })
+    contarUso(0, 1)
+  } catch { /* acuse best-effort: no debe romper nada */ }
+}
+
+// ── Códigos ÚNICOS (segundo candado): que no se repitan entre usuarios ──────────
+// Registro global `codigos/{hash}` (hash del código, NO el código en claro) para reservar cada
+// código de 6 dígitos. Un 6 dígitos es enumerable, así que el registro solo revela "tomado/libre"
+// (nunca el nombre ni los datos: el respaldo sigue protegido por nombre+código). Al generar, se busca
+// uno libre y se reserva; el registro es inmutable (no se puede pisar el de otro).
+const CODIGOS = 'codigos'
+
+async function hashCodigo(codigo: string): Promise<string> {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`planilla-codigo:${codigo.trim()}`))
+  return bufToB64Url(h)
+}
+
+/** ¿El código de 6 dígitos está libre (no reservado por otro usuario)? */
+export async function codigoDisponible(codigo: string): Promise<boolean> {
+  const snap = await getDoc(doc(getDb(), CODIGOS, await hashCodigo(codigo)))
+  contarUso(1, 0)
+  return !snap.exists()
+}
+
+/** Reserva el código (registro inmutable). Lo llama generarCodigoUnico tras verificar que está libre. */
+async function reservarCodigo(codigo: string): Promise<void> {
+  await setDoc(doc(getDb(), CODIGOS, await hashCodigo(codigo)), { createdAt: Date.now() })
+  contarUso(0, 1)
+}
+
+export interface CodigoGenerado { codigo: string; unico: boolean }
+
+/**
+ * Genera un código de 6 dígitos GARANTIZANDO que no esté en uso por otro usuario (segundo candado):
+ * prueba códigos al azar hasta encontrar uno libre y lo reserva. Si no hay red para verificar
+ * (`unico:false`), devuelve igual uno al azar (la reserva se reintenta en el próximo respaldo).
+ */
+export async function generarCodigoUnico(): Promise<CodigoGenerado> {
+  const random = () => String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')
+  for (let i = 0; i < 12; i++) {
+    const codigo = random()
+    try {
+      if (await codigoDisponible(codigo)) { await reservarCodigo(codigo); registrarOperacionNube(); return { codigo, unico: true } }
+    } catch {
+      return { codigo, unico: false } // sin conexión: no se pudo verificar la unicidad
+    }
+  }
+  return { codigo: random(), unico: false } // 12 colisiones seguidas (improbable): devolver uno igual
 }

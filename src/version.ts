@@ -1,2 +1,2 @@
 /** Versión de la app (visible en Configuración). Subir a mano en cada release. */
-export const APP_VERSION = '1.3.4'
+export const APP_VERSION = '1.4.0'

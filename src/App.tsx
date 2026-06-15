@@ -10,7 +10,7 @@ import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
-import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, type AppConfig } from "./lib/cloud-backup"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, type AppConfig } from "./lib/cloud-backup"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding/OnboardingContext"
@@ -45,6 +45,9 @@ function snoozeCloudPrompt(): void {
 const EMPTY_DB_ALERT_KEY = "planilla-empty-db-alert-ts"
 const EMPTY_DB_ALERT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000 // 1 semana
 const EMPTY_DB_AUTOHIDE_MS = 8000
+
+// Id del último mensaje INDIVIDUAL visto por este dispositivo (no vuelve a aparecer una vez cerrado).
+const MSG_IND_VISTO_KEY = "planilla-msg-ind-visto"
 
 // Easter egg: la pestaña "Sueldo" se desbloquea con 15 toques al caracol (si el nombre es la
 // palabra clave) y queda persistida acá — así no se re-chequea el nombre en cada cambio de pestaña.
@@ -102,6 +105,8 @@ function AppContent() {
   // refresca de la nube al abrir. El mensaje de difusión, si es nuevo, se muestra una sola vez.
   const [config, setConfig] = useState<AppConfig>(configCacheada)
   const [broadcast, setBroadcast] = useState<{ id: string; titulo: string; cuerpo: string } | null>(null)
+  // Mensaje INDIVIDUAL del admin para este usuario (le aparece como una difusión dirigida).
+  const [mensajeInd, setMensajeInd] = useState<{ id: string; titulo: string; cuerpo: string } | null>(null)
   const restoreRef = useRef<HTMLInputElement>(null)
   // Alto real del nav (incluye safe-area) para apoyar el caracol del easter egg en su borde.
   const navRef = useRef<HTMLElement>(null)
@@ -152,6 +157,33 @@ function AppContent() {
     setBroadcast(null)
   }
 
+  // Mensaje INDIVIDUAL del admin: lee mensajes/{docId-propio} al abrir; si hay uno nuevo lo muestra
+  // como difusión dirigida (lectura automática, no cuenta contra el tope diario).
+  useEffect(() => {
+    void (async () => {
+      try {
+        const s = await getSettings()
+        if (!credencialesNubeValidas(s.nombreUsuario, s.backupCodigo)) return
+        const msg = await leerMensajeIndividual(s.nombreUsuario, s.backupCodigo)
+        if (!msg || (!msg.titulo && !msg.cuerpo)) return
+        let visto = ''
+        try { visto = localStorage.getItem(MSG_IND_VISTO_KEY) ?? '' } catch { /* ignore */ }
+        if (msg.id !== visto) setMensajeInd({ id: msg.id, titulo: msg.titulo, cuerpo: msg.cuerpo })
+      } catch { /* offline / sin credenciales */ }
+    })()
+  }, [])
+
+  // Cierra el mensaje individual: lo marca como visto y envía el ACUSE de recepción al admin.
+  function cerrarMensajeInd() {
+    if (mensajeInd) {
+      try { localStorage.setItem(MSG_IND_VISTO_KEY, mensajeInd.id) } catch { /* ignore */ }
+      void (async () => {
+        try { const s = await getSettings(); await marcarMensajeRecibido(s.nombreUsuario, s.backupCodigo) } catch { /* best-effort */ }
+      })()
+    }
+    setMensajeInd(null)
+  }
+
   // Medir el alto del nav (cambia con el safe-area y si aparece la pestaña Sueldo) para el caracol.
   useEffect(() => {
     const el = navRef.current
@@ -196,6 +228,8 @@ function AppContent() {
         const count = await db.registros.count()
         const s = await getSettings()
         const cloudOn = credencialesNubeValidas(s.nombreUsuario, s.backupCodigo)
+        // Baseline del nombre con el que existe el respaldo (para detectar una corrección de nombre luego).
+        if (cloudOn && !ultimoUsuarioNube()) setUltimoUsuarioNube(s.nombreUsuario)
         if (count === 0 && !didRecover) {
           // Si hay credenciales y EXISTE un respaldo en la nube, ofrecer restaurarlo;
           // si no, el aviso de "sin datos" (a lo sumo 1 vez por semana).
@@ -492,6 +526,7 @@ function AppContent() {
       {cloudPromptOpen && <CloudSetupModal onConfigurar={handleCloudConfigurar} onMasTarde={handleCloudMasTarde} />}
       {updateToast && <UpdateToast />}
       {broadcast && <BroadcastToast titulo={broadcast.titulo} cuerpo={broadcast.cuerpo} onClose={cerrarBroadcast} />}
+      {!broadcast && mensajeInd && <BroadcastToast titulo={mensajeInd.titulo} cuerpo={mensajeInd.cuerpo} onClose={cerrarMensajeInd} />}
     </div>
   )
 }

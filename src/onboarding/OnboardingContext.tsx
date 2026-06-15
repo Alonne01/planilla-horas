@@ -43,6 +43,9 @@ export interface Paso {
   accionExterna?: boolean
   /** Auto-avanza tras estos ms aunque no haya interacción (p.ej. campo opcional como "¿Manejaste?"). */
   autoMs?: number
+  /** Paso DEMO: muestra un anillo grande ILUMINADO que se llena y auto-avanza al completarse.
+   *  Enseña el mecanismo de "esperá a que se llene el círculo" antes de los pasos de escritura. */
+  demoAnillo?: boolean
 }
 
 export type TourModo = 'full' | 'cloud'
@@ -63,6 +66,14 @@ const PASOS: Paso[] = [
     id: 'bienvenida',
     titulo: '¡Bienvenido!',
     texto: 'Te muestro cómo configurar y usar la planilla en un minuto. Hacé lo que te marco para avanzar; podés salir cuando quieras.',
+  },
+  {
+    id: 'circulo-demo',
+    titulo: 'Cómo se pasa de paso',
+    texto: (
+      <>En los pasos donde <strong className="font-bold text-white">escribís</strong> algo (tu nombre, una observación…), cuando termines aparece un <strong className="text-sky-300">círculo</strong> que se va llenando: <strong className="font-bold text-white">esperá a que se complete</strong> y paso solo al siguiente. Mirá cómo se llena 👇</>
+    ),
+    demoAnillo: true,
   },
   {
     id: 'cfg-nombre', tab: 'settings', target: '[data-tour="cfg-nombre"]',

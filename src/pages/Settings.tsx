@@ -7,7 +7,7 @@ import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, 
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
-import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube } from '../lib/cloud-backup'
+import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube } from '../lib/cloud-backup'
 import { useOnboarding } from '../onboarding/OnboardingContext'
 import { APP_VERSION } from '../version'
 
@@ -199,13 +199,45 @@ export function SettingsPage() {
     })
   }
 
-  // Genera un código de 6 dígitos, lo aplica y BLOQUEA (anti-cambios accidentales). Requiere nombre.
-  function generarCodigo() {
-    if (!nombre.trim()) return
-    const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')
-    setBkCodigo(code)
-    setBkBloqueado(true)
-    saveBackupCreds({ codigo: code, bloqueado: true })
+  // Genera un código de 6 dígitos ÚNICO entre usuarios (segundo candado), lo aplica y BLOQUEA.
+  // Verifica contra el registro `codigos` que no esté en uso por otro usuario y lo reserva.
+  async function generarCodigo() {
+    if (!nombre.trim() || cloudBusy) return
+    setCloudBusy(true)
+    try {
+      const { codigo, unico } = await generarCodigoUnico()
+      setBkCodigo(codigo)
+      setBkBloqueado(true)
+      saveBackupCreds({ codigo, bloqueado: true })
+      setUltimoUsuarioNube(nombre.trim()) // baseline para detectar correcciones de nombre
+      flash(unico ? 'Código único generado ✓' : 'Código generado (sin conexión: la unicidad se verifica al respaldar)', unico ? 'ok' : 'err')
+    } catch {
+      const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')
+      setBkCodigo(code); setBkBloqueado(true); saveBackupCreds({ codigo: code, bloqueado: true })
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  // Corrección de nombre (mismo código): al salir del campo, si el nombre cambió respecto del último
+  // respaldo, migra el respaldo en la nube (re-sube bajo el nombre nuevo, verifica el viejo y lo borra)
+  // para no dejar un duplicado. Solo si ya hay respaldo configurado (nombre + código de 6 dígitos).
+  async function handleNombreBlur() {
+    if (cloudBusy) return
+    const nuevo = nombre.trim()
+    const viejo = ultimoUsuarioNube()
+    if (!credencialesNubeValidas(nuevo, bkCodigo)) return
+    if (!viejo || viejo.toLowerCase() === nuevo.toLowerCase()) { setUltimoUsuarioNube(nuevo); return }
+    if (!quedanOperacionesNube()) return
+    setCloudBusy(true)
+    try {
+      const r = await migrarBackupNube(viejo, nuevo, bkCodigo, lineaLabel(linea))
+      if (r.estado === 'migrado') flash(`Verificado y movido tu respaldo: "${r.desde}" → "${r.hacia}" (mismo código) ✓`)
+      else if (r.estado === 'codigo-incorrecto') flash('Guardé tu respaldo con el nombre nuevo, pero no pude verificar/borrar el anterior (código distinto).', 'err')
+      // 'verificado-sin-viejo' / 'error': sin aviso (no había respaldo viejo o falló la red; se reintenta)
+    } catch { /* offline: se reintenta en el próximo blur/respaldo */ } finally {
+      setCloudBusy(false)
+    }
   }
 
   function toggleLock() {
@@ -325,6 +357,7 @@ export function SettingsPage() {
               value={nombre}
               disabled={bkBloqueado}
               onChange={e => { setNombre(e.target.value); setDirty(true) }}
+              onBlur={handleNombreBlur}
               className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               placeholder="Ej: Juan Topo"
             />

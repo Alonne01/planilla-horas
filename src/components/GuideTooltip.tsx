@@ -25,6 +25,9 @@ export function GuideTooltip() {
   const [cuenta, setCuenta] = useState<{ dur: number; t0: number } | null>(null)
   // "Omitir" aparece recién 1,5 s después de mostrarse la tarjeta del paso (evita saltarlo sin querer).
   const [mostrarOmitir, setMostrarOmitir] = useState(false)
+  // Doble confirmación de "Omitir": al tocarlo pide confirmar y "Sí, salir" se habilita recién a los 5 s.
+  const [confirmSalir, setConfirmSalir] = useState(false)
+  const [segSalir, setSegSalir] = useState(5)
 
   // Sigue al target de forma CONTINUA (rAF): mide cada frame y actualiza el hueco sólo cuando cambia.
   // Así el spotlight queda SIEMPRE pegado al elemento aunque el diálogo entre animado (slide-in),
@@ -162,6 +165,25 @@ export function GuideTooltip() {
     return () => clearTimeout(t)
   }, [paso?.id])
 
+  // Doble confirmación de Omitir: la cuenta de 5 s para habilitar "Sí, salir" arranca al abrirla.
+  useEffect(() => {
+    if (!confirmSalir) return
+    setSegSalir(5)
+    const t = window.setInterval(() => setSegSalir(s => Math.max(0, s - 1)), 1000)
+    return () => clearInterval(t)
+  }, [confirmSalir])
+  // Al cambiar de paso, se cierra cualquier confirmación de salida abierta.
+  useEffect(() => { setConfirmSalir(false) }, [paso?.id])
+
+  // Paso DEMO del círculo: muestra el anillo llenándose (iluminado) y auto-avanza al completarse.
+  useEffect(() => {
+    if (!activo || !paso?.demoAnillo) return
+    const dur = 4500
+    setCuenta({ dur, t0: Date.now() })
+    const t = window.setTimeout(() => next(), dur)
+    return () => clearTimeout(t)
+  }, [activo, paso, next])
+
   // Medir el alto real de la tarjeta (cambia con el texto de cada paso) para posicionarla sin tapar.
   useEffect(() => { if (cardRef.current) setCardH(cardRef.current.offsetHeight) }, [paso?.id, paso?.texto])
 
@@ -277,28 +299,63 @@ export function GuideTooltip() {
 
         {paso.titulo && <p className="text-sm font-bold text-sky-300">{paso.titulo}</p>}
         <p className="mt-1 text-sm leading-snug text-slate-200">{paso.texto}</p>
-        {!esInfo && (
-          <p className="mt-1.5 text-[11px] font-medium text-sky-400/90">Hacelo para seguir →</p>
+
+        {/* Anillo grande ILUMINADO del paso demo: enseña visualmente cómo se llena para avanzar. */}
+        {paso.demoAnillo && cuenta && (
+          <div className="mt-3 flex justify-center">
+            <svg key={cuenta.t0} viewBox="0 0 36 36" className="h-16 w-16 -rotate-90" style={{ filter: 'drop-shadow(0 0 7px rgb(56 189 248))' }}>
+              <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth="4" />
+              <circle
+                cx="18" cy="18" r="15" fill="none" stroke="rgb(56 189 248)" strokeWidth="4" strokeLinecap="round"
+                style={{ strokeDasharray: CIRC, strokeDashoffset: CIRC, animation: `tour-ring ${cuenta.dur}ms linear forwards` }}
+              />
+            </svg>
+          </div>
         )}
 
-        <div className="mt-2.5 flex items-center gap-2">
-          <span className="text-[11px] text-slate-500">{pasoIdx + 1}/{total}</span>
-          <div className="flex-1" />
-          <button
-            onClick={skip}
-            className={`px-2 py-1.5 text-xs font-medium text-slate-400 transition-opacity duration-300 active:text-slate-200 ${mostrarOmitir ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-          >
-            Omitir
-          </button>
-          {esInfo && (
-            <button onClick={next} className="rounded-lg bg-sky-600 px-4 py-1.5 text-xs font-bold text-white active:bg-sky-700">
-              {esUltimo ? 'Terminar' : 'Siguiente'}
+        {cuenta ? (
+          <p className="mt-1.5 text-center text-[11px] font-semibold text-sky-300">Esperá a que se llene el círculo ↻ para pasar al siguiente paso</p>
+        ) : !esInfo ? (
+          <p className="mt-1.5 text-[11px] font-medium text-sky-400/90">Hacelo para seguir →</p>
+        ) : null}
+
+        {confirmSalir ? (
+          <div className="mt-3 rounded-xl border border-rose-500/40 bg-rose-950/40 p-2.5 animate-[gate-rise_180ms_ease_both]">
+            <p className="text-xs font-bold text-rose-200">¿Querés salir del tutorial?</p>
+            <p className="mt-0.5 text-[11px] leading-snug text-slate-300">Te vas a perder los pasos que faltan. Podés volver a verlo cuando quieras desde el menú ⋮.</p>
+            <div className="mt-2.5 flex items-center justify-end gap-2">
+              <button onClick={() => setConfirmSalir(false)} className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-100 active:bg-slate-600">
+                Seguir en el tutorial
+              </button>
+              <button
+                onClick={skip}
+                disabled={segSalir > 0}
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold ${segSalir > 0 ? 'cursor-not-allowed bg-rose-900/50 text-rose-200/60' : 'bg-rose-600 text-white active:bg-rose-700'}`}
+              >
+                {segSalir > 0 ? `Sí, salir (${segSalir})` : 'Sí, salir'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2.5 flex items-center gap-2">
+            <span className="text-[11px] text-slate-500">{pasoIdx + 1}/{total}</span>
+            <div className="flex-1" />
+            <button
+              onClick={() => setConfirmSalir(true)}
+              className={`px-2 py-1.5 text-xs font-medium text-slate-400 transition-opacity duration-300 active:text-slate-200 ${mostrarOmitir ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            >
+              Omitir
             </button>
-          )}
-        </div>
+            {esInfo && (
+              <button onClick={next} className="rounded-lg bg-sky-600 px-4 py-1.5 text-xs font-bold text-white active:bg-sky-700">
+                {esUltimo ? 'Terminar' : 'Siguiente'}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Timer: anillo pequeño en la esquina que se va "abriendo" hasta avanzar (se reinicia con cada cambio/movimiento). */}
-        {cuenta && (
+        {cuenta && !paso.demoAnillo && (
           <svg key={cuenta.t0} viewBox="0 0 36 36" className="pointer-events-none absolute right-2 top-2 h-5 w-5 -rotate-90">
             <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(148,163,184,0.25)" strokeWidth="5" />
             <circle

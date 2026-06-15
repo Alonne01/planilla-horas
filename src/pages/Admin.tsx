@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry } from '../lib/cloud-backup'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual } from '../lib/cloud-backup'
 import { APP_VERSION } from '../version'
 
 const ACTIVO_MS = 7 * 24 * 60 * 60 * 1000 // "activo" = respaldó en los últimos 7 días
@@ -60,6 +60,8 @@ export function AdminPage() {
   // Confirmación en curso ('beggar' | 'difusion' | 'limpiar') y estado de envío.
   const [accion, setAccion] = useState<null | 'beggar' | 'difusion' | 'limpiar'>(null)
   const [enviando, setEnviando] = useState(false)
+  // Usuario seleccionado para enviarle un mensaje individual (abre MensajeModal).
+  const [msgUser, setMsgUser] = useState<PadronEntry | null>(null)
 
   async function cargar() {
     setBusy(true); setErr(null)
@@ -276,6 +278,7 @@ export function AdminPage() {
                       {(e.exportaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-emerald-300"><FileSpreadsheet size={11} /> {e.exportaciones}</span>}
                       {(e.donaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-pink-300"><Heart size={11} /> {e.donaciones}</span>}
                       {(e.gracias ?? 0) > 0 && <span className="flex items-center gap-0.5 text-amber-300"><Sparkles size={11} /> {e.gracias}</span>}
+                      {e.id && <button onClick={() => setMsgUser(e)} className="ml-0.5 flex items-center text-slate-400 active:text-emerald-300" title="Enviar mensaje a este usuario"><Send size={13} /></button>}
                     </div>
                   </div>
                 )
@@ -320,6 +323,97 @@ export function AdminPage() {
           onConfirm={confirmarLimpiar}
         />
       )}
+
+      {msgUser && <MensajeModal user={msgUser} onClose={() => setMsgUser(null)} />}
+    </div>
+  )
+}
+
+/** Modal para enviarle un mensaje INDIVIDUAL a un usuario del padrón (le aparece como difusión
+ *  dirigida). Muestra el acuse del último mensaje ("Recibido hace X / aún sin recibir"). */
+function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => void }) {
+  const [titulo, setTitulo] = useState('')
+  const [cuerpo, setCuerpo] = useState('')
+  const [actual, setActual] = useState<MensajeIndividual | null | undefined>(undefined) // undefined = cargando
+  const [enviando, setEnviando] = useState(false)
+  const [confirmar, setConfirmar] = useState(false)
+  const [enviado, setEnviado] = useState(false)
+
+  useEffect(() => {
+    void (async () => {
+      if (!user.id) { setActual(null); return }
+      try { setActual(await leerRecepcionMensaje(user.id)) } catch { setActual(null) }
+    })()
+  }, [user.id])
+
+  async function enviar() {
+    if (!user.id) return
+    setEnviando(true)
+    try {
+      const m = await enviarMensajeIndividual(user.id, titulo, cuerpo)
+      setActual(m); setTitulo(''); setCuerpo(''); setConfirmar(false); setEnviado(true)
+    } catch {
+      alert('No se pudo enviar. ¿Publicaste las reglas de Firestore para "mensajes"?')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  const puede = titulo.trim().length > 0 || cuerpo.trim().length > 0
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/60" onClick={enviando ? undefined : onClose}>
+      <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-800 p-4 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-bold text-white flex items-center gap-1.5 min-w-0"><Send size={15} className="shrink-0" /> <span className="truncate">Mensaje a {user.nombre || '(sin nombre)'}</span></p>
+          <button onClick={onClose} className="shrink-0 text-slate-400 active:text-slate-200"><X size={16} /></button>
+        </div>
+
+        {/* Acuse del último mensaje a este usuario */}
+        {actual === undefined ? (
+          <p className="text-[11px] text-slate-500">Cargando estado…</p>
+        ) : actual ? (
+          <div className="rounded-lg border border-slate-700 bg-slate-700/30 px-3 py-2 text-[11px] space-y-0.5">
+            <p className="text-slate-300 truncate"><span className="text-slate-500">Último:</span> {actual.titulo || '(sin título)'}</p>
+            <p className={actual.recibidoAt ? 'text-emerald-300' : 'text-amber-300'}>
+              {actual.recibidoAt ? `Recibido ${hace(actual.recibidoAt)} ✓` : 'Enviado · todavía sin recibir'}
+            </p>
+          </div>
+        ) : (
+          <p className="text-[11px] text-slate-500">Todavía no le enviaste ningún mensaje.</p>
+        )}
+
+        {enviado && <p className="text-[11px] text-emerald-300">Mensaje enviado. Le va a aparecer la próxima vez que abra la app; acá vas a ver el acuse cuando lo reciba.</p>}
+
+        <input
+          value={titulo} onChange={e => setTitulo(e.target.value)} maxLength={60}
+          placeholder="Título (ej. AVISO)"
+          className="w-full bg-slate-700 text-white rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        />
+        <textarea
+          value={cuerpo} onChange={e => setCuerpo(e.target.value)} maxLength={400} rows={3}
+          placeholder="Mensaje para este usuario…"
+          className="w-full bg-slate-700 text-white rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-slate-500 tabular-nums">{cuerpo.length}/400</span>
+          <button
+            onClick={() => setConfirmar(true)} disabled={!puede || enviando}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white active:bg-emerald-700 disabled:opacity-40"
+          >
+            <Send size={13} /> Enviar
+          </button>
+        </div>
+
+        {confirmar && (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-2.5">
+            <p className="text-xs text-emerald-100">¿Enviar este mensaje SOLO a <b>{user.nombre || '(sin nombre)'}</b>?</p>
+            <div className="mt-2 flex justify-end gap-2">
+              <button onClick={() => setConfirmar(false)} disabled={enviando} className="px-3 py-1.5 text-xs font-medium text-slate-300 rounded-lg bg-slate-700 active:bg-slate-600 disabled:opacity-50">No</button>
+              <button onClick={enviar} disabled={enviando} className="px-3 py-1.5 text-xs font-bold text-white rounded-lg bg-emerald-600 active:bg-emerald-700 disabled:opacity-50">{enviando ? 'Enviando…' : 'Sí, enviar'}</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -99,6 +99,20 @@ export function isDonationUser(nombre: string | undefined | null): boolean {
   return DONATION_WHITELIST.includes(normalizar(nombre))
 }
 
+// ─── Desbloqueo del DONADOR por usuario (vista previa) ────────────────────────
+// El donador global arranca APAGADO (config.beggarActivo=false) y el admin lo prende cuando quiere.
+// Esta whitelist lo DESBLOQUEA igual para identidades puntuales (p.ej. el admin), para verlo/probarlo
+// aunque esté apagado para todos. Agregar/quitar nombres acá (se compara normalizado, sin código).
+const BEGGAR_UNLOCK_WHITELIST: string[] = [
+  'Nicolas Vazquez',
+  // 'Otro Nombre',
+].map(normalizar)
+
+export function esBeggarUnlock(nombre: string | undefined | null): boolean {
+  if (!nombre) return false
+  return BEGGAR_UNLOCK_WHITELIST.includes(normalizar(nombre))
+}
+
 // ─── Config ──────────────────────────────────────────────────────────────────
 export interface SalaryConfig {
   convenio: Convenio

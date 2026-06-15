@@ -10,11 +10,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Respaldos CIFRADOS (AES-GCM; id = SHA-256("usuario:codigo")).
-    // get si, list/delete no; create/update exige los campos + tope ~900 KB.
+    // get si, list no; delete si (para migrar un respaldo cuando el usuario corrige su nombre;
+    // el id requiere nombre+codigo, no es enumerable). create/update exige los campos + tope ~900 KB.
     match /backups/{id} {
       allow get: if true;
       allow list: if false;
-      allow delete: if false;
+      allow delete: if true;
       allow create, update: if
         request.resource.data.keys().hasAll(['iv', 'salt', 'data', 'updatedAt'])
         && request.resource.data.data is string
@@ -22,10 +23,10 @@ service cloud.firestore {
     }
 
     // Padron EN CLARO (datos NO sensibles): nombre + linea + metricas + version.
-    // Legible y LISTABLE para el conteo de la pantalla de admin.
+    // Legible y LISTABLE para el conteo de la pantalla de admin. delete si (migracion de nombre).
     match /padron/{id} {
       allow read: if true;
-      allow delete: if false;
+      allow delete: if true;
       allow create, update: if
         request.resource.data.keys().hasOnly([
           'nombre', 'linea', 'updatedAt', 'version',
@@ -73,6 +74,34 @@ service cloud.firestore {
         && request.resource.data.titulo.size() < 300
         && request.resource.data.cuerpo is string
         && request.resource.data.cuerpo.size() < 4000;
+    }
+
+    // Mensajes INDIVIDUALES (admin -> un usuario). id = hash(usuario:codigo) del destinatario.
+    // get si (el usuario lee el suyo / el admin lo lee por el id del padron). list no.
+    // create/update: el admin escribe el mensaje y el usuario hace merge de recibidoAt (acuse).
+    match /mensajes/{id} {
+      allow get: if true;
+      allow list, delete: if false;
+      allow create, update: if
+        request.resource.data.keys().hasOnly(['id', 'titulo', 'cuerpo', 'createdAt', 'recibidoAt'])
+        && (
+          !('titulo' in request.resource.data)
+          || (request.resource.data.titulo is string && request.resource.data.titulo.size() < 300)
+        )
+        && (
+          !('cuerpo' in request.resource.data)
+          || (request.resource.data.cuerpo is string && request.resource.data.cuerpo.size() < 4000)
+        );
+    }
+
+    // Codigos RESERVADOS (segundo candado: codigos unicos entre usuarios). id = hash("planilla-codigo:"+codigo).
+    // get si (verificar disponibilidad); create si (reservar); update/delete no (inmutable: nadie pisa el de otro).
+    match /codigos/{id} {
+      allow get: if true;
+      allow list, update, delete: if false;
+      allow create: if
+        request.resource.data.keys().hasOnly(['createdAt'])
+        && request.resource.data.createdAt is number;
     }
 
     // Uso GLOBAL de Firebase (contador del dia, hora del Pacifico).
