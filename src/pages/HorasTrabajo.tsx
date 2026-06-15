@@ -12,6 +12,7 @@ import { esFeriadoNacional } from '../lib/feriados'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
 import { credencialesNubeValidas } from '../lib/cloud-backup'
+import { registrarExportacion } from '../lib/metricas'
 import { DonadorDonacion, DonadorGracias } from '../components/DonadorDonacion'
 import { useOnboarding } from '../onboarding/OnboardingContext'
 import { db, shadowBackup, getSettings, clearPeriodoPrueba, type RegistroHoras } from '../db/database'
@@ -479,6 +480,7 @@ export function HorasTrabajoPage() {
       // descargar, avanza al paso final. Fuera del tour, habilita el donador.
       const o = onbRef.current
       if (!o.activo) {
+        registrarExportacion()   // cuenta sólo exportaciones reales (no el demo del tutorial)
         setExportHecho(true)
         try { localStorage.setItem(`planilla-export-hecho:${idKeyRef.current}`, '1') } catch { /* ignore */ }
         setBeggarForzar(true)     // el donador SIEMPRE aparece al exportar

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle } from 'lucide-react'
+import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet } from 'lucide-react'
 import { listarPadronNube, leerUsoFirebase, type PadronEntry, type UsoFirebase } from '../lib/cloud-backup'
 import { APP_VERSION } from '../version'
 
@@ -87,6 +87,7 @@ export function AdminPage() {
 
   const totalDon = filtrado.reduce((s, e) => s + (e.donaciones ?? 0), 0)
   const totalGra = filtrado.reduce((s, e) => s + (e.gracias ?? 0), 0)
+  const totalExp = filtrado.reduce((s, e) => s + (e.exportaciones ?? 0), 0)
   const activos = useMemo(() => filtrado.filter(e => Date.now() - e.updatedAt <= ACTIVO_MS).length, [filtrado])
   const desactualizados = useMemo(() => filtrado.filter(e => e.version && e.version !== APP_VERSION).length, [filtrado])
   const porLinea = useMemo(() => agrupar(filtrado, lineaDe), [filtrado])
@@ -132,6 +133,7 @@ export function AdminPage() {
         <div className="grid grid-cols-2 gap-2">
           <Stat icon={<Users size={15} />} valor={filtrado.length} label={filtrado.length === 1 ? 'usuario' : 'usuarios'} sub={`${activos} activos (7 d)`} color="text-white" />
           <Stat icon={<Activity size={15} />} valor={desactualizados} label="desactualizados" sub={`última: v${APP_VERSION}`} color="text-amber-300" />
+          <Stat icon={<FileSpreadsheet size={15} />} valor={totalExp} label="exportaciones" color="text-emerald-300" />
           <Stat icon={<Heart size={15} />} valor={totalDon} label="toques a donar" color="text-pink-300" />
           <Stat icon={<Sparkles size={15} />} valor={totalGra} label='veces "gracias"' color="text-amber-300" />
         </div>
@@ -199,6 +201,7 @@ export function AdminPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 text-[11px] tabular-nums">
+                      {(e.exportaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-emerald-300"><FileSpreadsheet size={11} /> {e.exportaciones}</span>}
                       {(e.donaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-pink-300"><Heart size={11} /> {e.donaciones}</span>}
                       {(e.gracias ?? 0) > 0 && <span className="flex items-center gap-0.5 text-amber-300"><Sparkles size={11} /> {e.gracias}</span>}
                     </div>

@@ -22,7 +22,7 @@ export interface Paso {
   /** Selector CSS del elemento a resaltar (o función que lo devuelve). Sin target → tarjeta centrada. */
   target?: string
   titulo?: string
-  texto: string
+  texto: ReactNode
   /** Si devuelve true, el paso se saltea (p.ej. no existe el campo de fecha de diagrama). */
   skipIf?: () => boolean
   /** Acción al entrar al paso (cambiar de pantalla ya lo hace `tab`). */
@@ -66,7 +66,10 @@ const PASOS: Paso[] = [
   },
   {
     id: 'cfg-nombre', tab: 'settings', target: '[data-tour="cfg-nombre"]',
-    titulo: 'Tu nombre', texto: 'Escribí tu nombre completo: se usa en la planilla, en el Excel que exportás y en el respaldo en la nube.',
+    titulo: 'Tu nombre y apellido',
+    texto: (
+      <>Escribí tu <strong className="font-bold text-white">nombre y apellido real</strong>: es el que va en la planilla y en el archivo Excel que exportás (y en el respaldo en la nube).</>
+    ),
     done: () => valDe('[data-tour="cfg-nombre"]').trim().length > 0,
     delayMs: 5000, debounce: true, // avanza recién tras 5 s sin tipear (no salta al primer carácter)
   },
@@ -253,7 +256,9 @@ const PASOS_NUBE: Paso[] = [
   {
     id: 'cfg-nombre', tab: 'settings', target: '[data-tour="cfg-nombre"]',
     titulo: 'Tu nombre y apellido',
-    texto: 'Colocá tu nombre y apellido: se usa en la planilla, en el Excel exportado y en el respaldo en la nube (es la llave del respaldo). Tocá Siguiente cuando esté.',
+    texto: (
+      <>Colocá tu <strong className="font-bold text-white">nombre y apellido real</strong>: es el que va en la planilla y en el archivo Excel que exportás (también es la llave del respaldo en la nube). Tocá Siguiente cuando esté.</>
+    ),
   },
   {
     id: 'cfg-respaldo', tab: 'settings', target: '[data-tour="cfg-respaldo"]',

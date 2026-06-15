@@ -193,6 +193,8 @@ export interface PadronEntry {
   donaciones?: number
   /** Veces que apareció el "¡Gracias!" tras donar (acumulado por dispositivo). */
   gracias?: number
+  /** Veces que exportó la planilla a Excel (acumulado por dispositivo). */
+  exportaciones?: number
 }
 
 /**
@@ -220,9 +222,9 @@ export async function subirBackupNube(usuario: string, codigo: string, linea?: s
   await setDoc(doc(getDb(), COLLECTION, docId), payload)
   // Padrón: doc gemelo SIN datos sensibles para el conteo de admin (best-effort, no debe romper el backup).
   try {
-    const { donaciones, gracias } = leerMetricas()
+    const { donaciones, gracias, exportaciones } = leerMetricas()
     const entry: PadronEntry = {
-      nombre: usuario.trim(), linea: lineaTxt, updatedAt: Date.now(), version: APP_VERSION, donaciones, gracias,
+      nombre: usuario.trim(), linea: lineaTxt, updatedAt: Date.now(), version: APP_VERSION, donaciones, gracias, exportaciones,
     }
     await setDoc(doc(getDb(), PADRON, docId), entry)
   } catch { /* el padrón es secundario: si falla, el respaldo igual quedó subido */ }
@@ -248,6 +250,7 @@ export async function listarPadronNube(): Promise<PadronEntry[]> {
       version: x.version != null ? String(x.version) : undefined,
       donaciones: typeof x.donaciones === 'number' ? x.donaciones : 0,
       gracias: typeof x.gracias === 'number' ? x.gracias : 0,
+      exportaciones: typeof x.exportaciones === 'number' ? x.exportaciones : 0,
     }
   })
 }
