@@ -5,8 +5,10 @@
 // puede ni calcular el id ni descifrar el contenido. Espeja el enfoque PBKDF2 de EquipTrack
 // (util/BackupPinManager.kt). La privacidad la completan las reglas Firestore (get sí, list/delete no).
 import { initializeApp, type FirebaseApp } from 'firebase/app'
-import { getFirestore, doc, getDoc, setDoc, type Firestore } from 'firebase/firestore/lite'
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, type Firestore } from 'firebase/firestore/lite'
 import { exportBackupJSON, importBackupJSON } from '../db/database'
+import { APP_VERSION } from '../version'
+import { leerMetricas } from './metricas'
 
 // Config web PÚBLICA (no es secreta: viaja en el bundle; la seguridad la dan las reglas Firestore).
 const firebaseConfig = {
@@ -19,6 +21,9 @@ const firebaseConfig = {
 }
 
 const COLLECTION = 'backups'
+// Padrón EN CLARO (sólo nombre + línea + última actividad, SIN datos sensibles ni cifrados): permite
+// al admin contar usuarios y líneas. Va aparte de `backups` para no exponer los blobs cifrados al listar.
+const PADRON = 'padron'
 const PBKDF2_ITERATIONS = 100_000
 
 // ── Tope diario de operaciones de nube POR DISPOSITIVO ──────────────────────────
@@ -110,15 +115,35 @@ interface BackupDoc {
   /** Nombre del usuario EN CLARO: sólo para identificar cada backup en la consola de Firebase.
    *  Los datos siguen cifrados y el código sigue siendo secreto. */
   usuario?: string
+  /** Línea de trabajo EN CLARO (etiqueta legible): para identificar el backup en la consola. */
+  linea?: string
 }
 
-/** Cifra todo el respaldo (exportBackupJSON) y lo sube a Firestore. Lanza si falla la red. */
-export async function subirBackupNube(usuario: string, codigo: string): Promise<void> {
+/** Entrada del padrón (datos NO sensibles): para el conteo de usuarios y líneas en la pantalla admin. */
+export interface PadronEntry {
+  nombre: string
+  linea: string
+  updatedAt: number
+  version?: string
+  /** Toques al botón de donación (acumulado por dispositivo). */
+  donaciones?: number
+  /** Veces que apareció el "¡Gracias!" tras donar (acumulado por dispositivo). */
+  gracias?: number
+}
+
+/**
+ * Cifra todo el respaldo (exportBackupJSON) y lo sube a Firestore. Lanza si falla la red.
+ * `linea` (etiqueta legible) se guarda EN CLARO junto al nombre para identificar el backup en la
+ * consola y para el padrón de admin; los datos del respaldo siguen cifrados y el código secreto.
+ */
+export async function subirBackupNube(usuario: string, codigo: string, linea?: string): Promise<void> {
   const json = await exportBackupJSON()
   const salt = crypto.getRandomValues(new Uint8Array(16))
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const key = await deriveKey(usuario, codigo, salt)
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(json))
+  const lineaTxt = linea?.trim() ?? ''
+  const docId = await computeDocId(usuario, codigo)
   const payload: BackupDoc = {
     iv: bufToB64(iv.buffer),
     salt: bufToB64(salt.buffer),
@@ -127,8 +152,38 @@ export async function subirBackupNube(usuario: string, codigo: string): Promise<
     schema: 1,
     usuario: usuario.trim(), // en claro, sólo para identificar el backup en la consola
   }
-  await setDoc(doc(getDb(), COLLECTION, await computeDocId(usuario, codigo)), payload)
+  if (lineaTxt) payload.linea = lineaTxt // Firestore no acepta undefined: sólo se incluye si hay valor
+  await setDoc(doc(getDb(), COLLECTION, docId), payload)
+  // Padrón: doc gemelo SIN datos sensibles para el conteo de admin (best-effort, no debe romper el backup).
+  try {
+    const { donaciones, gracias } = leerMetricas()
+    const entry: PadronEntry = {
+      nombre: usuario.trim(), linea: lineaTxt, updatedAt: Date.now(), version: APP_VERSION, donaciones, gracias,
+    }
+    await setDoc(doc(getDb(), PADRON, docId), entry)
+  } catch { /* el padrón es secundario: si falla, el respaldo igual quedó subido */ }
   registrarOperacionNube()
+}
+
+/**
+ * Lista el padrón (nombre + línea + última actividad de cada usuario) para la pantalla de admin.
+ * Requiere reglas Firestore que permitan list/read en la colección `padron`. Lanza ante error de red
+ * o permisos. Cuenta como una operación de nube (anti-abuso de cuota).
+ */
+export async function listarPadronNube(): Promise<PadronEntry[]> {
+  const snap = await getDocs(collection(getDb(), PADRON))
+  registrarOperacionNube()
+  return snap.docs.map(d => {
+    const x = d.data() as Partial<PadronEntry>
+    return {
+      nombre: String(x.nombre ?? '').trim(),
+      linea: String(x.linea ?? '').trim(),
+      updatedAt: typeof x.updatedAt === 'number' ? x.updatedAt : 0,
+      version: x.version != null ? String(x.version) : undefined,
+      donaciones: typeof x.donaciones === 'number' ? x.donaciones : 0,
+      gracias: typeof x.gracias === 'number' ? x.gracias : 0,
+    }
+  })
 }
 
 export type ResultadoRestore = 'ok' | 'no-existe' | 'clave-incorrecta'

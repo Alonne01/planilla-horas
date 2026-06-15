@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Reglas de Firestore del proyecto `planillas-backups-986dd`.
+// NO se despliegan solas: copialas/pegalas en Firebase → Firestore → Reglas → Publicar.
+// (Este archivo es sólo la copia versionada de referencia.)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Respaldos CIFRADOS ──────────────────────────────────────────────────
+    // Contenido cifrado con AES-GCM; el id del doc es SHA-256("usuario:codigo"), así que sin el
+    // código no se puede ni calcular el id ni descifrar. get sí, list/delete no; create/update
+    // exige los campos del backup y topea el tamaño en ~900 KB. (hasAll permite extras: usuario, linea, schema.)
+    match /backups/{id} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if
+        request.resource.data.keys().hasAll(['iv','salt','data','updatedAt'])
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 900000;
+      allow delete: if false;
+    }
+
+    // ── Padrón EN CLARO (datos NO sensibles) ────────────────────────────────
+    // Sólo nombre + línea + métricas (toques a donar / "gracias") + versión + fecha. SIN horas,
+    // SIN salario, SIN nada cifrado. Es legible y LISTABLE para el conteo de la pantalla de admin.
+    // hasOnly limita a las claves esperadas (que no se use como storage público) y topea los strings.
+    match /padron/{id} {
+      allow read: if true;
+      allow create, update: if
+        request.resource.data.keys().hasOnly(['nombre','linea','updatedAt','version','donaciones','gracias'])
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() < 200
+        && request.resource.data.linea is string && request.resource.data.linea.size() < 200;
+      allow delete: if false;
+    }
+  }
+}

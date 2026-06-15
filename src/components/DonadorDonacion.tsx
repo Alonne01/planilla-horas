@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { Pointer, Heart } from 'lucide-react'
 import { MERCADOPAGO_DONACION_URL } from '../lib/calculo-salarial'
+import { registrarTapDonacion, registrarGracias } from '../lib/metricas'
 import donadorSheet from '../assets/donador.png'
 
 // Frases del personaje (se elige una al azar cada vez que aparece).
@@ -101,8 +102,9 @@ export function DonadorDonacion({ idKey, forzar }: { idKey: string; forzar?: boo
       suppressClickRef.current = false
       return
     }
-    // Tap real → abre MercadoPago. Marco la hora para detectar "volvió de donar".
+    // Tap real → abre MercadoPago. Marco la hora para detectar "volvió de donar" y cuento el toque.
     try { localStorage.setItem('planilla-donacion-ts', String(Date.now())) } catch { /* ignore */ }
+    registrarTapDonacion()
   }
 
   const spriteBase: CSSProperties = {
@@ -209,6 +211,8 @@ export function DonadorGracias({ onDone }: { onDone?: () => void }) {
   const [leaving, setLeaving] = useState(false)
   // kaomoji al azar en cada aparición
   const [kaomoji] = useState(() => KAOMOJIS_GRACIAS[Math.floor(Math.random() * KAOMOJIS_GRACIAS.length)])
+  // Cuenta esta aparición del "¡Gracias!" una sola vez (al montar).
+  useEffect(() => { registrarGracias() }, [])
   useEffect(() => {
     const t1 = setTimeout(() => setLeaving(true), 5_000)
     const t2 = setTimeout(() => onDone?.(), 5_600)

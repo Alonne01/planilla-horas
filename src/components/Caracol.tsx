@@ -9,16 +9,17 @@ const FRAMES = 2
  * borde superior, sólo cuando estás en Configuración y scrolleaste hasta el fondo. Va a `z` por
  * debajo del nav (que es opaco) para que su parte de abajo quede tapada → parece salir de atrás.
  */
-export function Caracol({ navH, onSecret }: { navH: number; onSecret?: () => void }) {
+export function Caracol({ navH, onSecret, onAdminSecret }: { navH: number; onSecret?: () => void; onAdminSecret?: () => void }) {
   const [visible, setVisible] = useState(false)
 
-  // Easter egg secreto: 15 toques SEGUIDOS sobre el caracol (sin ningún feedback) disparan onSecret.
-  // El contador se reinicia si pasan más de 2 s entre toques.
+  // Easter eggs secretos sobre el caracol (sin ningún feedback): 3 toques → onAdminSecret (pantalla
+  // de admin), 15 toques → onSecret (salario). El contador se reinicia si pasan más de 2 s entre toques.
   const taps = useRef(0)
   const tapReset = useRef<number | undefined>(undefined)
   function onTap() {
     if (tapReset.current) clearTimeout(tapReset.current)
     taps.current += 1
+    if (taps.current === 3) onAdminSecret?.()  // 3 toques: intento de desbloqueo de admin
     if (taps.current >= 15) {
       taps.current = 0
       onSecret?.()

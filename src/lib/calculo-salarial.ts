@@ -72,6 +72,15 @@ export function isSalaryUser(nombre: string | undefined | null): boolean {
   return SALARY_WHITELIST.includes(normalizar(nombre))
 }
 
+// ─── Gate de la pantalla de admin (padrón) ───────────────────────────────────
+// Identidad sentinela para desbloquear SÓLO la pantalla de admin (no el salario): nombre
+// "Nicolas Vazquez" + código "000000". Combinado con el gesto de 3 toques al caracol.
+const ADMIN_NOMBRE = normalizar('Nicolas Vazquez')
+const ADMIN_CODIGO = '000000'
+export function esAdminNube(nombre: string | undefined | null, codigo: string | undefined | null): boolean {
+  return normalizar(nombre ?? '') === ADMIN_NOMBRE && (codigo ?? '').trim() === ADMIN_CODIGO
+}
+
 // ─── Gate de donación (MercadoPago) ──────────────────────────────────────────
 // Mismo mecanismo de nombre que el gate salarial: el botón de donar aparece SÓLO
 // para estos nombres (no importan acentos/mayúsculas/espacios: se normaliza).

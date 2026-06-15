@@ -78,7 +78,7 @@ const PASOS: Paso[] = [
   },
   {
     id: 'cfg-linea', tab: 'settings', target: '[data-tour="cfg-linea"]',
-    titulo: 'Línea de trabajo', texto: 'Tocá tu línea de trabajo: afecta cómo se cuentan las horas.',
+    titulo: 'Línea de trabajo', texto: 'Tocá tu línea (Surface, SBDP, Mantenimiento, Wireline…). Queda en tu respaldo; sólo SBDP cambia cómo se cuentan las horas.',
     avanzaAlTocar: true,
   },
   {

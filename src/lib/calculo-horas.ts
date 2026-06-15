@@ -22,13 +22,25 @@ const MAX_HORAS_DIA = 16
  *    al 50%, SIN horas normales, sin importar cuántas horas se trabajaron (6, 8, 12 o
  *    16 hs → siempre 12 h al 50%).
  */
-export type LineaTrabajo = 'SURFACE_WELL_TESTING' | 'SBDP' | 'FRACTURA'
+export type LineaTrabajo =
+  | 'SURFACE_WELL_TESTING' | 'SBDP' | 'FRACTURA'
+  | 'MANTENIMIENTO' | 'BASE' | 'PH' | 'WIRELINE' | 'OTRO'
 
 export const LINEAS_TRABAJO: { key: LineaTrabajo; label: string; desc: string }[] = [
   { key: 'SURFACE_WELL_TESTING', label: 'Surface Well Testing', desc: 'Conteo estándar de horas.' },
   { key: 'SBDP', label: 'SBDP', desc: 'En Campo cuenta siempre 12 h al 50% (sin horas normales).' },
   { key: 'FRACTURA', label: 'Fractura', desc: 'Conteo estándar de horas.' },
+  { key: 'MANTENIMIENTO', label: 'Mantenimiento', desc: 'Conteo estándar de horas.' },
+  { key: 'BASE', label: 'Base', desc: 'Conteo estándar de horas.' },
+  { key: 'PH', label: 'PH', desc: 'Conteo estándar de horas.' },
+  { key: 'WIRELINE', label: 'Wireline', desc: 'Conteo estándar de horas.' },
+  { key: 'OTRO', label: 'Otro', desc: 'Conteo estándar de horas.' },
 ]
+
+/** Etiqueta legible de una línea (para el respaldo en la nube y la pantalla de admin). */
+export function lineaLabel(key: LineaTrabajo): string {
+  return LINEAS_TRABAJO.find(l => l.key === key)?.label ?? key
+}
 
 /** Horas al 50% que cuenta un día de CAMPO en SBDP (fijas, sin horas normales). */
 const SBDP_CAMPO_HORAS_50 = 12

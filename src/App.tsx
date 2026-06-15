@@ -4,7 +4,8 @@ import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
-import { isSalaryUser } from "./lib/calculo-salarial"
+import { isSalaryUser, esAdminNube } from "./lib/calculo-salarial"
+import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
@@ -46,6 +47,9 @@ const EMPTY_DB_AUTOHIDE_MS = 8000
 // Easter egg: la pestaña "Sueldo" se desbloquea con 15 toques al caracol (si el nombre es la
 // palabra clave) y queda persistida acá — así no se re-chequea el nombre en cada cambio de pestaña.
 const SALARY_UNLOCK_KEY = "planilla-salary-unlocked"
+// Easter egg de la pantalla de ADMIN (padrón), independiente del salario: 3 toques al caracol con
+// nombre "Nicolas Vazquez" + código "000000". Queda persistido para no repetir el gesto.
+const ADMIN_UNLOCK_KEY = "planilla-admin-unlocked"
 
 type Tab = "horas" | "analytics" | "settings" | "salary"
 const TAB_ORDER: Tab[] = ["horas", "analytics", "settings", "salary"]
@@ -79,6 +83,10 @@ function AppContent() {
   // re-chequea en cada cambio de pestaña: ese getSettings() async hacía parpadear el nav inferior.
   const [showSalary, setShowSalary] = useState(() => {
     try { return localStorage.getItem(SALARY_UNLOCK_KEY) === "1" } catch { return false }
+  })
+  // Pantalla de admin (padrón) desbloqueada: persistida, independiente del salario.
+  const [showAdmin, setShowAdmin] = useState(() => {
+    try { return localStorage.getItem(ADMIN_UNLOCK_KEY) === "1" } catch { return false }
   })
   const [recovered, setRecovered] = useState(false)
   const [persistDenied, setPersistDenied] = useState(false)
@@ -183,7 +191,7 @@ function AppContent() {
           if (cloudOn && msSinceCloudBackup() > CLOUD_BACKUP_INTERVAL_MS && quedanOperacionesNube()) {
             // Respaldo automático y silencioso a la nube (cada >=3 días al abrir la app)
             try {
-              await subirBackupNube(s.nombreUsuario, s.backupCodigo)
+              await subirBackupNube(s.nombreUsuario, s.backupCodigo, lineaLabel(s.lineaTrabajo))
               markCloudBackupDone()
               setCloudBackupDone(true)
             } catch { /* sin conexión: reintenta en el próximo arranque */ }
@@ -248,6 +256,18 @@ function AppContent() {
       if (isSalaryUser(s.nombreUsuario)) {
         try { localStorage.setItem(SALARY_UNLOCK_KEY, "1") } catch { /* ignore */ }
         setShowSalary(true)
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Easter egg del caracol (3 toques): desbloquea SÓLO la pantalla de admin si el nombre es
+  // "Nicolas Vazquez" y el código es "000000". No toca el salario. Queda persistido.
+  async function desbloquearAdminSecreto() {
+    try {
+      const s = await getSettings()
+      if (esAdminNube(s.nombreUsuario, s.backupCodigo)) {
+        try { localStorage.setItem(ADMIN_UNLOCK_KEY, "1") } catch { /* ignore */ }
+        setShowAdmin(true)
       }
     } catch { /* ignore */ }
   }
@@ -420,7 +440,7 @@ function AppContent() {
 
         {tab === "horas" && <HorasTrabajoPage />}
         {tab === "analytics" && <AnalyticsPage />}
-        {tab === "settings" && <SettingsPage />}
+        {tab === "settings" && <SettingsPage adminUnlocked={showAdmin} />}
         {tab === "salary" && showSalary && <ProyeccionSalarialPage />}
       </div>
 
@@ -436,7 +456,7 @@ function AppContent() {
       </nav>
 
       {/* Easter egg: el caracol sólo en Configuración, asomando al scrollear hasta el fondo. */}
-      {tab === "settings" && <Caracol navH={navH} onSecret={desbloquearSalarioSecreto} />}
+      {tab === "settings" && <Caracol navH={navH} onSecret={desbloquearSalarioSecreto} onAdminSecret={desbloquearAdminSecreto} />}
 
       <GuideTooltip />
       {cloudPromptOpen && <CloudSetupModal onConfigurar={handleCloudConfigurar} onMasTarde={handleCloudMasTarde} />}
