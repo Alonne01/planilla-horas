@@ -61,16 +61,39 @@ export function GuideTooltip() {
     let avanzar = 0
 
     if (paso.debounce) {
-      // Avanza tras `delay` ms SIN input; cada `input` reinicia la cuenta. El poll arma la cuenta
-      // cuando el campo YA está completo sin tipear (p.ej. al reiniciar el tour con el nombre cargado).
-      const rearmar = () => {
-        clearTimeout(avanzar); avanzar = 0
-        if (done()) avanzar = window.setTimeout(() => next(), delay)
+      // Avanza tras `delay` ms SIN actividad. Reinicia con cada `input`/`change` (texto, select) y,
+      // mientras se ARRASTRA un control (drum de la hora), NO cuenta con el dedo apretado: recién arranca
+      // al soltar. Así no avanza a mitad de mover la hora, aunque se mueva despacio. El poll arma la
+      // cuenta si el campo ya está completo sin tipear (p.ej. al reiniciar el tour con el nombre cargado).
+      const sel = paso.target
+      const dentro = (t: EventTarget | null) => {
+        if (!sel) return true
+        const el = document.querySelector(sel) as HTMLElement | null
+        return !!(el && t instanceof Node && el.contains(t))
       }
-      document.addEventListener('input', rearmar, true)
-      const poll = window.setInterval(() => { if (!avanzar && done()) rearmar() }, 350)
-      rearmar() // por si el campo ya venía completo al entrar al paso
-      return () => { document.removeEventListener('input', rearmar, true); clearInterval(poll); clearTimeout(avanzar) }
+      let interactuando = false
+      const armar = () => {
+        clearTimeout(avanzar); avanzar = 0
+        if (!interactuando && done()) avanzar = window.setTimeout(() => next(), delay)
+      }
+      const onInput = (e: Event) => { if (dentro(e.target)) armar() }
+      const onDown = (e: Event) => { if (dentro(e.target)) { interactuando = true; clearTimeout(avanzar); avanzar = 0 } }
+      const onUp = () => { if (interactuando) { interactuando = false; armar() } }
+      document.addEventListener('input', onInput, true)
+      document.addEventListener('change', onInput, true)
+      document.addEventListener('pointerdown', onDown, true)
+      document.addEventListener('pointerup', onUp, true)
+      document.addEventListener('pointercancel', onUp, true)
+      const poll = window.setInterval(() => { if (!avanzar && !interactuando && done()) armar() }, 350)
+      armar() // por si el campo ya venía completo al entrar al paso
+      return () => {
+        document.removeEventListener('input', onInput, true)
+        document.removeEventListener('change', onInput, true)
+        document.removeEventListener('pointerdown', onDown, true)
+        document.removeEventListener('pointerup', onUp, true)
+        document.removeEventListener('pointercancel', onUp, true)
+        clearInterval(poll); clearTimeout(avanzar)
+      }
     }
 
     const t = setInterval(() => {
