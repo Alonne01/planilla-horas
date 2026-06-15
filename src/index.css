@@ -108,6 +108,9 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
 /* Entrada suave del contenido del gate */
 @keyframes gate-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 
+/* Barra de cuenta regresiva del tutorial (se llena hasta avanzar al siguiente paso) */
+@keyframes tour-countdown { from { width: 0%; } to { width: 100%; } }
+
 /* ─── Donador (personaje que pide una donación; sprite de 3 frames a 3 fps) ─── */
 /* El sheet ocupa 300% del ancho (3 cuadros). Con steps(3) la posición salta
    0% → 50% → 100% (cada cuadro centrado); el 150% del final nunca se ve (loopea). */

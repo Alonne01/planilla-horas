@@ -18,6 +18,8 @@ export function GuideTooltip() {
   const cardRef = useRef<HTMLDivElement>(null)
   const [cardH, setCardH] = useState(180)
   const [, setVvTick] = useState(0)
+  // Cuenta regresiva visible (barra) hasta avanzar: { dur, t0 } o null. La setean los efectos de debounce.
+  const [cuenta, setCuenta] = useState<{ dur: number; t0: number } | null>(null)
 
   // Sigue al target de forma CONTINUA (rAF): mide cada frame y actualiza el hueco sólo cuando cambia.
   // Así el spotlight queda SIEMPRE pegado al elemento aunque el diálogo entre animado (slide-in),
@@ -74,10 +76,11 @@ export function GuideTooltip() {
       let interactuando = false
       const armar = () => {
         clearTimeout(avanzar); avanzar = 0
-        if (!interactuando && done()) avanzar = window.setTimeout(() => next(), delay)
+        if (!interactuando && done()) { avanzar = window.setTimeout(() => next(), delay); setCuenta({ dur: delay, t0: Date.now() }) }
+        else setCuenta(null)
       }
       const onInput = (e: Event) => { if (dentro(e.target)) armar() }
-      const onDown = (e: Event) => { if (dentro(e.target)) { interactuando = true; clearTimeout(avanzar); avanzar = 0 } }
+      const onDown = (e: Event) => { if (dentro(e.target)) { interactuando = true; clearTimeout(avanzar); avanzar = 0; setCuenta(null) } }
       const onUp = () => { if (interactuando) { interactuando = false; armar() } }
       document.addEventListener('input', onInput, true)
       document.addEventListener('change', onInput, true)
@@ -117,7 +120,7 @@ export function GuideTooltip() {
       const el = document.querySelector(sel) as HTMLElement | null
       return !!(el && t instanceof Node && el.contains(t))
     }
-    const programar = () => { clearTimeout(avanzar); avanzar = window.setTimeout(() => next(), delay) }
+    const programar = () => { clearTimeout(avanzar); avanzar = window.setTimeout(() => next(), delay); if (debounce) setCuenta({ dur: delay, t0: Date.now() }) }
     function onDown(e: PointerEvent) {
       if (Date.now() - activadoEn < 400) return
       if (dentro(e.target)) programar()
@@ -145,7 +148,7 @@ export function GuideTooltip() {
   }, [activo, paso, next])
 
   // Al cambiar de paso, la tarjeta vuelve a su posición por defecto.
-  useEffect(() => { setDrag({ x: 0, y: 0 }) }, [paso?.id])
+  useEffect(() => { setDrag({ x: 0, y: 0 }); setCuenta(null) }, [paso?.id])
 
   // Medir el alto real de la tarjeta (cambia con el texto de cada paso) para posicionarla sin tapar.
   useEffect(() => { if (cardRef.current) setCardH(cardRef.current.offsetHeight) }, [paso?.id, paso?.texto])
@@ -242,7 +245,7 @@ export function GuideTooltip() {
       <div
         key={paso.id}
         ref={cardRef}
-        className="pointer-events-auto fixed inset-x-3 mx-auto max-w-sm rounded-2xl border border-sky-500/30 bg-slate-800/85 p-3 pt-4 shadow-2xl shadow-black/50 backdrop-blur-sm animate-[gate-rise_240ms_ease_both] transition-[top] duration-200 ease-out"
+        className="pointer-events-auto fixed inset-x-3 mx-auto max-w-sm rounded-2xl overflow-hidden border border-sky-500/30 bg-slate-800/85 p-3 pt-4 shadow-2xl shadow-black/50 backdrop-blur-sm animate-[gate-rise_240ms_ease_both] transition-[top] duration-200 ease-out"
         style={{
           top: cardTop,
           ...(drag.x || drag.y ? { transform: `translate(${drag.x}px, ${drag.y}px)` } : null),
@@ -278,6 +281,13 @@ export function GuideTooltip() {
             </button>
           )}
         </div>
+
+        {/* Timer: barra de cuenta regresiva hasta avanzar (se reinicia con cada cambio/movimiento). */}
+        {cuenta && (
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-white/10">
+            <div key={cuenta.t0} className="h-full bg-sky-400/80" style={{ animation: `tour-countdown ${cuenta.dur}ms linear forwards` }} />
+          </div>
+        )}
       </div>
     </div>
   )
