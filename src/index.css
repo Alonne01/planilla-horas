@@ -41,6 +41,15 @@ input, select, textarea {
 html.vt-back ::view-transition-old(page-content) { animation: 180ms ease both vt-slide-left-out; }
 html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt-slide-left-in; }
 
+/* El nav inferior es fijo y persistente: se le da su PROPIO nombre de transición para que NO quede
+   atrapado en el snapshot de `root`. Los elementos `position: fixed` parpadean/saltan durante la
+   view-transition (más aún por el scrollTo(0,0) al cambiar de pestaña, que descalza el snapshot).
+   Aislado y sin animación, el nav queda quieto en su lugar y sólo cambia el estado activo, limpio. */
+.vt-bottom-nav { view-transition-name: bottom-nav; }
+::view-transition-group(bottom-nav),
+::view-transition-old(bottom-nav),
+::view-transition-new(bottom-nav) { animation: none; }
+
 /* ─── Dialog (RegistroDialog) ─── */
 @keyframes dialog-slide-in  { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: none; } }
 @keyframes dialog-slide-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(100%); } }
