@@ -33,5 +33,17 @@ service cloud.firestore {
         && request.resource.data.linea is string && request.resource.data.linea.size() < 200;
       allow delete: if false;
     }
+
+    // ── Uso GLOBAL de Firebase (contador del día, hora del Pacífico) ─────────
+    // Estima el consumo de la cuota gratis sumando lecturas/escrituras de todos los dispositivos.
+    // Sólo campos numéricos; legible para el medidor de admin; se incrementa con FieldValue.increment.
+    match /uso/{id} {
+      allow read: if true;
+      allow create, update: if
+        request.resource.data.keys().hasOnly(['reads','writes','updatedAt'])
+        && request.resource.data.reads is number
+        && request.resource.data.writes is number;
+      allow delete: if false;
+    }
   }
 }

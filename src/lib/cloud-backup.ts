@@ -5,7 +5,7 @@
 // puede ni calcular el id ni descifrar el contenido. Espeja el enfoque PBKDF2 de EquipTrack
 // (util/BackupPinManager.kt). La privacidad la completan las reglas Firestore (get sí, list/delete no).
 import { initializeApp, type FirebaseApp } from 'firebase/app'
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, type Firestore } from 'firebase/firestore/lite'
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, increment, type Firestore } from 'firebase/firestore/lite'
 import { exportBackupJSON, importBackupJSON } from '../db/database'
 import { APP_VERSION } from '../version'
 import { leerMetricas } from './metricas'
@@ -61,14 +61,57 @@ export function quedanOperacionesNube(): boolean {
   return esAdminDispositivo() || opsHoy() < MAX_OPS_DIA
 }
 
-/** Uso de operaciones de nube de HOY en este dispositivo, para el medidor de admin (estilo "usage").
- *  El tope se reinicia a la medianoche local. */
-export function usoNubeHoy(): { usadas: number; tope: number; sinTope: boolean; resetEnMs: number } {
+// ── Uso GLOBAL de Firebase (todos los usuarios) ─────────────────────────────────
+// La cuota gratis (Spark) no es consultable desde el cliente, así que la estimamos con un contador
+// compartido en Firestore: colección `uso`, un doc por día EN HORA DEL PACÍFICO (cuando Firebase
+// resetea la cuota). Cada operación suma sus lecturas/escrituras; el admin lo lee para el medidor.
+const USO = 'uso'
+const QUOTA_READS = 50_000   // lecturas/día (plan Spark)
+const QUOTA_WRITES = 20_000  // escrituras/día (plan Spark)
+
+/** Fecha (zona Pacífico, donde resetea la cuota de Firebase) + segundos transcurridos de ese día. */
+function usoPacifico(): { key: string; segDelDia: number } {
   const now = new Date()
-  const manana = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime()
-  return { usadas: opsHoy(), tope: MAX_OPS_DIA, sinTope: esAdminDispositivo(), resetEnMs: manana - now.getTime() }
+  const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  const t = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(now)
+  const get = (ty: string) => parseInt(t.find(p => p.type === ty)?.value ?? '0', 10)
+  return { key, segDelDia: get('hour') * 3600 + get('minute') * 60 + get('second') }
 }
-/** Cuenta una operación de nube (lectura o escritura) contra el tope diario. */
+
+/** Suma lecturas/escrituras al contador global del día (best-effort, no debe romper la operación). */
+function contarUso(reads: number, writes: number): void {
+  if (reads === 0 && writes === 0) return
+  // El propio incremento es 1 escritura más → la sumo para no subestimar la cuota de writes.
+  setDoc(
+    doc(getDb(), USO, usoPacifico().key),
+    { reads: increment(reads), writes: increment(writes + 1), updatedAt: Date.now() },
+    { merge: true },
+  ).catch(() => { /* contador secundario: si falla (reglas/red) no afecta la operación */ })
+}
+
+export interface UsoFirebase {
+  reads: number
+  writes: number
+  quotaReads: number
+  quotaWrites: number
+  resetEnMs: number
+}
+/** Lee el contador GLOBAL de uso de Firebase de hoy (Pacífico) para el medidor de admin. */
+export async function leerUsoFirebase(): Promise<UsoFirebase> {
+  const { key, segDelDia } = usoPacifico()
+  const snap = await getDoc(doc(getDb(), USO, key))
+  contarUso(1, 0) // esta lectura también cuenta
+  const d = (snap.exists() ? snap.data() : {}) as { reads?: unknown; writes?: unknown }
+  return {
+    reads: typeof d.reads === 'number' ? d.reads : 0,
+    writes: typeof d.writes === 'number' ? d.writes : 0,
+    quotaReads: QUOTA_READS,
+    quotaWrites: QUOTA_WRITES,
+    resetEnMs: (86_400 - segDelDia) * 1000,
+  }
+}
+
+/** Cuenta una operación de nube (lectura o escritura) contra el tope diario POR DISPOSITIVO. */
 function registrarOperacionNube(): void {
   try { localStorage.setItem(OPS_KEY, `${hoyKey()}|${opsHoy() + 1}`) } catch { /* ignore */ }
 }
@@ -184,6 +227,7 @@ export async function subirBackupNube(usuario: string, codigo: string, linea?: s
     await setDoc(doc(getDb(), PADRON, docId), entry)
   } catch { /* el padrón es secundario: si falla, el respaldo igual quedó subido */ }
   registrarOperacionNube()
+  contarUso(0, 2) // backup + padrón (escrituras)
 }
 
 /**
@@ -194,6 +238,7 @@ export async function subirBackupNube(usuario: string, codigo: string, linea?: s
 export async function listarPadronNube(): Promise<PadronEntry[]> {
   const snap = await getDocs(collection(getDb(), PADRON))
   registrarOperacionNube()
+  contarUso(Math.max(1, snap.docs.length), 0) // 1 lectura por doc (mín. 1)
   return snap.docs.map(d => {
     const x = d.data() as Partial<PadronEntry>
     return {
@@ -217,6 +262,7 @@ export type ResultadoRestore = 'ok' | 'no-existe' | 'clave-incorrecta'
 export async function restaurarBackupNube(usuario: string, codigo: string): Promise<ResultadoRestore> {
   const snap = await getDoc(doc(getDb(), COLLECTION, await computeDocId(usuario, codigo)))
   registrarOperacionNube()
+  contarUso(1, 0)
   if (!snap.exists()) return 'no-existe'
   const d = snap.data() as BackupDoc
   try {
@@ -233,6 +279,7 @@ export async function restaurarBackupNube(usuario: string, codigo: string): Prom
 export async function existeBackupNube(usuario: string, codigo: string): Promise<boolean> {
   const snap = await getDoc(doc(getDb(), COLLECTION, await computeDocId(usuario, codigo)))
   registrarOperacionNube()
+  contarUso(1, 0)
   return snap.exists()
 }
 
@@ -240,5 +287,6 @@ export async function existeBackupNube(usuario: string, codigo: string): Promise
 export async function fechaBackupNube(usuario: string, codigo: string): Promise<number | null> {
   const snap = await getDoc(doc(getDb(), COLLECTION, await computeDocId(usuario, codigo)))
   registrarOperacionNube()
+  contarUso(1, 0)
   return snap.exists() ? ((snap.data() as BackupDoc).updatedAt ?? null) : null
 }

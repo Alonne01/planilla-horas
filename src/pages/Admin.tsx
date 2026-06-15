@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle } from 'lucide-react'
-import { listarPadronNube, usoNubeHoy, type PadronEntry } from '../lib/cloud-backup'
+import { listarPadronNube, leerUsoFirebase, type PadronEntry, type UsoFirebase } from '../lib/cloud-backup'
 import { APP_VERSION } from '../version'
 
 const ACTIVO_MS = 7 * 24 * 60 * 60 * 1000 // "activo" = respaldó en los últimos 7 días
@@ -50,18 +50,18 @@ export function AdminPage() {
   const [lineasSel, setLineasSel] = useState<Set<string>>(new Set())
   const [versionesSel, setVersionesSel] = useState<Set<string>>(new Set())
   const [soloActivos, setSoloActivos] = useState(false)
-  // Medidor de uso de nube (se refresca junto con el padrón)
-  const [uso, setUso] = useState(() => usoNubeHoy())
+  // Medidor de uso GLOBAL de Firebase (todos los usuarios), se refresca junto con el padrón
+  const [uso, setUso] = useState<UsoFirebase | null>(null)
 
   async function cargar() {
     setBusy(true); setErr(null)
     try {
-      const list = await listarPadronNube()
+      const [list, u] = await Promise.all([listarPadronNube(), leerUsoFirebase()])
       list.sort((a, b) => b.updatedAt - a.updatedAt)
       setPadron(list)
-      setUso(usoNubeHoy())
+      setUso(u)
     } catch {
-      setErr('No se pudo leer el padrón. ¿Publicaste las reglas de Firestore para "padron"?')
+      setErr('No se pudo leer el padrón. ¿Publicaste las reglas de Firestore para "padron" y "uso"?')
     } finally {
       setBusy(false)
     }
@@ -95,8 +95,6 @@ export function AdminPage() {
   const hayFiltro = !!q.trim() || lineasSel.size > 0 || versionesSel.size > 0 || soloActivos
   function limpiar() { setQ(''); setLineasSel(new Set()); setVersionesSel(new Set()); setSoloActivos(false) }
 
-  const usoPct = uso.tope > 0 ? Math.min(100, Math.round((uso.usadas / uso.tope) * 100)) : 0
-
   return (
     <div className="min-h-screen bg-slate-900 pb-12">
       <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-4 flex items-center justify-between">
@@ -117,24 +115,18 @@ export function AdminPage() {
           </div>
         )}
 
-        {/* Medidor de consultas de nube de hoy (estilo "usage") */}
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-white flex items-center gap-1.5"><Cloud size={15} /> Consultas de nube hoy</span>
-            <span className="text-[11px] text-slate-400">se reinicia en {fmtReset(uso.resetEnMs)}</span>
+        {/* Medidor de uso GLOBAL de Firebase (todos los usuarios) vs cuota del plan gratis */}
+        {uso && (
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-white flex items-center gap-1.5"><Cloud size={15} /> Uso de Firebase hoy (todos)</span>
+              <span className="text-[11px] text-slate-400">reinicia en {fmtReset(uso.resetEnMs)}</span>
+            </div>
+            <UsoBar label="Lecturas" usado={uso.reads} tope={uso.quotaReads} />
+            <UsoBar label="Escrituras" usado={uso.writes} tope={uso.quotaWrites} />
+            <p className="text-[10px] text-slate-500">Estimado: suma las operaciones de todos los dispositivos. La cuota gratis reinicia a la medianoche del Pacífico.</p>
           </div>
-          <div className="h-2.5 rounded-full bg-slate-700 overflow-hidden">
-            <div
-              className="h-full rounded-full transition-[width] duration-700"
-              style={{ width: `${uso.sinTope ? 100 : usoPct}%`, background: uso.sinTope ? '#34d399' : usoPct > 80 ? '#fb7185' : '#38bdf8' }}
-            />
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1.5">
-            {uso.sinTope
-              ? <>Sin tope (admin) · usadas hoy: <span className="text-slate-200 font-semibold tabular-nums">{uso.usadas}</span></>
-              : <>Te quedan <span className="text-slate-200 font-semibold tabular-nums">{Math.max(0, uso.tope - uso.usadas)}</span> de {uso.tope} · usadas {uso.usadas}</>}
-          </p>
-        </div>
+        )}
 
         {/* Tarjetas de métricas (reflejan el filtro) */}
         <div className="grid grid-cols-2 gap-2">
@@ -227,6 +219,23 @@ function Stat({ icon, valor, label, sub, color }: { icon: React.ReactNode; valor
       <div className="flex items-center gap-1.5 text-slate-500">{icon}<span className="text-[10px] uppercase tracking-wide">{label}</span></div>
       <p className={`text-2xl font-bold tabular-nums ${color}`}>{valor}</p>
       {sub && <p className="text-[10px] text-slate-500">{sub}</p>}
+    </div>
+  )
+}
+
+function UsoBar({ label, usado, tope }: { label: string; usado: number; tope: number }) {
+  const pct = Math.min(100, Math.round((usado / tope) * 100))
+  const quedan = Math.max(0, tope - usado)
+  const color = pct >= 90 ? '#fb7185' : pct >= 70 ? '#fbbf24' : '#38bdf8'
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[11px] mb-1">
+        <span className="text-slate-300">{label}</span>
+        <span className="text-slate-400 tabular-nums">quedan {quedan.toLocaleString('es-AR')} de {tope.toLocaleString('es-AR')}</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-slate-700 overflow-hidden">
+        <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${pct}%`, background: color }} />
+      </div>
     </div>
   )
 }
