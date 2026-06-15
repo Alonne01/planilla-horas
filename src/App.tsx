@@ -95,15 +95,18 @@ function AppContent() {
   useEffect(() => {
     const updateSW = registerSW({
       onNeedRefresh() {
+        console.info('[Planilla] onNeedRefresh: actualización lista → toast')
         setUpdateToast(true)
         window.setTimeout(() => { updateSW(true) }, 3000)
       },
-      onRegisteredSW(_swUrl, reg) {
+      onRegisteredSW(swUrl, reg) {
+        console.info('[Planilla] SW registrado:', swUrl, 'reg?', !!reg)
         if (!reg) return
         const check = () => { reg.update().catch(() => {}) }
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check() })
         window.setInterval(check, 30 * 60 * 1000)
       },
+      onRegisterError(err) { console.error('[Planilla] SW registerError:', err) },
     })
   }, [])
   useEffect(() => {

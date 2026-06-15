@@ -9,6 +9,9 @@ import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasi
 import { LINEAS_TRABAJO, type LineaTrabajo } from '../lib/calculo-horas'
 import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube } from '../lib/cloud-backup'
 import { useOnboarding } from '../onboarding/OnboardingContext'
+import { APP_VERSION } from '../version'
+
+declare const __BUILD_TIME__: string
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -597,6 +600,9 @@ export function SettingsPage() {
           <p className="text-xs text-slate-600">
             Desarrollado por <span className="text-slate-400 font-medium">Nicolas Vazquez</span>{' '}
             <span className="text-slate-500">{KAOMOJI}</span>
+          </p>
+          <p className="text-[10px] text-slate-600">
+            versión {APP_VERSION} · build {new Date(__BUILD_TIME__).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
           </p>
         </div>
       </div>
