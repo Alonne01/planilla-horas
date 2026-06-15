@@ -15,7 +15,6 @@ import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding
 import { GuideTooltip } from "./components/GuideTooltip"
 import { CloudSetupModal } from "./components/CloudSetupModal"
 import { UpdateToast } from "./components/UpdateToast"
-import { registerSW } from "virtual:pwa-register"
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches ||
@@ -89,25 +88,20 @@ function AppContent() {
   const onb = useOnboarding()
   useEffect(() => { onb.registrar({ setTab }) }, [])
 
-  // Actualización del PWA (modo prompt): onNeedRefresh se dispara cuando hay una versión nueva LISTA
-  // (callback propio de vite-plugin-pwa, sin carreras) → mostramos el toast 3 s y aplicamos con
-  // updateSW(true) (skipWaiting + recarga). onRegisteredSW busca versiones al volver/cada 30 min.
+  // Auto-actualización: cuando el SW nuevo toma el control (autoUpdate lo activa solo), mostramos el
+  // toast y recargamos. `controllerchange` dispara en updates reales (y 1 vez en la 1ª instalación).
   useEffect(() => {
-    const updateSW = registerSW({
-      onNeedRefresh() {
-        console.info('[Planilla] onNeedRefresh: actualización lista → toast')
-        setUpdateToast(true)
-        window.setTimeout(() => { updateSW(true) }, 3000)
-      },
-      onRegisteredSW(swUrl, reg) {
-        console.info('[Planilla] SW registrado:', swUrl, 'reg?', !!reg)
-        if (!reg) return
-        const check = () => { reg.update().catch(() => {}) }
-        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check() })
-        window.setInterval(check, 30 * 60 * 1000)
-      },
-      onRegisterError(err) { console.error('[Planilla] SW registerError:', err) },
-    })
+    if (!('serviceWorker' in navigator)) return
+    let done = false
+    const onChange = () => {
+      if (done) return
+      done = true
+      console.info('[Planilla] SW nuevo activo → toast + recarga')
+      setUpdateToast(true)
+      window.setTimeout(() => window.location.reload(), 3000)
+    }
+    navigator.serviceWorker.addEventListener('controllerchange', onChange)
+    return () => navigator.serviceWorker.removeEventListener('controllerchange', onChange)
   }, [])
   useEffect(() => {
     if (!onboardingHecho()) onb.start()

@@ -13,8 +13,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'prompt',
-      injectRegister: null, // registramos a mano en App.tsx (registerSW con onNeedRefresh)
+      registerType: 'autoUpdate', // el SW nuevo se activa solo (skipWaiting+clientsClaim) → updates confiables en móvil/PWA
       includeAssets: ['icons/*.png'],
       manifest: {
         name: 'Planilla de Horas',

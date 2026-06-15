@@ -68,7 +68,7 @@ const PASOS: Paso[] = [
     id: 'cfg-nombre', tab: 'settings', target: '[data-tour="cfg-nombre"]',
     titulo: 'Tu nombre', texto: 'Escribí tu nombre completo: se usa en la planilla, en el Excel que exportás y en el respaldo en la nube.',
     done: () => valDe('[data-tour="cfg-nombre"]').trim().length > 0,
-    delayMs: 2000, debounce: true, // avanza recién tras 2 s sin tipear (no salta al primer carácter)
+    delayMs: 7000, debounce: true, // avanza recién tras 7 s sin tipear (no salta al primer carácter)
   },
   {
     id: 'cfg-respaldo', tab: 'settings', target: '[data-tour="cfg-respaldo"]',
