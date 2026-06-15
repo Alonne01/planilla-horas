@@ -13,17 +13,23 @@ export function Caracol({ navH }: { navH: number }) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
-    const onScroll = () => {
-      const doc = document.documentElement
-      const atBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 6
-      setVisible(atBottom)
+    const check = () => {
+      const scrollable = document.documentElement.scrollHeight - window.innerHeight
+      // Sólo si la página REALMENTE se puede scrollear (no por una medición previa al layout, que
+      // daba un falso "fondo" al volver a Config) y estás pegado al final.
+      setVisible(scrollable > 40 && window.scrollY >= scrollable - 6)
     }
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('resize', onScroll)
+    check()
+    window.addEventListener('scroll', check, { passive: true })
+    window.addEventListener('resize', check)
+    // Recalcular cuando cambia el alto del contenido (al terminar de cargar Config, abrir un panel,
+    // etc.) para no quedar "pegado" en visible por una medición vieja.
+    const ro = new ResizeObserver(check)
+    ro.observe(document.body)
     return () => {
-      window.removeEventListener('scroll', onScroll)
-      window.removeEventListener('resize', onScroll)
+      window.removeEventListener('scroll', check)
+      window.removeEventListener('resize', check)
+      ro.disconnect()
     }
   }, [])
 

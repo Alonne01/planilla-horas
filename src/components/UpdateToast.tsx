@@ -7,7 +7,7 @@ const PIXEL_FONT = "'Press Start 2P', monospace"
 
 /**
  * Toast PIXEL-ART que avisa que hay una actualización. El personaje hace su animación (pulgar arriba)
- * UNA vez y queda en el último frame. Aparece ~4 s (con barra de progreso) y App recarga.
+ * DOS veces y queda en el último frame. Aparece ~4 s (con barra de progreso) y App recarga.
  */
 export function UpdateToast() {
   const spriteRef = useRef<HTMLDivElement>(null)
@@ -23,7 +23,7 @@ export function UpdateToast() {
     }
     spriteRef.current?.animate(
       { backgroundPosition: ['0% 0%', '100% 0%'] },
-      { duration: 1500, easing: `steps(${FRAMES - 1})`, fill: 'forwards' },
+      { duration: 1500, easing: `steps(${FRAMES - 1})`, fill: 'forwards', iterations: 2 },
     )
     barRef.current?.animate(
       { width: ['0%', '100%'] },
