@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry } from '../lib/cloud-backup'
+import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser } from 'lucide-react'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry } from '../lib/cloud-backup'
 import { APP_VERSION } from '../version'
 
 const ACTIVO_MS = 7 * 24 * 60 * 60 * 1000 // "activo" = respaldó en los últimos 7 días
@@ -57,8 +57,8 @@ export function AdminPage() {
   const [difusiones, setDifusiones] = useState<DifusionEntry[]>([])
   const [titulo, setTitulo] = useState('')
   const [cuerpo, setCuerpo] = useState('')
-  // Confirmación doble en curso ('beggar' | 'difusion') y estado de envío.
-  const [accion, setAccion] = useState<null | 'beggar' | 'difusion'>(null)
+  // Confirmación en curso ('beggar' | 'difusion' | 'limpiar') y estado de envío.
+  const [accion, setAccion] = useState<null | 'beggar' | 'difusion' | 'limpiar'>(null)
   const [enviando, setEnviando] = useState(false)
 
   async function cargar() {
@@ -105,6 +105,20 @@ export function AdminPage() {
       setTitulo(''); setCuerpo(''); setAccion(null)
     } catch {
       alert('No se pudo enviar. ¿Publicaste las reglas de Firestore para "config" y "difusion"?')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  // Limpia la difusión actual (deja de mostrarse; no borra el historial).
+  async function confirmarLimpiar() {
+    setEnviando(true)
+    try {
+      await limpiarDifusion()
+      setConfig(c => c ? { ...c, difusionId: '', difusionTitulo: '', difusionCuerpo: '', difusionCreatedAt: 0 } : c)
+      setAccion(null)
+    } catch {
+      alert('No se pudo limpiar. ¿Publicaste las reglas de Firestore para "config"?')
     } finally {
       setEnviando(false)
     }
@@ -188,6 +202,7 @@ export function AdminPage() {
           cuerpo={cuerpo} setCuerpo={setCuerpo}
           onToggleBeggar={() => setAccion('beggar')}
           onEnviar={() => setAccion('difusion')}
+          onLimpiar={() => setAccion('limpiar')}
         />
 
         {/* Filtros dinámicos */}
@@ -289,6 +304,17 @@ export function AdminPage() {
           onConfirm={confirmarDifusion}
         />
       )}
+      {accion === 'limpiar' && (
+        <ConfirmDoble
+          titulo="Limpiar difusión actual"
+          detalle="El mensaje actual deja de mostrarse a los usuarios que todavía no lo vieron. El historial se conserva y podés volver a enviar cuando quieras."
+          etiquetaConfirmar="Limpiar"
+          pasos={1}
+          enviando={enviando}
+          onCancel={() => setAccion(null)}
+          onConfirm={confirmarLimpiar}
+        />
+      )}
     </div>
   )
 }
@@ -378,13 +404,14 @@ function fmtFecha(ms: number): string {
 }
 
 /** Panel de acciones globales: encender/apagar el donador para todos + difundir un mensaje + historial. */
-function AdminAcciones({ config, difusiones, titulo, setTitulo, cuerpo, setCuerpo, onToggleBeggar, onEnviar }: {
+function AdminAcciones({ config, difusiones, titulo, setTitulo, cuerpo, setCuerpo, onToggleBeggar, onEnviar, onLimpiar }: {
   config: AppConfig | null
   difusiones: DifusionEntry[]
   titulo: string; setTitulo: (v: string) => void
   cuerpo: string; setCuerpo: (v: string) => void
   onToggleBeggar: () => void
   onEnviar: () => void
+  onLimpiar: () => void
 }) {
   const puedeEnviar = titulo.trim().length > 0 || cuerpo.trim().length > 0
   return (
@@ -437,6 +464,25 @@ function AdminAcciones({ config, difusiones, titulo, setTitulo, cuerpo, setCuerp
             <Send size={13} /> Enviar a todos
           </button>
         </div>
+
+        {/* Difusión activa actualmente: qué mensaje está "vivo" + botón para limpiarlo (que no quede
+            mostrándose a quien no lo vio; p.ej. una prueba antes de abrir a todos). */}
+        {config?.difusionId ? (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-600/60 bg-slate-700/40 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500">Difusión activa</p>
+              <p className="text-xs text-slate-200 truncate">{config.difusionTitulo || '(sin título)'}</p>
+            </div>
+            <button
+              onClick={onLimpiar}
+              className="flex shrink-0 items-center gap-1 rounded-lg bg-slate-600 px-2.5 py-1 text-[11px] font-medium text-slate-200 active:bg-slate-500"
+            >
+              <Eraser size={12} /> Limpiar
+            </button>
+          </div>
+        ) : (
+          <p className="text-[11px] text-slate-500">No hay ninguna difusión activa.</p>
+        )}
       </div>
 
       {/* Historial de mensajes enviados */}
@@ -460,26 +506,30 @@ function AdminAcciones({ config, difusiones, titulo, setTitulo, cuerpo, setCuerp
   )
 }
 
-/** Modal de confirmación en DOS pasos para acciones que afectan a todos los usuarios. */
-function ConfirmDoble({ titulo, detalle, etiquetaConfirmar, peligro, enviando, onCancel, onConfirm }: {
+/** Modal de confirmación para acciones que afectan a todos los usuarios. `pasos`=2 (default) pide
+ *  una reconfirmación ("¿Estás seguro?"); `pasos`=1 confirma de una (para acciones de bajo riesgo). */
+function ConfirmDoble({ titulo, detalle, etiquetaConfirmar, peligro, enviando, pasos = 2, onCancel, onConfirm }: {
   titulo: string
   detalle: string
   etiquetaConfirmar: string
   peligro?: boolean
   enviando: boolean
+  pasos?: 1 | 2
   onCancel: () => void
   onConfirm: () => void
 }) {
   const [paso, setPaso] = useState(1)
+  const final = paso >= pasos
+  const reconfirm = pasos === 2 && paso === 2
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/60" onClick={enviando ? undefined : onCancel}>
       <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-800 p-4 space-y-3" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2">
-          <AlertTriangle size={18} className={paso === 1 ? 'text-amber-300' : 'text-rose-300'} />
-          <p className="text-sm font-bold text-white">{paso === 1 ? titulo : '¿Estás seguro?'}</p>
+          <AlertTriangle size={18} className={reconfirm ? 'text-rose-300' : 'text-amber-300'} />
+          <p className="text-sm font-bold text-white">{reconfirm ? '¿Estás seguro?' : titulo}</p>
         </div>
         <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
-          {paso === 1 ? detalle : 'Esta acción afecta a TODOS los usuarios. Tocá confirmar para continuar.'}
+          {reconfirm ? 'Esta acción afecta a TODOS los usuarios. Tocá confirmar para continuar.' : detalle}
         </p>
         <div className="flex justify-end gap-2 pt-1">
           <button
@@ -489,17 +539,17 @@ function ConfirmDoble({ titulo, detalle, etiquetaConfirmar, peligro, enviando, o
           >
             Cancelar
           </button>
-          {paso === 1 ? (
-            <button onClick={() => setPaso(2)} className="px-3 py-1.5 text-xs font-bold text-white rounded-lg bg-amber-600 active:bg-amber-700">
-              Continuar
-            </button>
-          ) : (
+          {final ? (
             <button
               onClick={onConfirm}
               disabled={enviando}
               className={`px-3 py-1.5 text-xs font-bold text-white rounded-lg disabled:opacity-50 ${peligro ? 'bg-rose-600 active:bg-rose-700' : 'bg-emerald-600 active:bg-emerald-700'}`}
             >
-              {enviando ? 'Enviando…' : etiquetaConfirmar}
+              {enviando ? 'Aplicando…' : etiquetaConfirmar}
+            </button>
+          ) : (
+            <button onClick={() => setPaso(p => p + 1)} className="px-3 py-1.5 text-xs font-bold text-white rounded-lg bg-amber-600 active:bg-amber-700">
+              Continuar
             </button>
           )}
         </div>

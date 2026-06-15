@@ -348,6 +348,20 @@ export async function enviarDifusion(titulo: string, cuerpo: string): Promise<Di
   return { id, titulo: t, cuerpo: c, createdAt }
 }
 
+/** [admin] Limpia el mensaje de difusión ACTUAL (deja de mostrarse a quien no lo vio). NO borra el
+ *  historial (`difusion`): sólo vacía los campos de difusión en config/global. Útil para que una
+ *  difusión de prueba no se "filtre" al abrir la app a todos. */
+export async function limpiarDifusion(): Promise<void> {
+  await setDoc(
+    doc(getDb(), CONFIG, CONFIG_DOC),
+    { difusionId: '', difusionTitulo: '', difusionCuerpo: '', difusionCreatedAt: 0, updatedAt: Date.now() },
+    { merge: true },
+  )
+  registrarOperacionNube()
+  contarUso(0, 1)
+  cachearConfig({ ...configCacheada(), difusionId: '', difusionTitulo: '', difusionCuerpo: '', difusionCreatedAt: 0 })
+}
+
 /** [admin] Lista el historial de mensajes de difusión (más nuevos primero). */
 export async function listarDifusiones(): Promise<DifusionEntry[]> {
   const snap = await getDocs(collection(getDb(), DIFUSION))
