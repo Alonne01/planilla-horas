@@ -68,7 +68,7 @@ function cloneForDate(source: RegistroHoras, target: Date, diagrama: DiagramaPat
   }
 }
 
-export function HorasTrabajoPage() {
+export function HorasTrabajoPage({ beggarActivo = true }: { beggarActivo?: boolean }) {
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const { registros, loading, upsert, remove, reload } = useHoras(mes, anio)
@@ -659,9 +659,10 @@ export function HorasTrabajoPage() {
         </button>
       </div>
 
-      {/* Donador — pedido de donación (habilitado para todos desde el 21/6); o agradecimiento al
-          volver de donar (>1 min). Si donó en las últimas 24 h, no aparece. */}
-      {Date.now() >= BEGGAR_DESDE_MS && (graciasVisible
+      {/* Donador — pedido de donación (habilitado para todos desde el 21/6, salvo que el admin lo
+          desactive globalmente vía beggarActivo); o agradecimiento al volver de donar (>1 min).
+          Si donó en las últimas 24 h, no aparece. */}
+      {Date.now() >= BEGGAR_DESDE_MS && beggarActivo && (graciasVisible
         ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
         : (!yaAgradecioHoy && exportHecho && <DonadorDonacion key={beggarKey} idKey={idKey} forzar={beggarForzar} />))}
 

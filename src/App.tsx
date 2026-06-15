@@ -10,13 +10,14 @@ import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
-import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo } from "./lib/cloud-backup"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo, leerConfigNube, configCacheada, type AppConfig } from "./lib/cloud-backup"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding/OnboardingContext"
 import { GuideTooltip } from "./components/GuideTooltip"
 import { CloudSetupModal } from "./components/CloudSetupModal"
 import { UpdateToast } from "./components/UpdateToast"
+import { BroadcastToast } from "./components/BroadcastToast"
 import { Caracol } from "./components/Caracol"
 
 function isStandalone() {
@@ -51,6 +52,10 @@ const SALARY_UNLOCK_KEY = "planilla-salary-unlocked"
 // La pantalla de ADMIN (padrón) se desbloquea con 3 toques al caracol + nombre "Nicolas Vazquez" +
 // código "000000". Su flag persistido vive en cloud-backup (esAdminDispositivo/marcarAdminDispositivo),
 // que además exime a ese dispositivo del tope diario de nube.
+
+// Mensaje de difusión: se muestra UNA sola vez por usuario. Guardamos el id del último visto;
+// si el de la nube es distinto, se muestra (y al cerrarlo se persiste el id).
+const DIFUSION_VISTA_KEY = "planilla-difusion-vista"
 
 type Tab = "horas" | "analytics" | "settings" | "salary" | "admin"
 const TAB_ORDER: Tab[] = ["horas", "analytics", "settings", "salary", "admin"]
@@ -97,6 +102,10 @@ function AppContent() {
   const [emptyDb, setEmptyDb] = useState(false)
   const [gateSkipped, setGateSkipped] = useState(false)
   const [updateToast, setUpdateToast] = useState(false)
+  // Config global (donador on/off + mensaje de difusión). Arranca con la caché (sincrónica) y se
+  // refresca de la nube al abrir. El mensaje de difusión, si es nuevo, se muestra una sola vez.
+  const [config, setConfig] = useState<AppConfig>(configCacheada)
+  const [broadcast, setBroadcast] = useState<{ id: string; titulo: string; cuerpo: string } | null>(null)
   const restoreRef = useRef<HTMLInputElement>(null)
   // Alto real del nav (incluye safe-area) para apoyar el caracol del easter egg en su borde.
   const navRef = useRef<HTMLElement>(null)
@@ -124,6 +133,25 @@ function AppContent() {
   useEffect(() => {
     if (!onboardingHecho()) onb.start()
   }, [])
+
+  // Config global desde la nube: actualiza el flag del donador y, si hay un mensaje de difusión que
+  // este usuario no vio, lo muestra (una sola vez). Lectura automática (no cuenta contra el tope diario).
+  useEffect(() => {
+    leerConfigNube().then(cfg => {
+      setConfig(cfg)
+      try {
+        if (cfg.difusionId && localStorage.getItem(DIFUSION_VISTA_KEY) !== cfg.difusionId) {
+          setBroadcast({ id: cfg.difusionId, titulo: cfg.difusionTitulo, cuerpo: cfg.difusionCuerpo })
+        }
+      } catch { /* ignore */ }
+    }).catch(() => { /* offline: queda la config cacheada */ })
+  }, [])
+
+  // Cierra el cartel de difusión y lo marca como visto (no vuelve a salir para este usuario).
+  function cerrarBroadcast() {
+    if (broadcast) { try { localStorage.setItem(DIFUSION_VISTA_KEY, broadcast.id) } catch { /* ignore */ } }
+    setBroadcast(null)
+  }
 
   // Medir el alto del nav (cambia con el safe-area y si aparece la pestaña Sueldo) para el caracol.
   useEffect(() => {
@@ -437,7 +465,7 @@ function AppContent() {
         {/* Input de restauración: fuera del banner para que sobreviva al auto-cierre durante la selección de archivo */}
         <input ref={restoreRef} type="file" accept=".json" onChange={handleRestoreFromFile} className="hidden" />
 
-        {tab === "horas" && <HorasTrabajoPage />}
+        {tab === "horas" && <HorasTrabajoPage beggarActivo={config.beggarActivo} />}
         {tab === "analytics" && <AnalyticsPage />}
         {tab === "settings" && <SettingsPage />}
         {tab === "salary" && showSalary && <ProyeccionSalarialPage />}
@@ -464,6 +492,7 @@ function AppContent() {
       <GuideTooltip />
       {cloudPromptOpen && <CloudSetupModal onConfigurar={handleCloudConfigurar} onMasTarde={handleCloudMasTarde} />}
       {updateToast && <UpdateToast />}
+      {broadcast && <BroadcastToast titulo={broadcast.titulo} cuerpo={broadcast.cuerpo} onClose={cerrarBroadcast} />}
     </div>
   )
 }

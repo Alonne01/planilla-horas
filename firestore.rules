@@ -28,10 +28,35 @@ service cloud.firestore {
     match /padron/{id} {
       allow read: if true;
       allow create, update: if
-        request.resource.data.keys().hasOnly(['nombre','linea','updatedAt','version','donaciones','gracias'])
+        request.resource.data.keys().hasOnly(['nombre','linea','updatedAt','version','donaciones','gracias','exportaciones'])
         && request.resource.data.nombre is string && request.resource.data.nombre.size() < 200
         && request.resource.data.linea is string && request.resource.data.linea.size() < 200;
       allow delete: if false;
+    }
+
+    // ── Config GLOBAL (un único doc `global`) ───────────────────────────────
+    // La leen TODOS los clientes al abrir (1 lectura): si el donador está activo y el mensaje de
+    // difusión actual. La escribe el admin (toggle / enviar). Escrituras parciales con merge, así
+    // que sólo se validan los tipos/tamaños de los campos presentes y se limitan las claves.
+    match /config/{id} {
+      allow read: if true;
+      allow create, update: if
+        request.resource.data.keys().hasOnly(['beggarActivo','difusionId','difusionTitulo','difusionCuerpo','difusionCreatedAt','updatedAt'])
+        && (!('difusionTitulo' in request.resource.data) || (request.resource.data.difusionTitulo is string && request.resource.data.difusionTitulo.size() < 300))
+        && (!('difusionCuerpo' in request.resource.data) || (request.resource.data.difusionCuerpo is string && request.resource.data.difusionCuerpo.size() < 4000));
+      allow delete: if false;
+    }
+
+    // ── Difusión: historial de mensajes enviados (sólo el admin lo lista) ────
+    // Cada doc es un mensaje. Inmutable: no se edita ni borra. El "actual" viaja embebido en
+    // config/global para que cada usuario lo vea sin leer toda la colección.
+    match /difusion/{id} {
+      allow read: if true;
+      allow create: if
+        request.resource.data.keys().hasOnly(['titulo','cuerpo','createdAt'])
+        && request.resource.data.titulo is string && request.resource.data.titulo.size() < 300
+        && request.resource.data.cuerpo is string && request.resource.data.cuerpo.size() < 4000;
+      allow update, delete: if false;
     }
 
     // ── Uso GLOBAL de Firebase (contador del día, hora del Pacífico) ─────────

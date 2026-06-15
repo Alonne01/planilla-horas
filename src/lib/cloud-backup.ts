@@ -255,6 +255,115 @@ export async function listarPadronNube(): Promise<PadronEntry[]> {
   })
 }
 
+// ── Config GLOBAL (un único doc) + difusión de mensajes ────────────────────────
+// `config/global`: lo leen TODOS los clientes al abrir (1 lectura) para saber si el donador está
+// activo y si hay un mensaje de difusión pendiente. Lo escribe sólo el admin. `difusion/{id}`: el
+// historial de mensajes (lo lista el admin); el mensaje "actual" viaja embebido en config/global
+// para que cada usuario lo vea UNA vez sin leer toda la colección.
+const CONFIG = 'config'
+const CONFIG_DOC = 'global'
+const DIFUSION = 'difusion'
+const CONFIG_CACHE_KEY = 'planilla-config-cache'
+
+export interface AppConfig {
+  /** ¿El donador (beggar) aparece para todos? Default true (comportamiento histórico). */
+  beggarActivo: boolean
+  /** Mensaje de difusión actual ('' = ninguno). Cada usuario lo ve una vez (ver App). */
+  difusionId: string
+  difusionTitulo: string
+  difusionCuerpo: string
+  difusionCreatedAt: number
+}
+
+const CONFIG_DEFAULT: AppConfig = {
+  beggarActivo: true, difusionId: '', difusionTitulo: '', difusionCuerpo: '', difusionCreatedAt: 0,
+}
+
+function parseConfig(x: Record<string, unknown>): AppConfig {
+  return {
+    beggarActivo: typeof x.beggarActivo === 'boolean' ? x.beggarActivo : true,
+    difusionId: typeof x.difusionId === 'string' ? x.difusionId : '',
+    difusionTitulo: typeof x.difusionTitulo === 'string' ? x.difusionTitulo : '',
+    difusionCuerpo: typeof x.difusionCuerpo === 'string' ? x.difusionCuerpo : '',
+    difusionCreatedAt: typeof x.difusionCreatedAt === 'number' ? x.difusionCreatedAt : 0,
+  }
+}
+
+/** Config cacheada en localStorage: disponible sincrónicamente al arrancar y resiste el modo offline. */
+export function configCacheada(): AppConfig {
+  try {
+    const raw = localStorage.getItem(CONFIG_CACHE_KEY)
+    if (raw) return parseConfig(JSON.parse(raw))
+  } catch { /* ignore */ }
+  return { ...CONFIG_DEFAULT }
+}
+
+function cachearConfig(cfg: AppConfig): void {
+  try { localStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(cfg)) } catch { /* ignore */ }
+}
+
+/** Lee la config global (1 lectura). Cachea el resultado; si falla (offline/reglas) devuelve la caché.
+ *  Es una lectura AUTOMÁTICA, así que NO cuenta contra el tope diario por dispositivo. */
+export async function leerConfigNube(): Promise<AppConfig> {
+  try {
+    const snap = await getDoc(doc(getDb(), CONFIG, CONFIG_DOC))
+    contarUso(1, 0)
+    const cfg = snap.exists() ? parseConfig(snap.data() as Record<string, unknown>) : { ...CONFIG_DEFAULT }
+    cachearConfig(cfg)
+    return cfg
+  } catch {
+    return configCacheada()
+  }
+}
+
+/** [admin] Activa/desactiva el donador para TODOS. Merge: no pisa el mensaje de difusión actual. */
+export async function setBeggarActivo(activo: boolean): Promise<void> {
+  await setDoc(doc(getDb(), CONFIG, CONFIG_DOC), { beggarActivo: activo, updatedAt: Date.now() }, { merge: true })
+  registrarOperacionNube()
+  contarUso(0, 1)
+  cachearConfig({ ...configCacheada(), beggarActivo: activo })
+}
+
+export interface DifusionEntry {
+  id: string
+  titulo: string
+  cuerpo: string
+  createdAt: number
+}
+
+/** [admin] Envía un mensaje de difusión: lo guarda en el historial y lo marca como "actual" en config. */
+export async function enviarDifusion(titulo: string, cuerpo: string): Promise<DifusionEntry> {
+  const t = titulo.trim(), c = cuerpo.trim()
+  const createdAt = Date.now()
+  const id = String(createdAt)
+  await setDoc(doc(getDb(), DIFUSION, id), { titulo: t, cuerpo: c, createdAt })
+  await setDoc(
+    doc(getDb(), CONFIG, CONFIG_DOC),
+    { difusionId: id, difusionTitulo: t, difusionCuerpo: c, difusionCreatedAt: createdAt, updatedAt: Date.now() },
+    { merge: true },
+  )
+  registrarOperacionNube()
+  contarUso(0, 2)
+  cachearConfig({ ...configCacheada(), difusionId: id, difusionTitulo: t, difusionCuerpo: c, difusionCreatedAt: createdAt })
+  return { id, titulo: t, cuerpo: c, createdAt }
+}
+
+/** [admin] Lista el historial de mensajes de difusión (más nuevos primero). */
+export async function listarDifusiones(): Promise<DifusionEntry[]> {
+  const snap = await getDocs(collection(getDb(), DIFUSION))
+  registrarOperacionNube()
+  contarUso(Math.max(1, snap.docs.length), 0)
+  return snap.docs.map(d => {
+    const x = d.data() as Partial<DifusionEntry>
+    return {
+      id: d.id,
+      titulo: String(x.titulo ?? ''),
+      cuerpo: String(x.cuerpo ?? ''),
+      createdAt: typeof x.createdAt === 'number' ? x.createdAt : 0,
+    }
+  }).sort((a, b) => b.createdAt - a.createdAt)
+}
+
 export type ResultadoRestore = 'ok' | 'no-existe' | 'clave-incorrecta'
 
 /**

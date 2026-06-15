@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, type PadronEntry, type UsoFirebase } from '../lib/cloud-backup'
+import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History } from 'lucide-react'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry } from '../lib/cloud-backup'
 import { APP_VERSION } from '../version'
 
 const ACTIVO_MS = 7 * 24 * 60 * 60 * 1000 // "activo" = respaldó en los últimos 7 días
@@ -52,6 +52,14 @@ export function AdminPage() {
   const [soloActivos, setSoloActivos] = useState(false)
   // Medidor de uso GLOBAL de Firebase (todos los usuarios), se refresca junto con el padrón
   const [uso, setUso] = useState<UsoFirebase | null>(null)
+  // Acciones globales: config (donador on/off + difusión actual) e historial de difusiones.
+  const [config, setConfig] = useState<AppConfig | null>(null)
+  const [difusiones, setDifusiones] = useState<DifusionEntry[]>([])
+  const [titulo, setTitulo] = useState('')
+  const [cuerpo, setCuerpo] = useState('')
+  // Confirmación doble en curso ('beggar' | 'difusion') y estado de envío.
+  const [accion, setAccion] = useState<null | 'beggar' | 'difusion'>(null)
+  const [enviando, setEnviando] = useState(false)
 
   async function cargar() {
     setBusy(true); setErr(null)
@@ -65,8 +73,42 @@ export function AdminPage() {
     } finally {
       setBusy(false)
     }
+    // Config + historial: independientes del padrón (si fallan sus reglas, no rompen el resto).
+    try { setConfig(await leerConfigNube()) } catch { /* ignore */ }
+    try { setDifusiones(await listarDifusiones()) } catch { /* ignore */ }
   }
   useEffect(() => { void cargar() }, [])
+
+  // Activa/desactiva el donador para todos (tras la doble confirmación).
+  async function confirmarBeggar() {
+    if (!config) return
+    setEnviando(true)
+    try {
+      const nuevo = !config.beggarActivo
+      await setBeggarActivo(nuevo)
+      setConfig({ ...config, beggarActivo: nuevo })
+      setAccion(null)
+    } catch {
+      alert('No se pudo cambiar el donador. ¿Publicaste las reglas de Firestore para "config"?')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  // Envía el mensaje de difusión a todos (tras la doble confirmación).
+  async function confirmarDifusion() {
+    setEnviando(true)
+    try {
+      const entry = await enviarDifusion(titulo, cuerpo)
+      setDifusiones(d => [entry, ...d])
+      setConfig(c => c ? { ...c, difusionId: entry.id, difusionTitulo: entry.titulo, difusionCuerpo: entry.cuerpo, difusionCreatedAt: entry.createdAt } : c)
+      setTitulo(''); setCuerpo(''); setAccion(null)
+    } catch {
+      alert('No se pudo enviar. ¿Publicaste las reglas de Firestore para "config" y "difusion"?')
+    } finally {
+      setEnviando(false)
+    }
+  }
 
   const all = padron ?? []
 
@@ -137,6 +179,16 @@ export function AdminPage() {
           <Stat icon={<Heart size={15} />} valor={totalDon} label="toques a donar" color="text-pink-300" />
           <Stat icon={<Sparkles size={15} />} valor={totalGra} label='veces "gracias"' color="text-amber-300" />
         </div>
+
+        {/* Acciones globales: donador on/off + difusión a todos */}
+        <AdminAcciones
+          config={config}
+          difusiones={difusiones}
+          titulo={titulo} setTitulo={setTitulo}
+          cuerpo={cuerpo} setCuerpo={setCuerpo}
+          onToggleBeggar={() => setAccion('beggar')}
+          onEnviar={() => setAccion('difusion')}
+        />
 
         {/* Filtros dinámicos */}
         <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-3 space-y-3">
@@ -212,6 +264,31 @@ export function AdminPage() {
           )}
         </div>
       </div>
+
+      {/* Confirmaciones dobles (afectan a TODOS los usuarios) */}
+      {accion === 'beggar' && config && (
+        <ConfirmDoble
+          titulo={config.beggarActivo ? 'Desactivar el donador para todos' : 'Activar el donador para todos'}
+          detalle={config.beggarActivo
+            ? 'El personaje que pide donaciones dejará de aparecer para todos los usuarios.'
+            : 'El personaje que pide donaciones volverá a aparecer (al exportar) para todos los usuarios.'}
+          etiquetaConfirmar={config.beggarActivo ? 'Desactivar' : 'Activar'}
+          peligro={config.beggarActivo}
+          enviando={enviando}
+          onCancel={() => setAccion(null)}
+          onConfirm={confirmarBeggar}
+        />
+      )}
+      {accion === 'difusion' && (
+        <ConfirmDoble
+          titulo="Enviar mensaje a todos"
+          detalle={`Se mostrará UNA sola vez a cada usuario:\n\n"${titulo.trim() || '(sin título)'}"\n${cuerpo.trim() || '(sin texto)'}`}
+          etiquetaConfirmar="Enviar a todos"
+          enviando={enviando}
+          onCancel={() => setAccion(null)}
+          onConfirm={confirmarDifusion}
+        />
+      )}
     </div>
   )
 }
@@ -292,4 +369,141 @@ function toggle(set: Set<string>, v: string): Set<string> {
   const next = new Set(set)
   if (next.has(v)) next.delete(v); else next.add(v)
   return next
+}
+
+/** Fecha+hora corta (es-AR) para el historial de difusiones. */
+function fmtFecha(ms: number): string {
+  if (!ms) return ''
+  return new Date(ms).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+/** Panel de acciones globales: encender/apagar el donador para todos + difundir un mensaje + historial. */
+function AdminAcciones({ config, difusiones, titulo, setTitulo, cuerpo, setCuerpo, onToggleBeggar, onEnviar }: {
+  config: AppConfig | null
+  difusiones: DifusionEntry[]
+  titulo: string; setTitulo: (v: string) => void
+  cuerpo: string; setCuerpo: (v: string) => void
+  onToggleBeggar: () => void
+  onEnviar: () => void
+}) {
+  const puedeEnviar = titulo.trim().length > 0 || cuerpo.trim().length > 0
+  return (
+    <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4 space-y-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Acciones globales</p>
+
+      {/* Donador on/off para todos */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-white flex items-center gap-1.5"><Power size={14} /> Donador para todos</p>
+          <p className="text-[11px] text-slate-500">
+            {config == null ? 'Cargando…' : config.beggarActivo ? 'Activo: aparece al exportar.' : 'Desactivado para todos.'}
+          </p>
+        </div>
+        <button
+          onClick={onToggleBeggar}
+          disabled={config == null}
+          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-40 ${config?.beggarActivo ? 'bg-emerald-500' : 'bg-slate-600'}`}
+          aria-label="Activar o desactivar el donador para todos"
+        >
+          <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${config?.beggarActivo ? 'left-6' : 'left-1'}`} />
+        </button>
+      </div>
+
+      {/* Difusión: mensaje a todos */}
+      <div className="border-t border-slate-700/70 pt-3 space-y-2">
+        <p className="text-sm font-medium text-white flex items-center gap-1.5"><Megaphone size={14} /> Mensaje a todos</p>
+        <input
+          value={titulo}
+          onChange={e => setTitulo(e.target.value)}
+          maxLength={60}
+          placeholder="Título (ej. NUEVA FUNCIÓN)"
+          className="w-full bg-slate-700 text-white rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        />
+        <textarea
+          value={cuerpo}
+          onChange={e => setCuerpo(e.target.value)}
+          maxLength={400}
+          rows={3}
+          placeholder="Mensaje… (se muestra una sola vez a cada usuario)"
+          className="w-full bg-slate-700 text-white rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-slate-500 tabular-nums">{cuerpo.length}/400</span>
+          <button
+            onClick={onEnviar}
+            disabled={!puedeEnviar}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white active:bg-emerald-700 disabled:opacity-40"
+          >
+            <Send size={13} /> Enviar a todos
+          </button>
+        </div>
+      </div>
+
+      {/* Historial de mensajes enviados */}
+      {difusiones.length > 0 && (
+        <div className="border-t border-slate-700/70 pt-3">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5 flex items-center gap-1"><History size={12} /> Historial ({difusiones.length})</p>
+          <div className="space-y-1.5 max-h-56 overflow-y-auto">
+            {difusiones.map(d => (
+              <div key={d.id} className="rounded-lg bg-slate-700/40 px-3 py-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-xs font-semibold text-emerald-300 truncate">{d.titulo || '(sin título)'}</p>
+                  <span className="text-[10px] text-slate-500 shrink-0">{fmtFecha(d.createdAt)}</span>
+                </div>
+                {d.cuerpo && <p className="text-[11px] text-slate-300 mt-0.5 whitespace-pre-wrap break-words line-clamp-3">{d.cuerpo}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Modal de confirmación en DOS pasos para acciones que afectan a todos los usuarios. */
+function ConfirmDoble({ titulo, detalle, etiquetaConfirmar, peligro, enviando, onCancel, onConfirm }: {
+  titulo: string
+  detalle: string
+  etiquetaConfirmar: string
+  peligro?: boolean
+  enviando: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const [paso, setPaso] = useState(1)
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/60" onClick={enviando ? undefined : onCancel}>
+      <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-800 p-4 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={18} className={paso === 1 ? 'text-amber-300' : 'text-rose-300'} />
+          <p className="text-sm font-bold text-white">{paso === 1 ? titulo : '¿Estás seguro?'}</p>
+        </div>
+        <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
+          {paso === 1 ? detalle : 'Esta acción afecta a TODOS los usuarios. Tocá confirmar para continuar.'}
+        </p>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            onClick={onCancel}
+            disabled={enviando}
+            className="px-3 py-1.5 text-xs font-medium text-slate-300 rounded-lg bg-slate-700 active:bg-slate-600 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          {paso === 1 ? (
+            <button onClick={() => setPaso(2)} className="px-3 py-1.5 text-xs font-bold text-white rounded-lg bg-amber-600 active:bg-amber-700">
+              Continuar
+            </button>
+          ) : (
+            <button
+              onClick={onConfirm}
+              disabled={enviando}
+              className={`px-3 py-1.5 text-xs font-bold text-white rounded-lg disabled:opacity-50 ${peligro ? 'bg-rose-600 active:bg-rose-700' : 'bg-emerald-600 active:bg-emerald-700'}`}
+            >
+              {enviando ? 'Enviando…' : etiquetaConfirmar}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
