@@ -89,6 +89,9 @@ export function SettingsPage() {
   // configurar. `cfgEditable` = se pueden tocar esos controles.
   const [cfgBloqueado, setCfgBloqueado] = useState(leerConfigLock)
   const cfgEditable = !cfgBloqueado || onb.activo
+  // Durante el tour, el paso de línea es de elección libre (se puede deslizar): tocar una línea sólo
+  // la selecciona; el avance lo dispara el botón "Elegir …" (abajo) → onb.next().
+  const enTourLinea = onb.activo && onb.paso?.id === 'cfg-linea'
   function toggleConfigLock() {
     const next = !cfgBloqueado
     setCfgBloqueado(next)
@@ -413,6 +416,14 @@ export function SettingsPage() {
                 <div className={`text-xs mt-0.5 ${linea === l.key ? 'text-blue-100/80' : 'text-slate-400'}`}>{l.desc}</div>
               </button>
             ))}
+            {enTourLinea && (
+              <button
+                onClick={() => onb.next()}
+                className="mt-1 w-full py-3 rounded-xl bg-emerald-600 text-white text-sm font-bold active:bg-emerald-700"
+              >
+                Elegir "{lineaLabel(linea)}"
+              </button>
+            )}
           </div>
           {linea === 'SBDP' && (
             <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-2.5">

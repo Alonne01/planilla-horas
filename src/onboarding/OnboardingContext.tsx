@@ -81,8 +81,9 @@ const PASOS: Paso[] = [
   },
   {
     id: 'cfg-linea', tab: 'settings', target: '[data-tour="cfg-linea"]',
-    titulo: 'Línea de trabajo', texto: 'Tocá tu línea (Surface, SBDP, Mantenimiento, Wireline…). Queda en tu respaldo; sólo SBDP cambia cómo se cuentan las horas.',
-    avanzaAlTocar: true,
+    titulo: 'Línea de trabajo',
+    texto: 'Deslizá para ver todas y tocá tu línea (Surface, SBDP, Mantenimiento, Wireline…). Después confirmá con el botón "Elegir". Sólo SBDP cambia cómo se cuentan las horas.',
+    libre: true, accionExterna: true, // deslizable/elegible libre; avanza al confirmar "Elegir" (Settings → onb.next())
   },
   {
     id: 'cfg-diagrama', tab: 'settings', target: '[data-tour="cfg-diagrama"]',
