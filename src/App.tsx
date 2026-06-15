@@ -98,7 +98,7 @@ function AppContent() {
       done = true
       console.info('[Planilla] SW nuevo activo → toast + recarga')
       setUpdateToast(true)
-      window.setTimeout(() => window.location.reload(), 3000)
+      window.setTimeout(() => window.location.reload(), 4000)
     }
     navigator.serviceWorker.addEventListener('controllerchange', onChange)
     return () => navigator.serviceWorker.removeEventListener('controllerchange', onChange)
