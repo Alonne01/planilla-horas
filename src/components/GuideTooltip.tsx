@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useOnboarding } from '../onboarding/OnboardingContext'
 
+// Circunferencia del anillo del timer del tutorial (r=15) para el dibujo progresivo.
+const CIRC = 2 * Math.PI * 15
+
 /**
  * Overlay del tour: un "spotlight" que OSCURECE y BLOQUEA toda la pantalla salvo el
  * rect del elemento resaltado (marco de 4 divs alrededor del hueco). El paso avanza solo
@@ -20,6 +23,8 @@ export function GuideTooltip() {
   const [, setVvTick] = useState(0)
   // Cuenta regresiva visible (barra) hasta avanzar: { dur, t0 } o null. La setean los efectos de debounce.
   const [cuenta, setCuenta] = useState<{ dur: number; t0: number } | null>(null)
+  // "Omitir" aparece recién 1,5 s después de mostrarse la tarjeta del paso (evita saltarlo sin querer).
+  const [mostrarOmitir, setMostrarOmitir] = useState(false)
 
   // Sigue al target de forma CONTINUA (rAF): mide cada frame y actualiza el hueco sólo cuando cambia.
   // Así el spotlight queda SIEMPRE pegado al elemento aunque el diálogo entre animado (slide-in),
@@ -150,6 +155,13 @@ export function GuideTooltip() {
   // Al cambiar de paso, la tarjeta vuelve a su posición por defecto.
   useEffect(() => { setDrag({ x: 0, y: 0 }); setCuenta(null) }, [paso?.id])
 
+  // "Omitir" aparece 1,5 s después de que se muestra el paso (para que el usuario lo lea primero).
+  useEffect(() => {
+    setMostrarOmitir(false)
+    const t = window.setTimeout(() => setMostrarOmitir(true), 1500)
+    return () => clearTimeout(t)
+  }, [paso?.id])
+
   // Medir el alto real de la tarjeta (cambia con el texto de cada paso) para posicionarla sin tapar.
   useEffect(() => { if (cardRef.current) setCardH(cardRef.current.offsetHeight) }, [paso?.id, paso?.texto])
 
@@ -272,7 +284,10 @@ export function GuideTooltip() {
         <div className="mt-2.5 flex items-center gap-2">
           <span className="text-[11px] text-slate-500">{pasoIdx + 1}/{total}</span>
           <div className="flex-1" />
-          <button onClick={skip} className="px-2 py-1.5 text-xs font-medium text-slate-400 active:text-slate-200">
+          <button
+            onClick={skip}
+            className={`px-2 py-1.5 text-xs font-medium text-slate-400 transition-opacity duration-300 active:text-slate-200 ${mostrarOmitir ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+          >
             Omitir
           </button>
           {esInfo && (
@@ -282,11 +297,15 @@ export function GuideTooltip() {
           )}
         </div>
 
-        {/* Timer: barra de cuenta regresiva hasta avanzar (se reinicia con cada cambio/movimiento). */}
+        {/* Timer: anillo pequeño en la esquina que se va "abriendo" hasta avanzar (se reinicia con cada cambio/movimiento). */}
         {cuenta && (
-          <div className="absolute inset-x-0 bottom-0 h-1 bg-white/10">
-            <div key={cuenta.t0} className="h-full bg-sky-400/80" style={{ animation: `tour-countdown ${cuenta.dur}ms linear forwards` }} />
-          </div>
+          <svg key={cuenta.t0} viewBox="0 0 36 36" className="pointer-events-none absolute right-2 top-2 h-5 w-5 -rotate-90">
+            <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(148,163,184,0.25)" strokeWidth="5" />
+            <circle
+              cx="18" cy="18" r="15" fill="none" stroke="rgb(56 189 248)" strokeWidth="5" strokeLinecap="round"
+              style={{ strokeDasharray: CIRC, strokeDashoffset: CIRC, animation: `tour-ring ${cuenta.dur}ms linear forwards` }}
+            />
+          </svg>
         )}
       </div>
     </div>

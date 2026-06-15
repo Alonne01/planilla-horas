@@ -108,8 +108,8 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
 /* Entrada suave del contenido del gate */
 @keyframes gate-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 
-/* Barra de cuenta regresiva del tutorial (se llena hasta avanzar al siguiente paso) */
-@keyframes tour-countdown { from { width: 0%; } to { width: 100%; } }
+/* Timer del tutorial: anillo pequeño que se va "abriendo" (se dibuja) hasta avanzar al siguiente paso */
+@keyframes tour-ring { to { stroke-dashoffset: 0; } }
 
 /* ─── Donador (personaje que pide una donación; sprite de 3 frames a 3 fps) ─── */
 /* El sheet ocupa 300% del ancho (3 cuadros). Con steps(3) la posición salta
