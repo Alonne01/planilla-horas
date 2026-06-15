@@ -43,6 +43,10 @@ const EMPTY_DB_ALERT_KEY = "planilla-empty-db-alert-ts"
 const EMPTY_DB_ALERT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000 // 1 semana
 const EMPTY_DB_AUTOHIDE_MS = 8000
 
+// Easter egg: la pestaña "Sueldo" se desbloquea con 15 toques al caracol (si el nombre es la
+// palabra clave) y queda persistida acá — así no se re-chequea el nombre en cada cambio de pestaña.
+const SALARY_UNLOCK_KEY = "planilla-salary-unlocked"
+
 type Tab = "horas" | "analytics" | "settings" | "salary"
 const TAB_ORDER: Tab[] = ["horas", "analytics", "settings", "salary"]
 
@@ -70,9 +74,12 @@ export default function App() {
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>("horas")
-  // La proyección salarial queda oculta salvo para el usuario de prueba (período de prueba).
-  // Se re-lee al cambiar de pestaña para reflejar el nombre apenas se guarda en Configuración.
-  const [showSalary, setShowSalary] = useState(false)
+  // La proyección salarial queda OCULTA por defecto. Se revela sólo con el easter egg del caracol
+  // (15 toques) si el nombre es la palabra clave, y queda desbloqueada (persistida). Ya NO se
+  // re-chequea en cada cambio de pestaña: ese getSettings() async hacía parpadear el nav inferior.
+  const [showSalary, setShowSalary] = useState(() => {
+    try { return localStorage.getItem(SALARY_UNLOCK_KEY) === "1" } catch { return false }
+  })
   const [recovered, setRecovered] = useState(false)
   const [persistDenied, setPersistDenied] = useState(false)
   const [autoBackupDue, setAutoBackupDue] = useState(false)
@@ -232,10 +239,18 @@ function AppContent() {
     return () => { document.body.style.overflow = '' }
   }, [tab])
 
-  // Re-evaluar el gate salarial al cambiar de pestaña (refleja el nombre recién guardado)
-  useEffect(() => {
-    getSettings().then(s => setShowSalary(isSalaryUser(s.nombreUsuario))).catch(() => {})
-  }, [tab])
+  // Easter egg del caracol: 15 toques seguidos (sin feedback) revelan la pestaña Sueldo, pero SÓLO
+  // si el nombre es la palabra clave (isSalaryUser). Queda desbloqueada (persistida) para no repetir
+  // el gesto ni re-chequear el nombre en cada cambio de pestaña (lo que hacía parpadear el nav).
+  async function desbloquearSalarioSecreto() {
+    try {
+      const s = await getSettings()
+      if (isSalaryUser(s.nombreUsuario)) {
+        try { localStorage.setItem(SALARY_UNLOCK_KEY, "1") } catch { /* ignore */ }
+        setShowSalary(true)
+      }
+    } catch { /* ignore */ }
+  }
 
   async function handleAutoBackupDownload() {
     try {
@@ -421,7 +436,7 @@ function AppContent() {
       </nav>
 
       {/* Easter egg: el caracol sólo en Configuración, asomando al scrollear hasta el fondo. */}
-      {tab === "settings" && <Caracol navH={navH} />}
+      {tab === "settings" && <Caracol navH={navH} onSecret={desbloquearSalarioSecreto} />}
 
       <GuideTooltip />
       {cloudPromptOpen && <CloudSetupModal onConfigurar={handleCloudConfigurar} onMasTarde={handleCloudMasTarde} />}

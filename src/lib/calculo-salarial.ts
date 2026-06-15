@@ -59,7 +59,7 @@ function normalizar(s: string): string {
 // isSalaryUser devuelva true).
 const SALARY_WHITELIST_ABIERTA = false
 const SALARY_WHITELIST: string[] = [
-  '666',               // palabra clave de prueba actual: quien ponga "666" como nombre desbloquea
+  'calc',              // palabra clave: con este nombre + el gesto secreto del caracol (15 toques) se desbloquea
   // 'Nicolas Vazquez',
   // 'Aviles Lucas',
   // 'Juan Pérez',

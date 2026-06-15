@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import caracol from '../assets/caracol.png'
 
 // Spritesheet del caracol: 2 cuadros horizontales (300x139 → 150x139 c/u). Se anima a 2 fps.
@@ -9,8 +9,23 @@ const FRAMES = 2
  * borde superior, sólo cuando estás en Configuración y scrolleaste hasta el fondo. Va a `z` por
  * debajo del nav (que es opaco) para que su parte de abajo quede tapada → parece salir de atrás.
  */
-export function Caracol({ navH }: { navH: number }) {
+export function Caracol({ navH, onSecret }: { navH: number; onSecret?: () => void }) {
   const [visible, setVisible] = useState(false)
+
+  // Easter egg secreto: 15 toques SEGUIDOS sobre el caracol (sin ningún feedback) disparan onSecret.
+  // El contador se reinicia si pasan más de 2 s entre toques.
+  const taps = useRef(0)
+  const tapReset = useRef<number | undefined>(undefined)
+  function onTap() {
+    if (tapReset.current) clearTimeout(tapReset.current)
+    taps.current += 1
+    if (taps.current >= 15) {
+      taps.current = 0
+      onSecret?.()
+      return
+    }
+    tapReset.current = window.setTimeout(() => { taps.current = 0 }, 2000)
+  }
 
   useEffect(() => {
     const check = () => {
@@ -37,7 +52,8 @@ export function Caracol({ navH }: { navH: number }) {
     // Mismo encuadre que el nav (centrado, max-w-lg) para alinear a la derecha; z-20 < nav (z-30).
     <div aria-hidden className="pointer-events-none fixed bottom-0 left-1/2 z-20 w-full max-w-lg -translate-x-1/2" style={{ height: 0 }}>
       <div
-        className="absolute"
+        onPointerDown={onTap}
+        className="pointer-events-auto absolute"
         style={{
           right: 12,
           bottom: navH - 1,                       // base apoyada justo en el borde superior del nav
