@@ -43,9 +43,11 @@ function opsHoy(): number {
     return dia === hoyKey() ? (parseInt(n, 10) || 0) : 0
   } catch { return 0 }
 }
-// Dispositivo admin: el que desbloqueó la pantalla de admin (Nicolas Vazquez + 000000 + 3 toques al
-// caracol). NO tiene tope diario de nube — puede listar el padrón y respaldar/restaurar sin límite.
-const ADMIN_KEY = 'planilla-admin-unlocked'
+// Dispositivo admin: el que desbloqueó la pantalla de admin (Nicolas Vazquez + 000000 + segundo código
+// + 3 toques al caracol). NO tiene tope diario de nube. La clave es `-v2`: al agregar el segundo código
+// se invalidaron los desbloqueos viejos (cualquiera que hubiera entrado con nombre+000000) → todos deben
+// re-desbloquear con el segundo código (que sólo sabe Nicolás).
+const ADMIN_KEY = 'planilla-admin-unlocked-v2'
 /** ¿Este dispositivo desbloqueó el modo admin? (sin tope diario de nube). */
 export function esAdminDispositivo(): boolean {
   try { return localStorage.getItem(ADMIN_KEY) === '1' } catch { return false }

@@ -5,7 +5,7 @@ import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
 import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
 import { AdminPage } from "./pages/Admin"
-import { isSalaryUser, esAdminNube } from "./lib/calculo-salarial"
+import { isSalaryUser, esAdminNube, esAdminCodigo2Ok } from "./lib/calculo-salarial"
 import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
@@ -338,11 +338,12 @@ function AppContent() {
   }
 
   // Easter egg del caracol (3 toques): desbloquea SÓLO la pantalla de admin si el nombre es
-  // "Nicolas Vazquez" y el código es "000000". No toca el salario. Queda persistido.
+  // "Nicolas Vazquez", el código de respaldo es "000000" Y el SEGUNDO código (campo extra "Código")
+  // es el correcto. No toca el salario. Queda persistido.
   async function desbloquearAdminSecreto() {
     try {
       const s = await getSettings()
-      if (esAdminNube(s.nombreUsuario, s.backupCodigo)) {
+      if (esAdminNube(s.nombreUsuario, s.backupCodigo) && esAdminCodigo2Ok()) {
         marcarAdminDispositivo()
         setShowAdmin(true)
       }

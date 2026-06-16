@@ -81,6 +81,17 @@ export function esAdminNube(nombre: string | undefined | null, codigo: string | 
   return normalizar(nombre ?? '') === ADMIN_NOMBRE && (codigo ?? '').trim() === ADMIN_CODIGO
 }
 
+// SEGUNDO factor del admin: además de nombre "Nicolas Vazquez" + 000000 + 3 toques al caracol, hay que
+// escribir este código en el campo extra "Código" (aparece sólo al cumplir esAdminNube). OJO: esto es
+// obfuscación del lado del cliente (el código viaja en el bundle), NO es autenticación real — sube la
+// barra (nadie lo adivina) pero un técnico podría leerlo del JS. Para exclusividad real haría falta
+// Firebase Auth + reglas que validen el UID. Es estado de módulo (no se persiste): lo setea Settings
+// al tipear y lo lee App al validar el gesto del caracol.
+const ADMIN_CODIGO_2 = '654987'
+let _adminCodigo2 = ''
+export function setAdminCodigo2(c: string | undefined | null): void { _adminCodigo2 = (c ?? '').trim() }
+export function esAdminCodigo2Ok(): boolean { return _adminCodigo2 === ADMIN_CODIGO_2 }
+
 // ─── Gate de donación (MercadoPago) ──────────────────────────────────────────
 // Mismo mecanismo de nombre que el gate salarial: el botón de donar aparece SÓLO
 // para estos nombres (no importan acentos/mayúsculas/espacios: se normaliza).
