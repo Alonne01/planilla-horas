@@ -27,7 +27,7 @@ function isStandalone() {
 }
 
 const AUTO_BACKUP_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000 // 2 days
-const CLOUD_BACKUP_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000 // 3 días (respaldo automático a la nube)
+const CLOUD_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000 // 1 día (respaldo automático a la nube; se saltea si nada cambió)
 
 // Aviso "sin datos guardados": reaparece como mucho 1 vez por semana y se oculta solo
 const EMPTY_DB_ALERT_KEY = "planilla-empty-db-alert-ts"

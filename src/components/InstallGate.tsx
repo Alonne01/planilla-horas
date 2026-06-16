@@ -1,5 +1,5 @@
 import { usePWAInstall } from '../hooks/usePWAInstall'
-import { Smartphone, Share, MoreVertical, Monitor, ShieldCheck, Zap, AlertTriangle } from 'lucide-react'
+import { Smartphone, Share, MoreVertical, Monitor, MonitorDown, ShieldCheck, Zap, AlertTriangle } from 'lucide-react'
 
 interface Props {
   onSkip: () => void
@@ -14,7 +14,7 @@ export function InstallGate({ onSkip }: Props) {
   const isSamsungBrowser = /samsungbrowser/i.test(ua)
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center px-6 py-10">
+    <div className="relative min-h-screen overflow-y-auto bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Fondo animado: orbes de gradiente a la deriva */}
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-24 -left-20 w-72 h-72 rounded-full bg-sky-500/20 blur-3xl animate-[blob-drift-a_14s_ease-in-out_infinite]" />
@@ -22,8 +22,9 @@ export function InstallGate({ onSkip }: Props) {
         <div className="absolute -bottom-28 left-1/4 w-72 h-72 rounded-full bg-violet-500/15 blur-3xl animate-[blob-drift-c_16s_ease-in-out_infinite]" />
       </div>
 
-      {/* Contenido */}
-      <div className="relative z-10 w-full max-w-sm flex flex-col items-center animate-[gate-rise_400ms_ease_both]">
+      {/* Contenido centrado pero SCROLLEABLE si no entra (así "Continuar sin instalar" nunca queda tapado) */}
+      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 py-8">
+      <div className="w-full max-w-sm flex flex-col items-center animate-[gate-rise_400ms_ease_both]">
         {/* Logo con halo */}
         <div className="relative mb-5">
           <div aria-hidden className="absolute inset-0 -z-10 rounded-3xl bg-sky-500/30 blur-2xl scale-110" />
@@ -50,7 +51,7 @@ export function InstallGate({ onSkip }: Props) {
 
         {/* Recomendación de navegador */}
         <div className="w-full mb-5 rounded-2xl border border-sky-500/30 bg-sky-500/10 p-3 flex items-start gap-2.5">
-          <ShieldCheck size={16} className="text-sky-300 shrink-0 mt-0.5" />
+          <span className="shrink-0 mt-0.5"><ChromeLogo size={18} /></span>
           <p className="text-xs text-sky-100/90 leading-snug">
             <span className="font-semibold text-sky-200">Conviene instalarla desde Google Chrome:</span> es
             más cómodo y no da errores. Desde otros navegadores, el teléfono puede marcar la app como
@@ -96,6 +97,7 @@ export function InstallGate({ onSkip }: Props) {
           Planilla de Horas · by Nicolás Vázquez
         </p>
       </div>
+      </div>
     </div>
   )
 }
@@ -121,7 +123,7 @@ function IOSGuide() {
   return (
     <StepBox>
       <p className="font-semibold text-white flex items-center gap-2">
-        <Smartphone size={15} className="text-blue-400" /> Agregar a pantalla de inicio (Safari)
+        <SafariLogo size={18} /> Agregar a pantalla de inicio (Safari)
       </p>
       <Step n={1}>
         Tocá el ícono de <strong className="text-white">Compartir</strong>{' '}
@@ -130,7 +132,8 @@ function IOSGuide() {
       </Step>
       <Step n={2}>
         Deslizá hacia abajo y elegí{' '}
-        <strong className="text-white">"Agregar a pantalla de inicio"</strong>
+        <strong className="text-white">"Agregar a pantalla de inicio"</strong>{' '}
+        <MonitorDown size={14} className="inline -mt-0.5 text-blue-300" />
       </Step>
       <Step n={3}>
         Tocá <strong className="text-white">"Agregar"</strong> en la esquina superior derecha
@@ -147,14 +150,16 @@ function ChromeAndroidGuide() {
   return (
     <StepBox>
       <p className="font-semibold text-white flex items-center gap-2">
-        <Smartphone size={15} className="text-blue-400" /> Instalar desde Chrome
+        <ChromeLogo size={18} /> Instalar desde Chrome
       </p>
       <Step n={1}>
         Tocá el menú <MoreVertical size={13} className="inline text-blue-400" />{' '}
         (tres puntos arriba a la derecha)
       </Step>
       <Step n={2}>
-        Elegí <strong className="text-white">"Instalar app"</strong> o{' '}
+        Elegí la opción con este ícono{' '}
+        <MonitorDown size={15} className="inline -mt-0.5 text-blue-300" />:{' '}
+        <strong className="text-white">"Instalar app"</strong> o{' '}
         <strong className="text-white">"Agregar a pantalla de inicio"</strong>
       </Step>
       <p className="text-xs text-slate-500 pt-1">
@@ -230,5 +235,29 @@ function Step({ n, children }: { n: number; children: React.ReactNode }) {
       </span>
       <p className="text-slate-300 leading-snug">{children}</p>
     </div>
+  )
+}
+
+// Logos de marca embebidos (esta versión de lucide no trae Chrome/Safari): SVG inline reconocibles.
+function ChromeLogo({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden className="shrink-0">
+      <path fill="#EA4335" d="M24 24 L6.7 14 A20 20 0 0 1 41.3 14 Z" />
+      <path fill="#34A853" d="M24 24 L24 44 A20 20 0 0 1 6.7 14 Z" />
+      <path fill="#FBBC05" d="M24 24 L41.3 14 A20 20 0 0 1 24 44 Z" />
+      <circle cx="24" cy="24" r="9" fill="#fff" />
+      <circle cx="24" cy="24" r="7" fill="#4285F4" />
+    </svg>
+  )
+}
+
+function SafariLogo({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden className="shrink-0">
+      <circle cx="24" cy="24" r="22" fill="#1B9DF0" />
+      <circle cx="24" cy="24" r="17.5" fill="#0C73B8" />
+      <path fill="#FF3B30" d="M24 24 34.5 13.5 22 22Z" />
+      <path fill="#ffffff" d="M24 24 13.5 34.5 26 26Z" />
+    </svg>
   )
 }
