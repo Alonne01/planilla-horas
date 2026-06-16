@@ -70,7 +70,10 @@ export function SettingsPage() {
   const [bkCodigo, setBkCodigo] = useState('')
   const [bkBloqueado, setBkBloqueado] = useState(false)
   const [cloudBusy, setCloudBusy] = useState(false)
-  const [restoreConfirm, setRestoreConfirm] = useState(false)
+  // Restauración: el código SÓLO se tipea a mano acá, para RECUPERAR un respaldo de otro dispositivo.
+  // (La identidad propia se crea siempre con "Generar", que garantiza unicidad.)
+  const [restoreMode, setRestoreMode] = useState(false)
+  const [restoreCodigo, setRestoreCodigo] = useState('')
   const [limiteMsg, setLimiteMsg] = useState<string | null>(null) // modal de tope diario de nube
   const [cloudMs, setCloudMs] = useState<number>(() => msSinceCloudBackup())
 
@@ -268,10 +271,11 @@ export function SettingsPage() {
     }
   }
 
+  // Restaurar de otro dispositivo: usa el código TIPEADO en el panel (restoreCodigo), no la identidad.
+  // Si descifra un respaldo real, recién ahí ese código se ADOPTA como identidad (queda verificado).
   async function handleRestaurarNube() {
-    setRestoreConfirm(false)
-    if (!credencialesNubeValidas(nombre, bkCodigo)) {
-      flash('Completá tu nombre y un código de 6 dígitos', 'err')
+    if (!credencialesNubeValidas(nombre, restoreCodigo)) {
+      flash('Completá tu nombre y el código de 6 dígitos a recuperar', 'err')
       return
     }
     if (!quedanOperacionesNube()) {
@@ -280,9 +284,15 @@ export function SettingsPage() {
     }
     setCloudBusy(true)
     try {
-      const r = await restaurarBackupNube(nombre, bkCodigo)
-      if (r === 'ok') flash('Datos restaurados de la nube ✓')
-      else if (r === 'no-existe') flash('No hay respaldo para ese usuario + código', 'err')
+      const r = await restaurarBackupNube(nombre, restoreCodigo)
+      if (r === 'ok') {
+        // El código tipeado quedó VERIFICADO (descifró un respaldo real) → adoptarlo como identidad.
+        setBkCodigo(restoreCodigo); setBkBloqueado(true)
+        saveBackupCreds({ codigo: restoreCodigo, bloqueado: true })
+        setUltimoUsuarioNube(nombre.trim())
+        setRestoreMode(false); setRestoreCodigo('')
+        flash('Datos restaurados de la nube ✓')
+      } else if (r === 'no-existe') flash('No hay respaldo para ese usuario + código', 'err')
       else flash('Código incorrecto para ese usuario', 'err')
     } catch {
       flash('No se pudo restaurar. Revisá tu conexión.', 'err')
@@ -389,15 +399,12 @@ export function SettingsPage() {
             </div>
             <div className="flex gap-2">
               <input
-                type="text" inputMode="numeric" value={bkCodigo} disabled={bkBloqueado || !nombre.trim()}
-                readOnly={onb.activo}
-                onChange={e => setBkCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                onBlur={() => saveBackupCreds()}
-                placeholder={onb.activo && !bkCodigo ? 'tocá Generar →' : (nombre.trim() ? '••••••' : 'completá tu nombre arriba')}
-                className="flex-1 min-w-0 bg-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono tracking-[0.3em] disabled:opacity-50 disabled:cursor-not-allowed placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                type="text" inputMode="numeric" value={bkCodigo} disabled={bkBloqueado || !nombre.trim()} readOnly
+                placeholder={nombre.trim() ? (bkCodigo ? '' : 'tocá Generar →') : 'completá tu nombre arriba'}
+                className="flex-1 min-w-0 bg-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono tracking-[0.3em] disabled:opacity-50 disabled:cursor-not-allowed placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-500 focus:outline-none"
               />
               {!bkBloqueado && (
-                <button onClick={generarCodigo} disabled={!nombre.trim()}
+                <button onClick={generarCodigo} disabled={!nombre.trim() || cloudBusy}
                   className={`shrink-0 px-3 rounded-xl text-xs font-medium flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:animate-none ${nombre.trim() && !bkCodigo ? 'generar-pulse bg-blue-600 text-white' : 'bg-slate-600 text-slate-200 active:bg-slate-500'}`}>
                   <Shuffle size={14} /> Generar
                 </button>
@@ -405,7 +412,7 @@ export function SettingsPage() {
             </div>
             <p className="text-[11px] text-amber-300/80 leading-snug flex items-start gap-1.5 mt-1.5">
               <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-              Tu nombre + este código son la llave del respaldo. Anotalos: si los perdés, no vas a poder restaurar en otro dispositivo.
+              Tu nombre + este código son la llave del respaldo. El código se obtiene con <strong className="text-amber-200">Generar</strong> (no se escribe a mano). Anotalos: si los perdés, no vas a poder restaurar en otro dispositivo.
             </p>
           </div>
 
@@ -415,16 +422,35 @@ export function SettingsPage() {
               <Cloud size={16} /> Respaldar ahora
             </button>
             <button
-              onClick={() => (restoreConfirm ? handleRestaurarNube() : setRestoreConfirm(true))}
-              disabled={cloudBusy || !nombre.trim() || !bkCodigo}
-              className={`flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 ${restoreConfirm ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-200'}`}>
-              <Download size={16} /> {restoreConfirm ? '¿Reemplazar todo?' : 'Restaurar de la nube'}
+              onClick={() => setRestoreMode(v => !v)}
+              disabled={cloudBusy}
+              className={`flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 ${restoreMode ? 'bg-slate-600 text-white' : 'bg-slate-700 text-slate-200'}`}>
+              <Download size={16} /> Restaurar de la nube
             </button>
           </div>
-          {restoreConfirm && (
-            <button onClick={() => setRestoreConfirm(false)} className="w-full text-xs text-slate-500 py-1">
-              Cancelar restauración
-            </button>
+
+          {/* Restauración: ÚNICO lugar donde se TIPEA un código, sólo para RECUPERAR un respaldo de otro
+              dispositivo. Si descifra, ese código pasa a ser tu identidad. */}
+          {restoreMode && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 space-y-2">
+              <p className="text-xs text-amber-200/90 leading-snug">
+                Para recuperar un respaldo de otro dispositivo: escribí tu <strong>nombre</strong> (arriba) y el <strong>código de 6 dígitos</strong> que generaste allá. Reemplaza los datos de este dispositivo.
+              </p>
+              <input
+                type="text" inputMode="numeric" value={restoreCodigo}
+                onChange={e => setRestoreCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="código de 6 dígitos a recuperar"
+                className="w-full bg-slate-800 text-white rounded-xl px-3 py-2 text-sm font-mono tracking-[0.3em] placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <div className="flex gap-2">
+                <button onClick={() => { setRestoreMode(false); setRestoreCodigo('') }} disabled={cloudBusy}
+                  className="flex-1 py-2 rounded-xl bg-slate-700 text-slate-200 text-xs font-medium disabled:opacity-50">Cancelar</button>
+                <button onClick={handleRestaurarNube} disabled={cloudBusy || !nombre.trim() || restoreCodigo.length !== 6}
+                  className="flex-1 py-2 rounded-xl bg-amber-600 text-white text-xs font-bold disabled:opacity-50">
+                  {cloudBusy ? 'Restaurando…' : 'Restaurar'}
+                </button>
+              </div>
+            </div>
           )}
 
           <p className="text-xs text-slate-500 px-1">Último respaldo en la nube: {haceTexto(cloudMs)}.</p>

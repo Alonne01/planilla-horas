@@ -186,8 +186,9 @@ export function GuideTooltip() {
     return () => clearInterval(iv)
   }, [activo, paso])
 
-  // Medir el alto real de la tarjeta (cambia con el texto de cada paso) para posicionarla sin tapar.
-  useEffect(() => { if (cardRef.current) setCardH(cardRef.current.offsetHeight) }, [paso?.id, paso?.texto])
+  // Medir el alto real de la tarjeta (cambia con el texto de cada paso, y al aparecer el anillo demo)
+  // para posicionarla sin que el botón "Siguiente" quede fuera de pantalla.
+  useEffect(() => { if (cardRef.current) setCardH(cardRef.current.offsetHeight) }, [paso?.id, paso?.texto, !!cuenta, confirmSalir])
 
   // Reposicionar al abrir/cerrar el teclado (cambia el viewport visible).
   useEffect(() => {
@@ -281,7 +282,7 @@ export function GuideTooltip() {
       <div
         key={paso.id}
         ref={cardRef}
-        className="pointer-events-auto fixed inset-x-3 mx-auto max-w-sm rounded-2xl overflow-hidden border border-sky-500/30 bg-slate-800/85 p-3 pt-4 shadow-2xl shadow-black/50 backdrop-blur-sm animate-[gate-rise_240ms_ease_both] transition-[top] duration-200 ease-out"
+        className="pointer-events-auto fixed inset-x-3 mx-auto max-w-sm max-h-[82vh] overflow-y-auto rounded-2xl border border-sky-500/30 bg-slate-800/85 p-3 pt-4 shadow-2xl shadow-black/50 backdrop-blur-sm animate-[gate-rise_240ms_ease_both] transition-[top] duration-200 ease-out"
         style={{
           top: cardTop,
           ...(drag.x || drag.y ? { transform: `translate(${drag.x}px, ${drag.y}px)` } : null),
@@ -304,8 +305,8 @@ export function GuideTooltip() {
 
         {/* Anillo grande ILUMINADO del paso demo: enseña visualmente cómo se llena para avanzar. */}
         {paso.demoAnillo && cuenta && (
-          <div className="mt-3 flex justify-center">
-            <svg key={cuenta.t0} viewBox="0 0 36 36" className="h-16 w-16 -rotate-90" style={{ filter: 'drop-shadow(0 0 7px rgb(56 189 248))' }}>
+          <div className="mt-2 flex justify-center">
+            <svg key={cuenta.t0} viewBox="0 0 36 36" className="h-11 w-11 -rotate-90" style={{ filter: 'drop-shadow(0 0 7px rgb(56 189 248))' }}>
               <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth="4" />
               <circle
                 cx="18" cy="18" r="15" fill="none" stroke="rgb(56 189 248)" strokeWidth="4" strokeLinecap="round"
