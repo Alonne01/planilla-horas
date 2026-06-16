@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual } from '../lib/cloud-backup'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual } from '../lib/cloud-backup'
 import { APP_VERSION } from '../version'
 
 const ACTIVO_MS = 7 * 24 * 60 * 60 * 1000 // "activo" = respaldó en los últimos 7 días
@@ -338,6 +338,7 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
   const [enviando, setEnviando] = useState(false)
   const [confirmar, setConfirmar] = useState(false)
   const [enviado, setEnviado] = useState(false)
+  const [beggarBusy, setBeggarBusy] = useState(false)
 
   useEffect(() => {
     void (async () => {
@@ -351,11 +352,27 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
     setEnviando(true)
     try {
       const m = await enviarMensajeIndividual(user.id, titulo, cuerpo)
-      setActual(m); setTitulo(''); setCuerpo(''); setConfirmar(false); setEnviado(true)
+      setActual(prev => ({ ...m, beggar: prev?.beggar })) // preservar el flag del donador
+      setTitulo(''); setCuerpo(''); setConfirmar(false); setEnviado(true)
     } catch {
       alert('No se pudo enviar. ¿Publicaste las reglas de Firestore para "mensajes"?')
     } finally {
       setEnviando(false)
+    }
+  }
+
+  // Activa/desactiva el donador SÓLO para este usuario (aunque esté apagado para todos).
+  async function toggleBeggar() {
+    if (!user.id || actual === undefined) return
+    const nuevo = !actual?.beggar
+    setBeggarBusy(true)
+    try {
+      await setBeggarUsuario(user.id, nuevo)
+      setActual(a => ({ ...(a ?? { id: user.id!, titulo: '', cuerpo: '', createdAt: 0, recibidoAt: 0 }), beggar: nuevo }))
+    } catch {
+      alert('No se pudo cambiar. ¿Publicaste las reglas de Firestore para "mensajes"?')
+    } finally {
+      setBeggarBusy(false)
     }
   }
 
@@ -381,6 +398,22 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
         ) : (
           <p className="text-[11px] text-slate-500">Todavía no le enviaste ningún mensaje.</p>
         )}
+
+        {/* Donador para ESTE usuario (independiente del toggle global) */}
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-600/60 bg-slate-700/30 px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-white flex items-center gap-1.5"><Power size={13} className="shrink-0" /> Donador para este usuario</p>
+            <p className="text-[11px] text-slate-500">{actual === undefined ? 'Cargando…' : actual?.beggar ? 'Activado: le aparece el pedido de donación.' : 'Apagado para este usuario.'}</p>
+          </div>
+          <button
+            onClick={toggleBeggar}
+            disabled={!user.id || beggarBusy || actual === undefined}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${actual?.beggar ? 'bg-emerald-500' : 'bg-slate-600'}`}
+            aria-label="Activar o desactivar el donador para este usuario"
+          >
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${actual?.beggar ? 'left-[22px]' : 'left-0.5'}`} />
+          </button>
+        </div>
 
         {enviado && <p className="text-[11px] text-emerald-300">Mensaje enviado. Le va a aparecer la próxima vez que abra la app; acá vas a ver el acuse cuando lo reciba.</p>}
 

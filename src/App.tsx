@@ -107,6 +107,8 @@ function AppContent() {
   const [broadcast, setBroadcast] = useState<{ id: string; titulo: string; cuerpo: string } | null>(null)
   // Mensaje INDIVIDUAL del admin para este usuario (le aparece como una difusión dirigida).
   const [mensajeInd, setMensajeInd] = useState<{ id: string; titulo: string; cuerpo: string } | null>(null)
+  // Donador activado para ESTE usuario por el admin (aunque esté apagado para todos).
+  const [beggarUser, setBeggarUser] = useState(false)
   const restoreRef = useRef<HTMLInputElement>(null)
   // Alto real del nav (incluye safe-area) para apoyar el caracol del easter egg en su borde.
   const navRef = useRef<HTMLElement>(null)
@@ -165,10 +167,13 @@ function AppContent() {
         const s = await getSettings()
         if (!credencialesNubeValidas(s.nombreUsuario, s.backupCodigo)) return
         const msg = await leerMensajeIndividual(s.nombreUsuario, s.backupCodigo)
-        if (!msg || (!msg.titulo && !msg.cuerpo)) return
-        let visto = ''
-        try { visto = localStorage.getItem(MSG_IND_VISTO_KEY) ?? '' } catch { /* ignore */ }
-        if (msg.id !== visto) setMensajeInd({ id: msg.id, titulo: msg.titulo, cuerpo: msg.cuerpo })
+        if (!msg) return
+        if (msg.beggar) setBeggarUser(true) // donador activado para este usuario por el admin
+        if (msg.titulo || msg.cuerpo) {
+          let visto = ''
+          try { visto = localStorage.getItem(MSG_IND_VISTO_KEY) ?? '' } catch { /* ignore */ }
+          if (msg.id !== visto) setMensajeInd({ id: msg.id, titulo: msg.titulo, cuerpo: msg.cuerpo })
+        }
       } catch { /* offline / sin credenciales */ }
     })()
   }, [])
@@ -498,7 +503,7 @@ function AppContent() {
         {/* Input de restauración: fuera del banner para que sobreviva al auto-cierre durante la selección de archivo */}
         <input ref={restoreRef} type="file" accept=".json" onChange={handleRestoreFromFile} className="hidden" />
 
-        {tab === "horas" && <HorasTrabajoPage beggarActivo={config.beggarActivo} />}
+        {tab === "horas" && <HorasTrabajoPage beggarActivo={config.beggarActivo || beggarUser} />}
         {tab === "analytics" && <AnalyticsPage />}
         {tab === "settings" && <SettingsPage />}
         {tab === "salary" && showSalary && <ProyeccionSalarialPage />}

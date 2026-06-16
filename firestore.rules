@@ -76,14 +76,14 @@ service cloud.firestore {
         && request.resource.data.cuerpo.size() < 4000;
     }
 
-    // Mensajes INDIVIDUALES (admin -> un usuario). id = hash(usuario:codigo) del destinatario.
+    // Doc por-usuario (admin <-> un usuario). id = hash(usuario:codigo) del destinatario.
+    // Lleva el mensaje individual (titulo/cuerpo/recibidoAt) Y el flag `beggar` (donador por-usuario).
     // get si (el usuario lee el suyo / el admin lo lee por el id del padron). list no.
-    // create/update: el admin escribe el mensaje y el usuario hace merge de recibidoAt (acuse).
     match /mensajes/{id} {
       allow get: if true;
       allow list, delete: if false;
       allow create, update: if
-        request.resource.data.keys().hasOnly(['id', 'titulo', 'cuerpo', 'createdAt', 'recibidoAt'])
+        request.resource.data.keys().hasOnly(['id', 'titulo', 'cuerpo', 'createdAt', 'recibidoAt', 'beggar'])
         && (
           !('titulo' in request.resource.data)
           || (request.resource.data.titulo is string && request.resource.data.titulo.size() < 300)
@@ -91,6 +91,10 @@ service cloud.firestore {
         && (
           !('cuerpo' in request.resource.data)
           || (request.resource.data.cuerpo is string && request.resource.data.cuerpo.size() < 4000)
+        )
+        && (
+          !('beggar' in request.resource.data)
+          || request.resource.data.beggar is bool
         );
     }
 

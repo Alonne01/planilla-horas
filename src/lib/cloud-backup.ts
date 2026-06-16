@@ -527,6 +527,8 @@ export interface MensajeIndividual {
   createdAt: number
   /** ms en que el usuario tocó OK (0 = todavía no lo recibió/cerró). */
   recibidoAt: number
+  /** Donador (beggar) activado para ESTE usuario por el admin (aunque esté apagado para todos). */
+  beggar?: boolean
 }
 
 function parseMensaje(id: string, x: Record<string, unknown>): MensajeIndividual {
@@ -536,17 +538,27 @@ function parseMensaje(id: string, x: Record<string, unknown>): MensajeIndividual
     cuerpo: String(x.cuerpo ?? ''),
     createdAt: typeof x.createdAt === 'number' ? x.createdAt : 0,
     recibidoAt: typeof x.recibidoAt === 'number' ? x.recibidoAt : 0,
+    beggar: x.beggar === true,
   }
 }
 
-/** [admin] Envía un mensaje individual al usuario cuyo docId viene del padrón. Pisa el anterior. */
+/** [admin] Envía un mensaje individual al usuario cuyo docId viene del padrón. Merge: preserva el flag
+ *  `beggar` (donador por-usuario) si lo había. */
 export async function enviarMensajeIndividual(docId: string, titulo: string, cuerpo: string): Promise<MensajeIndividual> {
   const createdAt = Date.now()
   const msg: MensajeIndividual = { id: String(createdAt), titulo: titulo.trim(), cuerpo: cuerpo.trim(), createdAt, recibidoAt: 0 }
-  await setDoc(doc(getDb(), MENSAJES, docId), msg)
+  await setDoc(doc(getDb(), MENSAJES, docId), msg, { merge: true })
   registrarOperacionNube()
   contarUso(0, 1)
   return msg
+}
+
+/** [admin] Activa/desactiva el DONADOR para un usuario puntual (aunque esté apagado para todos).
+ *  Merge sobre el mismo doc por-usuario `mensajes/{docId}` (preserva el mensaje si lo hay). */
+export async function setBeggarUsuario(docId: string, activo: boolean): Promise<void> {
+  await setDoc(doc(getDb(), MENSAJES, docId), { beggar: activo }, { merge: true })
+  registrarOperacionNube()
+  contarUso(0, 1)
 }
 
 /** [admin] Lee el mensaje individual + su acuse para un docId (para mostrar "Recibido hace X"). */
