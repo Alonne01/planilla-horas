@@ -117,6 +117,14 @@ const PASOS: Paso[] = [
     titulo: 'Feriados', texto: 'Tocá para actualizar los feriados nacionales.',
     avanzaAlTocar: true,
   },
+  // ── Intro a los tres ejemplos de carga de días ──
+  {
+    id: 'g-intro-dias',
+    titulo: '¿Cómo llenar los días?',
+    texto: (
+      <>De acá en más vas a ver <strong className="text-white">tres ejemplos</strong> de cómo cargar un día: una <strong className="text-white">"ausencia"</strong>, un <strong className="text-white">"trabajo en base"</strong> y un <strong className="text-white">"trabajo en campo"</strong>.<br /><br />Ojo con las <strong className="text-white">observaciones</strong>: el <strong className="text-white">"franco/feriado trabajado"</strong>, el <strong className="text-white">tipo de ausencia</strong> y el <strong className="text-white">turno (TD/TN)</strong> se ponen <strong className="text-white">solos</strong> al exportar. Los vas a ver en <span className="italic text-slate-400">gris</span> dentro del campo de observaciones: no hace falta que los escribas.</>
+    ),
+  },
   // ── Día 1: una ausencia (se carga y guarda de verdad) ──
   {
     id: 'g-aus-dia', tab: 'horas', target: '[data-tour="hrs-dia"]',
@@ -164,7 +172,7 @@ const PASOS: Paso[] = [
   },
   {
     id: 'g-base-obs', tab: 'horas', target: '[data-tour="dlg-obs"]',
-    titulo: 'Observación', texto: 'Anotá una observación (ej: el pozo).',
+    titulo: 'Observación', texto: 'Anotá una observación (ej: armado de equipos).',
     done: () => valDe('[data-tour="dlg-obs"] input').trim().length >= 3,
     delayMs: 4000, debounce: true, // avanza recién tras 4 s sin tipear
   },

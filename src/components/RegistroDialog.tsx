@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type FocusEvent } from 'react'
 import { v4 as uuid } from 'uuid'
 import { X, CalendarDays, Clock, Moon, Palmtree, Check } from 'lucide-react'
 import { TimeDrumPicker } from './TimeDrumPicker'
@@ -186,6 +186,22 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   const haySugerencia = !!sugEntrada && !!sugSalida
   const sugTipo = haySugerencia ? clasificarTurno(sugEntrada, sugSalida) : null
   function aplicarSugerencia() { setE1(sugEntrada); setS1(sugSalida) }
+
+  // Prefijo/sufijo que la EXPORTACIÓN agrega sola a la observación (réplica de excel-export):
+  // el "franco/feriado trabajado", el tipo de ausencia y el turno TD/TN de Campo. Se muestran como
+  // texto fantasma (gris, no editable) dentro del campo, para que se vea que no hay que escribirlos.
+  const obsPrefijo = isFrancoWorked ? 'franco trabajado'
+    : isFeriadoWorked ? 'feriado trabajado'
+    : isDayOff ? (
+        subFranco === 'FALTA' ? 'falta injustificada'
+        : subFranco === 'AUSENCIA' ? 'ausencia just.'
+        : esFeriadoHoy ? 'feriado'
+        : subFranco === 'COMP' ? 'franco (comp.)'
+        : esFrancoHoy ? 'franco'
+        : ''
+      )
+    : ''
+  const obsSufijo = (!isDayOff && lugar === 'Campo' && turnoTipo) ? (turnoTipo === 'noche' ? 'TN' : 'TD') : ''
 
   // El recordatorio de turno noche se borra solo a los 5 s (la sugerencia de horario queda)
   useEffect(() => {
@@ -539,8 +555,12 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
         {/* ── Proyecto / Observaciones ── */}
         <div className="mb-5" data-tour="dlg-obs">
           <label className="text-xs text-slate-400 mb-1 block">Proyecto / Observaciones</label>
-          <ProjectInput value={proyectoObs} onChange={setProyectoObs} suggestions={proyectosFrecuentes} />
-          {proyectosFrecuentes.length === 0 && (
+          <ProjectInput value={proyectoObs} onChange={setProyectoObs} suggestions={proyectosFrecuentes} prefijo={obsPrefijo} sufijo={obsSufijo} />
+          {(obsPrefijo || obsSufijo) ? (
+            <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+              El texto en <span className="italic text-slate-400">gris</span> se agrega solo al exportar — no lo escribas.
+            </p>
+          ) : proyectosFrecuentes.length === 0 && (
             <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
               Podés agregar pozos u observaciones automáticas en Configuración → Proyectos frecuentes.
             </p>
@@ -627,7 +647,7 @@ function TimeInput({ label, value, onChange }: { label: string; value: string; o
   )
 }
 
-function ProjectInput({ value, onChange, suggestions }: { value: string; onChange: (v: string) => void; suggestions: string[] }) {
+function ProjectInput({ value, onChange, suggestions, prefijo, sufijo }: { value: string; onChange: (v: string) => void; suggestions: string[]; prefijo?: string; sufijo?: string }) {
   // Proyectos frecuentes que matchean lo tipeado, como CHIPS arriba del input (en flujo
   // normal, no dropdown flotante). Tocar un chip llena el valor SIN enfocar el input, así
   // seleccionar un frecuente no abre el teclado ni desplaza la pantalla.
@@ -638,6 +658,23 @@ function ProjectInput({ value, onChange, suggestions }: { value: string; onChang
   const matches = suggestions.filter(s => s.toLowerCase().includes(q))
   const shown = matches.slice(0, CHIPS_MAX)
   const ocultos = matches.length - shown.length
+
+  // Mantener el campo visible sobre el teclado (scrollIntoView 'center' no alcanza si el teclado tapa
+  // medio diálogo): desplaza el scroller para dejar el input a ~1/3 del área visible.
+  const handleFocus = (e: FocusEvent<HTMLInputElement>) => {
+    const el = e.currentTarget
+    setTimeout(() => {
+      const vv = window.visualViewport
+      const scroller = el.closest('.overflow-y-auto') as HTMLElement | null
+      if (vv && scroller) {
+        const r = el.getBoundingClientRect()
+        const objetivo = vv.offsetTop + vv.height * 0.35  // ~1/3 desde arriba del área visible
+        scroller.scrollTop += r.top - objetivo
+      } else {
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }
+    }, 300)
+  }
 
   return (
     <div>
@@ -660,29 +697,31 @@ function ProjectInput({ value, onChange, suggestions }: { value: string; onChang
           )}
         </div>
       )}
-      <input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onFocus={e => {
-          // Que el campo quede BIEN visible sobre el teclado: desplazar el diálogo según el viewport
-          // visible (scrollIntoView 'center' a veces no alcanza cuando el teclado tapa medio diálogo).
-          const el = e.currentTarget
-          setTimeout(() => {
-            const vv = window.visualViewport
-            const scroller = el.closest('.overflow-y-auto') as HTMLElement | null
-            if (vv && scroller) {
-              const r = el.getBoundingClientRect()
-              const objetivo = vv.offsetTop + vv.height * 0.35  // ~1/3 desde arriba del área visible
-              scroller.scrollTop += r.top - objetivo
-            } else {
-              el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-            }
-          }, 300)
-        }}
-        placeholder="Escribí o tocá un proyecto frecuente"
-        className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+      {(prefijo || sufijo) ? (
+        // El prefijo/sufijo (franco/feriado trabajado, tipo de ausencia, turno TD/TN) se muestra como
+        // texto FANTASMA gris, no editable, flanqueando lo que el usuario escribe (se agrega solo al exportar).
+        <div className="flex items-center w-full bg-slate-700 rounded-xl px-3 focus-within:ring-2 focus-within:ring-blue-500">
+          {prefijo && <span className="shrink-0 text-xs italic text-slate-500 select-none mr-1">{prefijo}{value ? ' -' : ''}</span>}
+          <input
+            type="text"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            onFocus={handleFocus}
+            placeholder="Escribí o tocá un proyecto frecuente"
+            className="flex-1 min-w-0 bg-transparent text-white py-2 text-sm placeholder:text-slate-500 focus:outline-none"
+          />
+          {sufijo && <span className="shrink-0 text-xs italic text-slate-500 select-none ml-1">{sufijo}</span>}
+        </div>
+      ) : (
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onFocus={handleFocus}
+          placeholder="Escribí o tocá un proyecto frecuente"
+          className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      )}
     </div>
   )
 }
