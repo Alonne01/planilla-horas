@@ -81,9 +81,9 @@ const PASOS: Paso[] = [
     texto: (
       <>Escribí tu <strong className="font-bold text-white">nombre y apellido</strong> con un espacio en el medio (ej: <strong className="text-white">Juan Pérez</strong>): es el que va en la planilla, en el Excel que exportás y en el respaldo en la nube. Cuando termines de escribir el <strong className="text-white">apellido</strong>, espero unos segundos y sigo solo.</>
     ),
-    // Empieza a contar recién cuando ya hay APELLIDO (nombre + espacio + ≥1 letra después). Con
-    // debounce, cada tecla REINICIA los 7 s → avanza recién 7 s después de dejar de escribir.
-    done: () => { const v = valDe('[data-tour="cfg-nombre"]').trim(); const sp = v.indexOf(' '); return sp > 0 && v.slice(sp + 1).trim().length > 0 },
+    // Empieza a contar recién a partir del 3er carácter del APELLIDO (nombre + espacio + ≥3 letras
+    // después). Con debounce, cada tecla REINICIA los 7 s → avanza 7 s después de dejar de escribir.
+    done: () => { const v = valDe('[data-tour="cfg-nombre"]').trim(); const sp = v.indexOf(' '); return sp > 0 && v.slice(sp + 1).trim().length >= 3 },
     delayMs: 7000, debounce: true,
   },
   {
@@ -132,7 +132,7 @@ const PASOS: Paso[] = [
   {
     id: 'g-aus-obs', tab: 'horas', target: '[data-tour="dlg-obs"]',
     titulo: 'Observación', texto: 'Anotá una observación (ej: "médico").',
-    done: () => valDe('[data-tour="dlg-obs"] input').trim().length > 0,
+    done: () => valDe('[data-tour="dlg-obs"] input').trim().length >= 3,
     delayMs: 4000, debounce: true, // avanza recién tras 4 s sin tipear
   },
   {
@@ -165,7 +165,7 @@ const PASOS: Paso[] = [
   {
     id: 'g-base-obs', tab: 'horas', target: '[data-tour="dlg-obs"]',
     titulo: 'Observación', texto: 'Anotá una observación (ej: el pozo).',
-    done: () => valDe('[data-tour="dlg-obs"] input').trim().length > 0,
+    done: () => valDe('[data-tour="dlg-obs"] input').trim().length >= 3,
     delayMs: 4000, debounce: true, // avanza recién tras 4 s sin tipear
   },
   {
@@ -210,7 +210,7 @@ const PASOS: Paso[] = [
   {
     id: 'g-campo-obs', tab: 'horas', target: '[data-tour="dlg-obs"]',
     titulo: 'Observación', texto: 'Anotá una observación (ej: el pozo).',
-    done: () => valDe('[data-tour="dlg-obs"] input').trim().length > 0,
+    done: () => valDe('[data-tour="dlg-obs"] input').trim().length >= 3,
     delayMs: 4000, debounce: true, // avanza recién tras 4 s sin tipear
   },
   {
