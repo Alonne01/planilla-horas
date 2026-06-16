@@ -71,18 +71,21 @@ function clasificarTurno(entrada: string, salida: string): 'noche' | 'dia' | nul
 
 type LugarTrabajo = 'Base' | 'Campo' | 'Franco'  // 'Franco' used only for saving absences
 type Pernocte = 'NO' | 'Hotel' | 'Trailer'
-// Viaje por slider: 100→500 km de a 100; 1,5 h por cada 100 km. El máximo (500) habilita hora manual.
-const KM_MIN = 100, KM_MAX = 500, KM_STEP = 100
-const STEPS = [0, 100, 200, 300, 400, 500] // posiciones del slider de viaje (0 = sin viaje)
-const horasPorKm = (km: number) => (km / 100) * 1.5
-function fmtHorasViaje(h: number): string {
-  const s = Number.isInteger(h) ? String(h) : String(h).replace('.', ',')
-  return `${s} h`
+
+// Viaje (Campo): 4 opciones en vez del slider. No viaja = 0 h; −300 km = 3 h; +300 km = 4 h; Otro =
+// el usuario carga km (informativo) y horas a mano. Sólo `horasViaje` cuenta; `kmViaje` es una nota.
+type ViajeModo = 'NO' | 'M300' | 'P300' | 'OTRO'
+const HORAS_VIAJE_FIJAS: Record<'M300' | 'P300', number> = { M300: 3, P300: 4 }
+
+function getInitialViaje(existing: RegistroHoras | undefined): { modo: ViajeModo; km: string; horas: string } {
+  const hv = existing?.horasViaje ?? 0
+  if (existing?.lugarTrabajo !== 'Campo' || hv <= 0) return { modo: 'NO', km: '', horas: '' }
+  if (hv === HORAS_VIAJE_FIJAS.M300) return { modo: 'M300', km: '', horas: '' }
+  if (hv === HORAS_VIAJE_FIJAS.P300) return { modo: 'P300', km: '', horas: '' }
+  // Cualquier otro valor (incluye los del slider viejo: 1,5 / 4,5 / 6 / 7,5 / manual) → "Otro".
+  return { modo: 'OTRO', km: existing?.kmViaje ? String(existing.kmViaje).replace('.', ',') : '', horas: String(hv).replace('.', ',') }
 }
-function kmDesdeHoras(hv: number): number {
-  const km = Math.round((hv / 1.5) * 100)
-  return km >= KM_MIN && km < KM_MAX && (km - KM_MIN) % KM_STEP === 0 ? km : KM_MAX
-}
+
 /** Mutually-exclusive absence labels — shown only when no times entered */
 type SubFranco = 'COMP' | 'AUSENCIA' | 'FALTA' | null
 
@@ -113,13 +116,10 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   // Base: toggle +1 h fija (viajeActivo). km/horas se derivan de horasViaje al editar.
   const hvExisting = existing?.horasViaje ?? 0
   const [viajeActivo, setViajeActivo] = useState(existing?.lugarTrabajo === 'Base' && hvExisting > 0)
-  const [kmViaje, setKmViaje] = useState<number>(() =>
-    existing?.lugarTrabajo === 'Campo' && hvExisting > 0 ? kmDesdeHoras(hvExisting) : 0
-  )
-  const [horasManuales, setHorasManuales] = useState(() =>
-    existing?.lugarTrabajo === 'Campo' && hvExisting > 0 && kmDesdeHoras(hvExisting) === KM_MAX
-      ? String(hvExisting).replace('.', ',') : ''
-  )
+  const initialViaje = getInitialViaje(existing)
+  const [viajeModo, setViajeModo] = useState<ViajeModo>(initialViaje.modo)
+  const [kmManual, setKmManual] = useState(initialViaje.km)       // km informativo (opción "Otro")
+  const [horasManual, setHorasManual] = useState(initialViaje.horas) // horas que cuentan (opción "Otro")
   const [maneja, setManeja] = useState(existing?.maneja ?? false)
 
   // Tour: avisar una vez cuando se cargan entrada y salida.
@@ -132,12 +132,17 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
     setViajeActivo(v) // sólo Base (+1 h)
   }
 
-  function handleStepChange(i: number) {
-    const km = STEPS[i]
-    setKmViaje(km)
+  function handleSetViajeModo(m: ViajeModo) {
+    setViajeModo(m)
     try { navigator.vibrate?.(8) } catch { /* sin vibración */ }
-    if (km === 0) { setManeja(false); setHorasManuales('') }
-    else if (km === KM_MAX && !horasManuales) setHorasManuales(String(horasPorKm(KM_MAX)).replace('.', ','))
+    if (m === 'NO') { setManeja(false); setKmManual(''); setHorasManual('') }
+  }
+
+  // Normaliza las horas manuales (opción "Otro") al salir del campo: [0, 24] redondeado a 0,25.
+  function normalizarHorasManual() {
+    const n = parseFloat(horasManual.replace(',', '.'))
+    if (!Number.isFinite(n) || n < 0) { setHorasManual(''); return }
+    setHorasManual(String(Math.min(24, Math.round(n * 4) / 4)).replace('.', ','))
   }
 
   function handleSetLugar(l: 'Base' | 'Campo') {
@@ -145,8 +150,9 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
     setLugar(l)
     // al cambiar de lugar se resetea el viaje: el usuario lo re-activa si corresponde
     setViajeActivo(false)
-    setKmViaje(0)
-    setHorasManuales('')
+    setViajeModo('NO')
+    setKmManual('')
+    setHorasManual('')
     setManeja(false)
   }
   const [proyectoObs, setProyectoObs] = useState(
@@ -214,9 +220,13 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
     if (isPartialEntry) return  // guarded by UI — button disabled when partial
     const horasViajeFinal = isDayOff ? 0
       : lugar === 'Base' ? (viajeActivo ? 1 : 0)
-      : kmViaje === 0 ? 0
-      : kmViaje < KM_MAX ? horasPorKm(kmViaje)
-      : (parseFloat(horasManuales.replace(',', '.')) || horasPorKm(KM_MAX))
+      : viajeModo === 'NO' ? 0
+      : viajeModo === 'OTRO' ? (parseFloat(horasManual.replace(',', '.')) || 0)
+      : HORAS_VIAJE_FIJAS[viajeModo]
+    // km: sólo informativo y sólo en la opción "Otro" (no afecta el cálculo).
+    const kmViajeFinal = (!isDayOff && lugar === 'Campo' && viajeModo === 'OTRO')
+      ? (parseFloat(kmManual.replace(',', '.')) || undefined)
+      : undefined
     const reg: RegistroHoras = {
       id: existing?.id ?? uuid(),
       fechaMs: fecha.getTime(),
@@ -226,8 +236,9 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       salidaFinMs: existing?.salidaFinMs ?? null,
       lugarTrabajo: (isDayOff ? 'Franco' : lugar) as LugarTrabajo,
       pernocte: (isDayOff || lugar === 'Base') ? 'NO' : pernocte,
-      maneja: (isDayOff || lugar === 'Base') ? false : (kmViaje > 0 ? maneja : false),
+      maneja: (isDayOff || lugar === 'Base') ? false : (viajeModo !== 'NO' ? maneja : false),
       horasViaje: horasViajeFinal,
+      kmViaje: kmViajeFinal,
       observaciones: proyectoObs,
       proyecto: proyectoObs,
       esFeriado: esFeriadoHoy,
@@ -483,54 +494,55 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
                 ))}
               </div>
             </div>
-            {/* Slider de viaje: 0 = sin viaje; >0 = viaje + horas + maneja */}
-            <div data-tour="dlg-slider">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Viaje</span>
-                <span className="text-xs font-semibold text-slate-200">
-                  {kmViaje === 0 ? 'Sin viaje' : kmViaje === KM_MAX ? '500+ km' : `${kmViaje} km`}
-                </span>
-              </div>
-              <input
-                type="range" min={0} max={STEPS.length - 1} step={1}
-                value={STEPS.indexOf(kmViaje)}
-                onChange={e => handleStepChange(Number(e.target.value))}
-                className="w-full accent-blue-500"
-              />
-              <div className="flex justify-between px-0.5 mt-1">
-                {STEPS.map((k, i) => (
-                  <span key={i} className={`text-[9px] ${kmViaje === k ? 'text-blue-400 font-semibold' : 'text-slate-500'}`}>
-                    {k === 0 ? 'No' : k === KM_MAX ? '500+' : k}
-                  </span>
+            {/* Viaje: 4 opciones (No viaja / −300 km=3 h / +300 km=4 h / Otro) en vez del slider */}
+            <div data-tour="dlg-viaje-modo">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Viaje</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ['NO', 'No viaja', ''],
+                  ['M300', '−300 km', '3 h'],
+                  ['P300', '+300 km', '4 h'],
+                  ['OTRO', 'Otro', ''],
+                ] as [ViajeModo, string, string][]).map(([key, label, sub]) => (
+                  <button key={key} onClick={() => handleSetViajeModo(key)}
+                    className={`py-2.5 rounded-xl text-sm font-medium transition-colors ${viajeModo === key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                    {label}
+                    {sub && <span className={`block text-[10px] ${viajeModo === key ? 'text-blue-100/80' : 'text-slate-400'}`}>{sub}</span>}
+                  </button>
                 ))}
               </div>
             </div>
-            {kmViaje > 0 && (
+            {viajeModo !== 'NO' && (
               <div className="ml-3 pl-3 border-l-2 border-slate-700 space-y-3">
                 <p className="text-[11px] text-slate-400 leading-snug">
                   Las horas de viaje se suman aparte de las horas de trabajo (entrada/salida).
                 </p>
-                {kmViaje < KM_MAX ? (
-                  <p className="text-xs text-slate-400">
-                    Horas de viaje: <span className="font-semibold text-slate-200">{fmtHorasViaje(horasPorKm(kmViaje))}</span>
-                    <span className="text-slate-500"> · 1,5 h c/100 km</span>
-                  </p>
-                ) : (
-                  <div>
-                    <label className="text-xs text-slate-400 mb-1 block">Horas de viaje (manual)</label>
-                    <input
-                      type="text" inputMode="decimal"
-                      value={horasManuales}
-                      onChange={e => { if (/^[\d.,]*$/.test(e.target.value)) setHorasManuales(e.target.value) }}
-                      onBlur={() => {
-                        const n = parseFloat(horasManuales.replace(',', '.'))
-                        if (!Number.isFinite(n) || n < 0) { setHorasManuales(''); return }
-                        setHorasManuales(String(Math.min(24, Math.round(n * 4) / 4)).replace('.', ','))
-                      }}
-                      placeholder="0"
-                      className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                {viajeModo === 'OTRO' ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1 block">Km (opcional)</label>
+                      <input
+                        type="text" inputMode="decimal" value={kmManual}
+                        onChange={e => { if (/^[\d.,]*$/.test(e.target.value)) setKmManual(e.target.value) }}
+                        placeholder="ej: 350"
+                        className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1 block">Horas de viaje</label>
+                      <input
+                        type="text" inputMode="decimal" value={horasManual}
+                        onChange={e => { if (/^[\d.,]*$/.test(e.target.value)) setHorasManual(e.target.value) }}
+                        onBlur={normalizarHorasManual}
+                        placeholder="0"
+                        className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                   </div>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    Horas de viaje: <span className="font-semibold text-slate-200">{viajeModo === 'M300' ? '3 h' : '4 h'}</span>
+                  </p>
                 )}
                 <div data-tour="dlg-maneja">
                   <Toggle label="Manejó este día" value={maneja} onChange={setManeja} />

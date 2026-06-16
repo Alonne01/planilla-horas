@@ -48,6 +48,16 @@ export function InstallGate({ onSkip }: Props) {
           <Row icon={<Smartphone size={16} className="text-blue-400" />} text="Acceso directo desde tu pantalla de inicio" />
         </div>
 
+        {/* Recomendación de navegador */}
+        <div className="w-full mb-5 rounded-2xl border border-sky-500/30 bg-sky-500/10 p-3 flex items-start gap-2.5">
+          <ShieldCheck size={16} className="text-sky-300 shrink-0 mt-0.5" />
+          <p className="text-xs text-sky-100/90 leading-snug">
+            <span className="font-semibold text-sky-200">Conviene instalarla desde Google Chrome:</span> es
+            más cómodo y no da errores. Desde otros navegadores, el teléfono puede marcar la app como
+            "sospechosa" o pedirte instalar "de todas maneras".
+          </p>
+        </div>
+
         {/* Install action */}
         <div className="w-full space-y-3">
           {canInstall ? (

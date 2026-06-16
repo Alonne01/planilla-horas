@@ -204,9 +204,9 @@ const PASOS: Paso[] = [
     avanzaAlTocar: true,
   },
   {
-    id: 'g-campo-slider', tab: 'horas', target: '[data-tour="dlg-slider"]',
-    titulo: 'Viaje (slider)', texto: 'Deslizá los km de viaje: de a 100 km, de 100 a 500. Suma 1,5 h cada 100 km (aparte de las horas de trabajo). El máximo (500+) te deja cargar las horas a mano.',
-    avanzaAlTocar: true, debounce: true, delayMs: 1500, // avanza 1,5 s tras el último movimiento
+    id: 'g-campo-viaje', tab: 'horas', target: '[data-tour="dlg-viaje-modo"]',
+    titulo: 'Viaje', texto: 'Elegí el viaje: "No viaja", "−300 km" (3 h), "+300 km" (4 h), u "Otro" para cargar los km y las horas a mano. Las horas de viaje se suman aparte de las de trabajo.',
+    avanzaAlTocar: true, delayMs: 800,
   },
   {
     // Sólo aparece si marcó viaje (>0 km). Opcional: avanza al tocar el toggle o solo a los 5 s.

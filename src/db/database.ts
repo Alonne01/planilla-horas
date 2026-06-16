@@ -41,6 +41,7 @@ export interface RegistroHoras {
   pernocte: 'NO' | 'Hotel' | 'Trailer'
   maneja: boolean
   horasViaje: number
+  kmViaje?: number  // km informativos del viaje (sólo opción "Otro"); NO afecta el cálculo (sólo cuenta horasViaje)
   observaciones: string
   proyecto: string
   esFeriado: boolean
