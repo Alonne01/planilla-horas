@@ -79,12 +79,12 @@ const PASOS: Paso[] = [
     id: 'cfg-nombre', tab: 'settings', target: '[data-tour="cfg-nombre"]',
     titulo: 'Tu nombre y apellido',
     texto: (
-      <>Escribí tu <strong className="font-bold text-white">nombre y apellido</strong> con un espacio en el medio (ej: <strong className="text-white">Juan Pérez</strong>): es el que va en la planilla, en el Excel que exportás y en el respaldo en la nube. Cuando empieces a escribir el <strong className="text-white">apellido</strong>, espero 7 segundos y sigo solo.</>
+      <>Escribí tu <strong className="font-bold text-white">nombre y apellido</strong> con un espacio en el medio (ej: <strong className="text-white">Juan Pérez</strong>): es el que va en la planilla, en el Excel que exportás y en el respaldo en la nube. Cuando termines de escribir el <strong className="text-white">apellido</strong>, espero unos segundos y sigo solo.</>
     ),
-    // Arranca a contar recién cuando empieza el APELLIDO (hay nombre + espacio + ≥1 letra después);
-    // SIN debounce → 7 s fijos desde ese momento (no se reinician con cada tecla).
+    // Empieza a contar recién cuando ya hay APELLIDO (nombre + espacio + ≥1 letra después). Con
+    // debounce, cada tecla REINICIA los 7 s → avanza recién 7 s después de dejar de escribir.
     done: () => { const v = valDe('[data-tour="cfg-nombre"]').trim(); const sp = v.indexOf(' '); return sp > 0 && v.slice(sp + 1).trim().length > 0 },
-    delayMs: 7000,
+    delayMs: 7000, debounce: true,
   },
   {
     id: 'cfg-respaldo', tab: 'settings', target: '[data-tour="cfg-respaldo"]',
