@@ -25,15 +25,6 @@ export function InstallGate({ onSkip }: Props) {
       {/* Contenido centrado pero SCROLLEABLE si no entra (así "Continuar sin instalar" nunca queda tapado) */}
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 py-8">
       <div className="w-full max-w-sm flex flex-col items-center animate-[gate-rise_400ms_ease_both]">
-        {/* Logo con halo */}
-        <div className="relative mb-5">
-          <div aria-hidden className="absolute inset-0 -z-10 rounded-3xl bg-sky-500/30 blur-2xl scale-110" />
-          <img
-            src={`${import.meta.env.BASE_URL}icons/icon-512.svg`}
-            alt="Planilla de Horas"
-            className="w-24 h-24 rounded-2xl shadow-xl ring-1 ring-white/10"
-          />
-        </div>
         <h1 className="text-3xl font-extrabold text-center mb-1 bg-gradient-to-br from-sky-200 via-white to-emerald-200 bg-clip-text text-transparent">
           Planilla de Horas
         </h1>
