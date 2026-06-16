@@ -9,7 +9,7 @@ import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasi
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
 import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto } from '../lib/cloud-backup'
 import { useOnboarding } from '../onboarding/OnboardingContext'
-import { activarRecordatorios, notificacionesConcedidas, notificacionesSoportadas } from '../lib/recordatorio'
+import { activarRecordatorios, desactivarRecordatorios, notificacionesConcedidas, notificacionesSoportadas, recordatorioHabilitado, setRecordatorioHabilitado, actualizarAgenda, registrarSyncPeriodico } from '../lib/recordatorio'
 import { APP_VERSION } from '../version'
 
 declare const __BUILD_TIME__: string
@@ -53,7 +53,8 @@ export function SettingsPage() {
   const [deleteStep, setDeleteStep] = useState<0 | 1 | 2>(0)
   const [feriadosBusy, setFeriadosBusy] = useState(false)
   const [feriadosUpd, setFeriadosUpd] = useState(() => feriadosActualizadoMs())
-  // Recordatorio de fin de período (notificaciones)
+  // Recordatorio de fin de período (activado por defecto; toggle para apagarlo + permiso de notificaciones)
+  const [recordHabilitado, setRecordHabilitado] = useState(recordatorioHabilitado())
   const [recordOn, setRecordOn] = useState(notificacionesConcedidas())
   const [recordBusy, setRecordBusy] = useState(false)
   const permisoNotifDenegado = typeof Notification !== 'undefined' && Notification.permission === 'denied'
@@ -353,12 +354,33 @@ export function SettingsPage() {
     }
   }
 
+  // Toggle on/off del recordatorio (viene activado por defecto).
+  async function toggleRecordatorioHabilitado() {
+    if (recordBusy) return
+    const next = !recordHabilitado
+    setRecordHabilitado(next)
+    setRecordBusy(true)
+    try {
+      if (next) {
+        setRecordatorioHabilitado(true)
+        await actualizarAgenda()
+        if (notificacionesConcedidas()) await registrarSyncPeriodico()
+      } else {
+        await desactivarRecordatorios()
+      }
+    } finally {
+      setRecordBusy(false)
+    }
+  }
+
+  // Pide permiso de notificaciones del sistema (para que el aviso llegue también con la app cerrada).
   async function handleActivarRecordatorios() {
     setRecordBusy(true)
     try {
       const ok = await activarRecordatorios()
       setRecordOn(ok)
-      flash(ok ? 'Recordatorio activado ✓' : 'No se pudo activar (permiso de notificaciones denegado).', ok ? 'ok' : 'err')
+      setRecordHabilitado(true)
+      flash(ok ? 'Notificaciones activadas ✓' : 'No se pudo activar (permiso de notificaciones denegado).', ok ? 'ok' : 'err')
     } finally {
       setRecordBusy(false)
     }
@@ -660,30 +682,48 @@ export function SettingsPage() {
           )}
         </Section>
 
-        {/* Recordatorio de fin de período */}
+        {/* Recordatorio de fin de período (activado por defecto) */}
         {notificacionesSoportadas() && (
           <Section title="Recordatorio de fin de período">
-            <p className="text-xs text-slate-400 leading-snug">
-              Te aviso un día antes del cierre para que no te olvides de cargar y enviar la planilla.
-              En Android (con la app instalada) el aviso llega aunque tengas la app cerrada; en iPhone aparece al abrir la app.
-            </p>
-            {recordOn ? (
-              <p className="text-xs text-emerald-300 flex items-center gap-1.5">
-                <BellRing size={14} className="shrink-0" /> Recordatorio activado.
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-400 leading-snug flex-1">
+                Te avisamos un día antes del cierre para que no te olvides de cargar y enviar la planilla.
               </p>
-            ) : permisoNotifDenegado ? (
-              <p className="text-[11px] text-amber-300/90 leading-snug">
-                Las notificaciones están bloqueadas para esta app. Activálas desde los ajustes del teléfono
-                (notificaciones de "Planilla") y volvé a entrar.
-              </p>
-            ) : (
               <button
-                onClick={handleActivarRecordatorios}
+                onClick={toggleRecordatorioHabilitado}
                 disabled={recordBusy}
-                className={`w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors ${recordBusy ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}
+                role="switch"
+                aria-checked={recordHabilitado}
+                aria-label="Activar recordatorio"
+                className={`relative w-11 h-6 rounded-full shrink-0 transition-colors disabled:opacity-50 ${recordHabilitado ? 'bg-blue-600' : 'bg-slate-600'}`}
               >
-                <Bell size={16} /> {recordBusy ? 'Activando…' : 'Activar recordatorio'}
+                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${recordHabilitado ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
               </button>
+            </div>
+            {recordHabilitado && (
+              recordOn ? (
+                <p className="text-xs text-emerald-300 flex items-center gap-1.5">
+                  <BellRing size={14} className="shrink-0" /> Notificaciones activas (también con la app cerrada en Android).
+                </p>
+              ) : permisoNotifDenegado ? (
+                <p className="text-[11px] text-amber-300/90 leading-snug">
+                  El aviso aparece al abrir la app. Las notificaciones del sistema están bloqueadas: activálas desde
+                  los ajustes del teléfono (notificaciones de "Planilla") para que también lleguen con la app cerrada.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    El aviso aparece al abrir la app. En Android, activá las notificaciones para que también llegue con la app cerrada:
+                  </p>
+                  <button
+                    onClick={handleActivarRecordatorios}
+                    disabled={recordBusy}
+                    className={`w-full py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors ${recordBusy ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}
+                  >
+                    <Bell size={16} /> {recordBusy ? 'Activando…' : 'Activar notificaciones'}
+                  </button>
+                </div>
+              )
             )}
           </Section>
         )}

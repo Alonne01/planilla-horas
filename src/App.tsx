@@ -17,7 +17,7 @@ import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding
 import { GuideTooltip } from "./components/GuideTooltip"
 import { UpdateToast } from "./components/UpdateToast"
 import { RecordatorioToast } from "./components/RecordatorioToast"
-import { actualizarAgenda, enVentana, recordatorioDescartado, descartarRecordatorio, notificacionesConcedidas, registrarSyncPeriodico } from "./lib/recordatorio"
+import { actualizarAgenda, enVentana, recordatorioDescartado, descartarRecordatorio, notificacionesConcedidas, registrarSyncPeriodico, recordatorioHabilitado } from "./lib/recordatorio"
 import { BroadcastToast } from "./components/BroadcastToast"
 import { Caracol } from "./components/Caracol"
 
@@ -86,6 +86,7 @@ function AppContent() {
   const [cloudBackupDone, setCloudBackupDone] = useState(false)
   const [cloudRestoreOffer, setCloudRestoreOffer] = useState(false)
   const [recordatorio, setRecordatorio] = useState<{ cierreMs: number } | null>(null)
+  const [iosBannerVisible, setIosBannerVisible] = useState(true) // aviso "instalá la app" (iOS): se auto-oculta a los 5s
   const [emptyDb, setEmptyDb] = useState(false)
   const [gateSkipped, setGateSkipped] = useState(false)
   const [updateToast, setUpdateToast] = useState(false)
@@ -215,9 +216,11 @@ function AppContent() {
       // aviso en-app. Si ya están activas las notificaciones, re-asegura el sync periódico (Android).
       try {
         const agenda = await actualizarAgenda()
-        if (notificacionesConcedidas()) await registrarSyncPeriodico()
-        if (enVentana(agenda) && !recordatorioDescartado(agenda.cierreMs)) {
-          setRecordatorio({ cierreMs: agenda.cierreMs })
+        if (recordatorioHabilitado()) {
+          if (notificacionesConcedidas()) await registrarSyncPeriodico()
+          if (enVentana(agenda) && !recordatorioDescartado(agenda.cierreMs)) {
+            setRecordatorio({ cierreMs: agenda.cierreMs })
+          }
         }
       } catch { /* non-fatal */ }
 
@@ -306,6 +309,13 @@ function AppContent() {
     const t = setTimeout(() => setPersistDenied(false), 5000)
     return () => clearTimeout(t)
   }, [persistDenied])
+
+  // El aviso "instalá la app" (navegador, iOS) se oculta solo a los 5s para no quedar fijo arriba.
+  useEffect(() => {
+    if (!isIOSBrowser) return
+    const t = setTimeout(() => setIosBannerVisible(false), 5000)
+    return () => clearTimeout(t)
+  }, [isIOSBrowser])
 
   // Bloquear scroll en la pantalla de Horas (no se necesita) y volver arriba al cambiar de pestaña
   useEffect(() => {
@@ -414,12 +424,18 @@ function AppContent() {
             </div>
           </div>
         )}
-        {isIOSBrowser && !recovered && (
-          <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-900/40 text-amber-300 text-sm flex items-start gap-2">
-            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold mb-0.5">Safari puede borrar tus datos</p>
-              <p className="text-xs text-amber-200/80">En iOS, Safari elimina los datos de la app si no la usás por 7 días o si hay poco espacio. Para evitarlo, <span className="font-semibold">instalá la app</span> desde Config → Instalar app, o hacé backups periódicos.</p>
+        {isIOSBrowser && iosBannerVisible && !recovered && (
+          <div className="mx-4 mt-3 rounded-xl bg-amber-900/40 overflow-hidden">
+            <div className="p-3 text-amber-300 text-sm flex items-start gap-2">
+              <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold mb-0.5">Safari puede borrar tus datos</p>
+                <p className="text-xs text-amber-200/80">En iOS, Safari elimina los datos de la app si no la usás por 7 días o si hay poco espacio. Para evitarlo, <span className="font-semibold">instalá la app</span> desde Config → Instalar app, o hacé backups periódicos.</p>
+              </div>
+            </div>
+            {/* Barra de tiempo: se oculta solo a los 5s */}
+            <div className="h-0.5 bg-amber-500/15">
+              <div className="h-full bg-amber-400/70 animate-[countdown-bar_5s_linear_forwards]" />
             </div>
           </div>
         )}

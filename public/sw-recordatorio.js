@@ -28,6 +28,7 @@ async function guardarAgendaSW(a) {
 async function dispararRecordatorio() {
   const a = await leerAgendaSW()
   if (!a) return
+  if (a.habilitado === false) return                 // el usuario lo desactivó
   const now = Date.now()
   if (now < a.desdeMs || now >= a.hastaMs) return   // fuera de la ventana
   if (a.notificadoCierreMs === a.cierreMs) return    // ya se notificó para este cierre

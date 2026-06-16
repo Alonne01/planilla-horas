@@ -252,6 +252,15 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
   // ─── Acciones de borrado: menú + modo "borrar días" + borrar período ───
   const [showActionsMenu, setShowActionsMenu] = useState(false)
   const [deleteMode, setDeleteMode] = useState(false)
+
+  // El tip "mantené pulsado" se oculta solo a los 5 s mientras está visible (la X lo descarta para
+  // siempre; el auto-ocultado NO persiste, así puede volver a enseñar en próximas aperturas).
+  useEffect(() => {
+    if (!showCopyTip || loading || applySource || deleteMode) return
+    const t = setTimeout(() => setShowCopyTip(false), 5000)
+    return () => clearTimeout(t)
+  }, [showCopyTip, loading, applySource, deleteMode])
+
   const [selectedToDelete, setSelectedToDelete] = useState<Set<string>>(new Set())
   const [confirmDeleteDias, setConfirmDeleteDias] = useState(false)
   const [deletePeriodoStep, setDeletePeriodoStep] = useState(0)  // 0 oculto · 1 primera confirmación · 2 segunda
@@ -582,16 +591,22 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
       {/* Resumen */}
       {!loading && <ResumenBar resumen={resumen} francosDisponibles={francosDisponibles} />}
 
-      {/* Tip: copiar datos de un día a otro (mantener pulsado) */}
+      {/* Tip: copiar datos de un día a otro (mantener pulsado) — se auto-oculta a los 5 s */}
       {!loading && !applySource && !deleteMode && showCopyTip && (
-        <div className="mx-4 mb-2 flex items-center gap-2 rounded-xl bg-sky-950/50 border border-sky-800/40 px-3 py-2 animate-[apply-bar-in_220ms_ease_both]">
-          <Lightbulb size={15} className="text-sky-400 shrink-0" />
-          <span className="text-xs text-sky-200/90 flex-1 leading-snug">
-            Mantené pulsado un día para copiar sus datos a otro.
-          </span>
-          <button onClick={dismissCopyTip} className="text-sky-500 active:text-sky-300 shrink-0" aria-label="Cerrar">
-            <X size={14} />
-          </button>
+        <div className="mx-4 mb-2 rounded-xl bg-sky-950/50 border border-sky-800/40 overflow-hidden animate-[apply-bar-in_220ms_ease_both]">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <Lightbulb size={15} className="text-sky-400 shrink-0" />
+            <span className="text-xs text-sky-200/90 flex-1 leading-snug">
+              Mantené pulsado un día para copiar sus datos a otro.
+            </span>
+            <button onClick={dismissCopyTip} className="text-sky-500 active:text-sky-300 shrink-0" aria-label="Cerrar">
+              <X size={14} />
+            </button>
+          </div>
+          {/* Barra de tiempo: se oculta solo a los 5 s */}
+          <div className="h-0.5 bg-sky-500/15">
+            <div className="h-full bg-sky-400/70 animate-[countdown-bar_5s_linear_forwards]" />
+          </div>
         </div>
       )}
 
