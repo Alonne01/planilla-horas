@@ -175,14 +175,16 @@ export function GuideTooltip() {
   // Al cambiar de paso, se cierra cualquier confirmación de salida abierta.
   useEffect(() => { setConfirmSalir(false) }, [paso?.id])
 
-  // Paso DEMO del círculo: muestra el anillo llenándose (iluminado) y auto-avanza al completarse.
+  // Paso DEMO del círculo: muestra el anillo llenándose (iluminado) EN LOOP. NO auto-avanza: el
+  // usuario pasa con el botón "Siguiente" (sólo es una muestra del mecanismo).
   useEffect(() => {
     if (!activo || !paso?.demoAnillo) return
-    const dur = 4500
-    setCuenta({ dur, t0: Date.now() })
-    const t = window.setTimeout(() => next(), dur)
-    return () => clearTimeout(t)
-  }, [activo, paso, next])
+    const dur = 3500
+    const fill = () => setCuenta({ dur, t0: Date.now() })
+    fill()
+    const iv = window.setInterval(fill, dur + 600)
+    return () => clearInterval(iv)
+  }, [activo, paso])
 
   // Medir el alto real de la tarjeta (cambia con el texto de cada paso) para posicionarla sin tapar.
   useEffect(() => { if (cardRef.current) setCardH(cardRef.current.offsetHeight) }, [paso?.id, paso?.texto])
@@ -313,7 +315,7 @@ export function GuideTooltip() {
           </div>
         )}
 
-        {cuenta ? (
+        {cuenta && !paso.demoAnillo ? (
           <p className="mt-1.5 text-center text-[11px] font-semibold text-sky-300">Esperá a que se llene el círculo ↻ para pasar al siguiente paso</p>
         ) : !esInfo ? (
           <p className="mt-1.5 text-[11px] font-medium text-sky-400/90">Hacelo para seguir →</p>

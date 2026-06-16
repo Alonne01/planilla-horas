@@ -254,6 +254,7 @@ export async function subirBackupNube(usuario: string, codigo: string, linea?: s
     await setDoc(doc(getDb(), PADRON, docId), entry)
   } catch { /* el padrón es secundario: si falla, el respaldo igual quedó subido */ }
   setUltimoUsuarioNube(usuario.trim()) // recordar bajo qué nombre quedó el respaldo (para migrar si lo corrige)
+  void asegurarCodigoReservado(codigo)  // segundo candado: reserva el código si se generó offline (best-effort)
   registrarOperacionNube()
   contarUso(0, 2) // backup + padrón (escrituras)
 }
@@ -612,10 +613,31 @@ export async function generarCodigoUnico(): Promise<CodigoGenerado> {
   for (let i = 0; i < 12; i++) {
     const codigo = random()
     try {
-      if (await codigoDisponible(codigo)) { await reservarCodigo(codigo); registrarOperacionNube(); return { codigo, unico: true } }
+      if (await codigoDisponible(codigo)) { await reservarCodigo(codigo); marcarCodigoReservadoLocal(codigo); registrarOperacionNube(); return { codigo, unico: true } }
     } catch {
-      return { codigo, unico: false } // sin conexión: no se pudo verificar la unicidad
+      return { codigo, unico: false } // sin conexión: no se pudo verificar la unicidad (se reserva al respaldar)
     }
   }
   return { codigo: random(), unico: false } // 12 colisiones seguidas (improbable): devolver uno igual
+}
+
+// Flag local: el código que ESTE dispositivo ya reservó (o constató tomado) en el registro global.
+// Evita re-chequear en cada respaldo y permite reservar OFFLINE-luego: un código generado sin conexión
+// (`unico:false`) queda sin reservar; en el próximo respaldo con red, `asegurarCodigoReservado` lo reserva.
+const CODIGO_RESERVADO_KEY = 'planilla-codigo-reservado'
+function codigoYaReservadoLocal(codigo: string): boolean {
+  try { return localStorage.getItem(CODIGO_RESERVADO_KEY) === codigo.trim() } catch { return false }
+}
+function marcarCodigoReservadoLocal(codigo: string): void {
+  try { localStorage.setItem(CODIGO_RESERVADO_KEY, codigo.trim()) } catch { /* ignore */ }
+}
+
+/** Asegura (best-effort) que el código esté reservado en el registro global. Reserva un código que se
+ *  generó OFFLINE en cuanto hay conexión (lo llama `subirBackupNube`). No rompe si falla la red. */
+export async function asegurarCodigoReservado(codigo: string): Promise<void> {
+  if (!/^\d{6}$/.test(codigo.trim()) || codigoYaReservadoLocal(codigo)) return
+  try {
+    if (await codigoDisponible(codigo)) await reservarCodigo(codigo)
+    marcarCodigoReservadoLocal(codigo) // libre→reservado, o ya estaba tomado: en ambos casos no reintentar
+  } catch { /* sin conexión: se reintenta en el próximo respaldo */ }
 }

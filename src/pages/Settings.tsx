@@ -390,9 +390,10 @@ export function SettingsPage() {
             <div className="flex gap-2">
               <input
                 type="text" inputMode="numeric" value={bkCodigo} disabled={bkBloqueado || !nombre.trim()}
+                readOnly={onb.activo}
                 onChange={e => setBkCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 onBlur={() => saveBackupCreds()}
-                placeholder={nombre.trim() ? '••••••' : 'completá tu nombre arriba'}
+                placeholder={onb.activo && !bkCodigo ? 'tocá Generar →' : (nombre.trim() ? '••••••' : 'completá tu nombre arriba')}
                 className="flex-1 min-w-0 bg-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono tracking-[0.3em] disabled:opacity-50 disabled:cursor-not-allowed placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               {!bkBloqueado && (

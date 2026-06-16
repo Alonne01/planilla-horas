@@ -71,7 +71,7 @@ const PASOS: Paso[] = [
     id: 'circulo-demo',
     titulo: 'Cómo se pasa de paso',
     texto: (
-      <>En los pasos donde <strong className="font-bold text-white">escribís</strong> algo (tu nombre, una observación…), cuando termines aparece un <strong className="text-sky-300">círculo</strong> que se va llenando: <strong className="font-bold text-white">esperá a que se complete</strong> y paso solo al siguiente. Mirá cómo se llena 👇</>
+      <>En los pasos donde <strong className="font-bold text-white">escribís</strong> algo (tu nombre, una observación…), cuando termines aparece un <strong className="text-sky-300">círculo</strong> que se va llenando: <strong className="font-bold text-white">esperá a que se complete</strong> y paso solo al siguiente. Así se ve 👇 — tocá <strong className="text-white">Siguiente</strong> cuando quieras continuar.</>
     ),
     demoAnillo: true,
   },
