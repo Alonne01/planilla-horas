@@ -690,14 +690,15 @@ export function SettingsPage() {
                 Te avisamos un día antes del cierre para que no te olvides de cargar y enviar la planilla.
               </p>
               <button
+                type="button"
                 onClick={toggleRecordatorioHabilitado}
                 disabled={recordBusy}
                 role="switch"
                 aria-checked={recordHabilitado}
                 aria-label="Activar recordatorio"
-                className={`relative w-11 h-6 rounded-full shrink-0 transition-colors disabled:opacity-50 ${recordHabilitado ? 'bg-blue-600' : 'bg-slate-600'}`}
+                className={`relative w-11 h-6 shrink-0 appearance-none border-0 p-0 rounded-full overflow-hidden transition-colors duration-200 disabled:opacity-50 ${recordHabilitado ? 'bg-blue-600' : 'bg-slate-600'}`}
               >
-                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${recordHabilitado ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                <span className={`absolute top-0.5 left-0 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${recordHabilitado ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
               </button>
             </div>
             {recordHabilitado && (
