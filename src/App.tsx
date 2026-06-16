@@ -343,7 +343,7 @@ function AppContent() {
   async function desbloquearAdminSecreto() {
     try {
       const s = await getSettings()
-      if (esAdminNube(s.nombreUsuario, s.backupCodigo) && esAdminCodigo2Ok()) {
+      if (esAdminNube(s.nombreUsuario, s.backupCodigo) && await esAdminCodigo2Ok()) {
         marcarAdminDispositivo()
         setShowAdmin(true)
       }
