@@ -6,7 +6,7 @@
 // (util/BackupPinManager.kt). La privacidad la completan las reglas Firestore (get sí, list/delete no).
 import { initializeApp, type FirebaseApp } from 'firebase/app'
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, increment, type Firestore } from 'firebase/firestore/lite'
-import { exportBackupJSON, importBackupJSON } from '../db/database'
+import { exportBackupJSON, importBackupJSON, saveSettings } from '../db/database'
 import { APP_VERSION } from '../version'
 import { leerMetricas } from './metricas'
 
@@ -159,6 +159,38 @@ function bufToB64Url(buf: ArrayBuffer): string {
   return bufToB64(buf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// ── Compresión (gzip) del payload ANTES de cifrar ───────────────────────────────
+// El JSON de la planilla comprime muchísimo (~80-90%: campos y valores repetidos), así la subida
+// y la bajada consumen muchos menos datos. Se comprime ANTES de cifrar porque el cifrado produce
+// alto-entropía que ya no comprimiría. CompressionStream existe en Chrome/Android (2020+) y Safari
+// 16.4+; si no está, se sube el JSON crudo (el doc queda sin el campo `comp`).
+function soportaCompresion(): boolean {
+  return typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined'
+}
+async function gzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+async function gunzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+// ── Huella (SHA-256) del último respaldo subido POR DISPOSITIVO ──────────────────
+// Si nada cambió desde la última subida, el respaldo AUTOMÁTICO se saltea: no gasta datos móviles
+// ni cuota de Firebase. El respaldo MANUAL ("Respaldar ahora") sube siempre.
+const FINGERPRINT_KEY = 'planilla-cloud-fingerprint'
+function ultimaHuella(): string {
+  try { return localStorage.getItem(FINGERPRINT_KEY) ?? '' } catch { return '' }
+}
+function guardarHuella(fp: string): void {
+  try { localStorage.setItem(FINGERPRINT_KEY, fp) } catch { /* ignore */ }
+}
+async function huellaJSON(json: string): Promise<string> {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(json))
+  return bufToB64Url(h)
+}
+
 // Password estable para id y clave: usuario normalizado (trim + minúsculas) + ":" + código (trim).
 function credKey(usuario: string, codigo: string): string {
   return `${usuario.trim().toLowerCase()}:${codigo.trim()}`
@@ -188,6 +220,8 @@ interface BackupDoc {
   data: string
   updatedAt: number
   schema: number
+  /** Compresión del payload ANTES de cifrar ('gzip'); ausente ⇒ JSON sin comprimir (legado). */
+  comp?: 'gzip'
   /** Nombre del usuario EN CLARO: sólo para identificar cada backup en la consola de Firebase.
    *  Los datos siguen cifrados y el código sigue siendo secreto. */
   usuario?: string
@@ -226,12 +260,24 @@ export interface PadronEntry {
  * `linea` (etiqueta legible) se guarda EN CLARO junto al nombre para identificar el backup en la
  * consola y para el padrón de admin; los datos del respaldo siguen cifrados y el código secreto.
  */
-export async function subirBackupNube(usuario: string, codigo: string, linea?: string): Promise<void> {
+export async function subirBackupNube(
+  usuario: string, codigo: string, linea?: string, opts?: { soloSiCambio?: boolean },
+): Promise<boolean> {
   const json = await exportBackupJSON()
+  const huella = await huellaJSON(json)
+  // Respaldo automático: si los datos no cambiaron desde la última subida, no subir (ahorra datos/cuota).
+  if (opts?.soloSiCambio && huella === ultimaHuella()) return false
+
   const salt = crypto.getRandomValues(new Uint8Array(16))
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const key = await deriveKey(usuario, codigo, salt)
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(json))
+  // Comprimir el JSON ANTES de cifrar: baja muchísimo el tamaño que viaja por la red.
+  let plano: Uint8Array<ArrayBuffer> = new TextEncoder().encode(json)
+  let comp: 'gzip' | undefined
+  if (soportaCompresion()) {
+    try { plano = await gzip(plano); comp = 'gzip' } catch { /* sin compresión: subir el JSON crudo */ }
+  }
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plano)
   const lineaTxt = linea?.trim() ?? ''
   const docId = await computeDocId(usuario, codigo)
   const payload: BackupDoc = {
@@ -242,8 +288,10 @@ export async function subirBackupNube(usuario: string, codigo: string, linea?: s
     schema: 1,
     usuario: usuario.trim(), // en claro, sólo para identificar el backup en la consola
   }
-  if (lineaTxt) payload.linea = lineaTxt // Firestore no acepta undefined: sólo se incluye si hay valor
+  if (comp) payload.comp = comp     // Firestore no acepta undefined: sólo se incluye si hubo compresión
+  if (lineaTxt) payload.linea = lineaTxt // ídem: sólo se incluye si hay valor
   await setDoc(doc(getDb(), COLLECTION, docId), payload)
+  guardarHuella(huella) // recordar qué se subió, para saltear próximas subidas idénticas
   // Padrón: doc gemelo SIN datos sensibles para el conteo de admin (best-effort, no debe romper el backup).
   try {
     const { donaciones, gracias, exportaciones } = leerMetricas()
@@ -257,6 +305,23 @@ export async function subirBackupNube(usuario: string, codigo: string, linea?: s
   void asegurarCodigoReservado(codigo)  // segundo candado: reserva el código si se generó offline (best-effort)
   registrarOperacionNube()
   contarUso(0, 2) // backup + padrón (escrituras)
+  return true
+}
+
+/**
+ * Configura el respaldo en la nube SIN intervención del usuario: genera un código de 6 dígitos único,
+ * lo guarda como identidad (bloqueada) y sube el primer respaldo. Lo usan (a) la migración de usuarios
+ * que ya tienen nombre cargado pero nunca configuraron la nube y (b) el paso automático del tutorial.
+ * Devuelve el código generado y si el respaldo se subió (false si no había red: el auto-respaldo lo
+ * reintenta solo en el próximo arranque, ya que el código quedó guardado localmente).
+ */
+export async function configurarNubeAuto(usuario: string, linea?: string): Promise<{ codigo: string; subido: boolean }> {
+  const { codigo } = await generarCodigoUnico()
+  await saveSettings({ backupCodigo: codigo, backupBloqueado: true })
+  setUltimoUsuarioNube(usuario.trim())
+  let subido = false
+  try { subido = await subirBackupNube(usuario, codigo, linea) } catch { subido = false }
+  return { codigo, subido }
 }
 
 /**
@@ -424,7 +489,8 @@ export async function restaurarBackupNube(usuario: string, codigo: string): Prom
   try {
     const key = await deriveKey(usuario, codigo, b64ToBytes(d.salt))
     const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(d.iv) }, key, b64ToBytes(d.data))
-    await importBackupJSON(new TextDecoder().decode(pt))
+    const bytes = d.comp === 'gzip' ? await gunzip(new Uint8Array(pt)) : new Uint8Array(pt)
+    await importBackupJSON(new TextDecoder().decode(bytes))
     return 'ok'
   } catch {
     return 'clave-incorrecta'

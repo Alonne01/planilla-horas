@@ -10,12 +10,11 @@ import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
-import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, type AppConfig } from "./lib/cloud-backup"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, type AppConfig } from "./lib/cloud-backup"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding/OnboardingContext"
 import { GuideTooltip } from "./components/GuideTooltip"
-import { CloudSetupModal } from "./components/CloudSetupModal"
 import { UpdateToast } from "./components/UpdateToast"
 import { BroadcastToast } from "./components/BroadcastToast"
 import { Caracol } from "./components/Caracol"
@@ -27,19 +26,6 @@ function isStandalone() {
 
 const AUTO_BACKUP_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000 // 2 days
 const CLOUD_BACKUP_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000 // 3 días (respaldo automático a la nube)
-
-// Aviso "configurá el respaldo en la nube" (usuarios con nombre sin nube). "Más tarde" lo pospone 7 días.
-const CLOUD_PROMPT_SNOOZE_KEY = "planilla-cloud-prompt-snooze-ts"
-const CLOUD_PROMPT_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000
-function cloudPromptSnoozed(): boolean {
-  try {
-    const ts = localStorage.getItem(CLOUD_PROMPT_SNOOZE_KEY)
-    return !!ts && Date.now() - parseInt(ts, 10) < CLOUD_PROMPT_SNOOZE_MS
-  } catch { return false }
-}
-function snoozeCloudPrompt(): void {
-  try { localStorage.setItem(CLOUD_PROMPT_SNOOZE_KEY, String(Date.now())) } catch { /* ignore */ }
-}
 
 // Aviso "sin datos guardados": reaparece como mucho 1 vez por semana y se oculta solo
 const EMPTY_DB_ALERT_KEY = "planilla-empty-db-alert-ts"
@@ -97,7 +83,6 @@ function AppContent() {
   const [autoBackupDone, setAutoBackupDone] = useState(false)
   const [cloudBackupDone, setCloudBackupDone] = useState(false)
   const [cloudRestoreOffer, setCloudRestoreOffer] = useState(false)
-  const [cloudPromptOpen, setCloudPromptOpen] = useState(false)
   const [emptyDb, setEmptyDb] = useState(false)
   const [gateSkipped, setGateSkipped] = useState(false)
   const [updateToast, setUpdateToast] = useState(false)
@@ -254,21 +239,25 @@ function AppContent() {
           }
         } else if (count > 0) {
           if (cloudOn && msSinceCloudBackup() > CLOUD_BACKUP_INTERVAL_MS && quedanOperacionesNube()) {
-            // Respaldo automático y silencioso a la nube (cada >=3 días al abrir la app)
+            // Respaldo automático y silencioso a la nube (cada >=3 días al abrir la app).
+            // soloSiCambio: si nada cambió desde la última subida, no sube (ahorra datos móviles).
             try {
-              await subirBackupNube(s.nombreUsuario, s.backupCodigo, lineaLabel(s.lineaTrabajo))
+              const subido = await subirBackupNube(s.nombreUsuario, s.backupCodigo, lineaLabel(s.lineaTrabajo), { soloSiCambio: true })
               markCloudBackupDone()
-              setCloudBackupDone(true)
+              if (subido) setCloudBackupDone(true)
             } catch { /* sin conexión: reintenta en el próximo arranque */ }
+          } else if (!cloudOn && s.nombreUsuario.trim() && onboardingHecho() && quedanOperacionesNube()) {
+            // Usuario con nombre y datos pero SIN respaldo en la nube: le generamos el código y subimos
+            // su primer respaldo automáticamente (una sola vez; después cae en la rama cloudOn de arriba).
+            // No corre si va a arrancar el tour completo (1ª vez), que ya configura la nube en su paso.
+            try {
+              const { subido } = await configurarNubeAuto(s.nombreUsuario, lineaLabel(s.lineaTrabajo))
+              if (subido) { markCloudBackupDone(); setCloudBackupDone(true) }
+            } catch { /* sin conexión: el código quedó guardado y reintenta al próximo arranque */ }
           } else if (!cloudOn && msSinceAutoBackup() > AUTO_BACKUP_INTERVAL_MS) {
+            // Sin nombre (no se puede configurar la nube): recordatorio de backup manual a archivo.
             setAutoBackupDue(true)
           }
-        }
-        // Usuarios con nombre pero sin respaldo en la nube (post-deploy): ofrecer configurarlo,
-        // salvo que vaya a arrancar el tour completo (1ª vez, cualquier usuario) o esté pospuesto.
-        const fullTourVaArrancar = !onboardingHecho()
-        if (s.nombreUsuario.trim() && !cloudOn && !fullTourVaArrancar && !cloudPromptSnoozed()) {
-          setCloudPromptOpen(true)
         }
       } catch {
         // non-fatal
@@ -382,17 +371,6 @@ function AppContent() {
     } catch {
       // sin conexión: dejar la oferta para reintentar
     }
-  }
-
-  // Modal "configurá el respaldo": llevar a Config + correr el mini-tour de nube.
-  function handleCloudConfigurar() {
-    setCloudPromptOpen(false)
-    setTab("settings")
-    onb.start("cloud")
-  }
-  function handleCloudMasTarde() {
-    snoozeCloudPrompt()
-    setCloudPromptOpen(false)
   }
 
   // Show install gate if not running as installed PWA — after all hooks
@@ -528,7 +506,6 @@ function AppContent() {
       {tab === "settings" && <Caracol navH={navH} onSecret={desbloquearSalarioSecreto} onAdminSecret={desbloquearAdminSecreto} />}
 
       <GuideTooltip />
-      {cloudPromptOpen && <CloudSetupModal onConfigurar={handleCloudConfigurar} onMasTarde={handleCloudMasTarde} />}
       {updateToast && <UpdateToast />}
       {broadcast && <BroadcastToast titulo={broadcast.titulo} cuerpo={broadcast.cuerpo} onClose={cerrarBroadcast} />}
       {!broadcast && mensajeInd && <BroadcastToast titulo={mensajeInd.titulo} cuerpo={mensajeInd.cuerpo} onClose={cerrarMensajeInd} />}

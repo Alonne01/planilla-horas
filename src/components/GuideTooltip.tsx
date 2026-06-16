@@ -107,8 +107,15 @@ export function GuideTooltip() {
       }
     }
 
+    // Sin debounce: una vez que `done` se cumple, se compromete a avanzar tras `delay` ms FIJOS (no se
+    // reinicia aunque el usuario siga escribiendo). Si hay delay, muestra el anillo de cuenta (p.ej. los
+    // 7 s del apellido, contados desde que empieza a escribirlo).
     const t = setInterval(() => {
-      if (done()) { clearInterval(t); avanzar = window.setTimeout(() => next(), delay) }
+      if (done()) {
+        clearInterval(t)
+        avanzar = window.setTimeout(() => next(), delay)
+        if (delay > 0) setCuenta({ dur: delay, t0: Date.now() })
+      }
     }, 350)
     return () => { clearInterval(t); clearTimeout(avanzar) }
   }, [activo, paso, next])

@@ -76,6 +76,10 @@ export interface AppSettings {
   // 6 dígitos. El "candado" bloquea el código para evitar cambios accidentales.
   backupCodigo: string
   backupBloqueado: boolean
+  // Saldo NETO de francos compensatorios (ganados − usados) arrastrado de los registros que se
+  // podaron por antigüedad (>6 meses). Sin esto, podar los meses viejos perdería los francos
+  // ganados y no usados. El contador real = este saldo + (ganados − usados en los registros vivos).
+  francosCompSaldoBase: number
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -99,6 +103,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   solidaria644: 0.022,
   backupCodigo: '',
   backupBloqueado: false,
+  francosCompSaldoBase: 0,
 }
 
 class PlanillaDB extends Dexie {
@@ -218,9 +223,14 @@ export async function importBackupJSON(json: string): Promise<void> {
   await shadowBackup()
 }
 
-/** Delete all hour records and sync shadow backup. Settings are preserved. */
+/** Delete all hour records and sync shadow backup. Settings are preserved.
+ *  Borrado MANUAL y total → es un reinicio: también se descarta el saldo arrastrado de francos. */
 export async function clearAllRegistros(): Promise<void> {
   await db.registros.clear()
+  const s = await db.settings.get(1)
+  if (s && s.francosCompSaldoBase !== 0) {
+    await db.settings.put({ ...DEFAULT_SETTINGS, ...s, id: 1, francosCompSaldoBase: 0 })
+  }
   await shadowBackup()
 }
 
@@ -231,11 +241,30 @@ export async function clearPeriodoPrueba(): Promise<number> {
   return deleted
 }
 
-/** Delete records older than 6 months. Returns count of deleted records. */
+/**
+ * Delete records older than 6 months. Returns count of deleted records.
+ *
+ * Antes de borrar, conserva el saldo NETO de francos compensatorios de esos registros
+ * (ganados por franco trabajado − usados) sumándolo a `settings.francosCompSaldoBase`.
+ * Así, podar los meses viejos no hace desaparecer los francos ganados y todavía no usados.
+ */
 export async function pruneOldRegistros(): Promise<number> {
   const now = new Date()
   const cutoffMs = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate()).getTime()
-  const deleted = await db.registros.where('fechaMs').below(cutoffMs).delete()
+  let deleted = 0
+  await db.transaction('rw', db.registros, db.settings, async () => {
+    const viejos = await db.registros.where('fechaMs').below(cutoffMs).toArray()
+    if (viejos.length === 0) return
+    const ganados = viejos.filter(r => r.esFrancoTrabajado).length
+    const usados = viejos.filter(r => r.esFrancoCompensatorio).length
+    const neto = ganados - usados
+    if (neto !== 0) {
+      const s = await db.settings.get(1)
+      const base = ((s?.francosCompSaldoBase) ?? 0) + neto
+      await db.settings.put({ ...DEFAULT_SETTINGS, ...s, id: 1, francosCompSaldoBase: base })
+    }
+    deleted = await db.registros.where('fechaMs').below(cutoffMs).delete()
+  })
   if (deleted > 0) await shadowBackup()
   return deleted
 }

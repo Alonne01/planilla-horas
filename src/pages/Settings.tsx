@@ -7,7 +7,7 @@ import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, 
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
-import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube } from '../lib/cloud-backup'
+import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto } from '../lib/cloud-backup'
 import { useOnboarding } from '../onboarding/OnboardingContext'
 import { APP_VERSION } from '../version'
 
@@ -95,6 +95,9 @@ export function SettingsPage() {
   // Durante el tour, el paso de línea es de elección libre (se puede deslizar): tocar una línea sólo
   // la selecciona; el avance lo dispara el botón "Elegir …" (abajo) → onb.next().
   const enTourLinea = onb.activo && onb.paso?.id === 'cfg-linea'
+  // Paso de respaldo del tour: es AUTOMÁTICO. Al entrar, si todavía no hay código, generamos uno y
+  // subimos el primer respaldo solos (el paso avanza cuando aparece el código de 6 dígitos).
+  const enTourRespaldo = onb.activo && onb.paso?.id === 'cfg-respaldo'
   function toggleConfigLock() {
     const next = !cfgBloqueado
     setCfgBloqueado(next)
@@ -221,6 +224,29 @@ export function SettingsPage() {
       setCloudBusy(false)
     }
   }
+
+  // Paso AUTOMÁTICO del tutorial: persiste el nombre (para que el respaldo lleve el nombre real),
+  // genera un código único y sube el primer respaldo, sin que el usuario toque "Generar".
+  async function autoRespaldoNubeTour() {
+    if (!nombre.trim() || cloudBusy) return
+    setCloudBusy(true)
+    try {
+      await persistConfig() // asegura que el nombre/linea estén en el DB antes de exportar el respaldo
+      const { codigo, subido } = await configurarNubeAuto(nombre, lineaLabel(linea))
+      setBkCodigo(codigo); setBkBloqueado(true)
+      if (subido) { markCloudBackupDone(); setCloudMs(0) }
+    } catch { /* offline: el código quedó guardado y el auto-respaldo reintenta al próximo arranque */ } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  // Al entrar al paso de respaldo del tour (y si todavía no hay código), dispara la generación + respaldo.
+  useEffect(() => {
+    if (enTourRespaldo && nombre.trim() && !bkCodigo && !bkBloqueado && !cloudBusy) {
+      void autoRespaldoNubeTour()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enTourRespaldo])
 
   // Corrección de nombre (mismo código): al salir del campo, si el nombre cambió respecto del último
   // respaldo, migra el respaldo en la nube (re-sube bajo el nombre nuevo, verifica el viejo y lo borra)

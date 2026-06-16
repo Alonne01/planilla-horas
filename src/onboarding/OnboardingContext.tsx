@@ -79,16 +79,21 @@ const PASOS: Paso[] = [
     id: 'cfg-nombre', tab: 'settings', target: '[data-tour="cfg-nombre"]',
     titulo: 'Tu nombre y apellido',
     texto: (
-      <>Escribí tu <strong className="font-bold text-white">nombre y apellido real</strong>: es el que va en la planilla y en el archivo Excel que exportás (y en el respaldo en la nube).</>
+      <>Escribí tu <strong className="font-bold text-white">nombre y apellido</strong> con un espacio en el medio (ej: <strong className="text-white">Juan Pérez</strong>): es el que va en la planilla, en el Excel que exportás y en el respaldo en la nube. Cuando empieces a escribir el <strong className="text-white">apellido</strong>, espero 7 segundos y sigo solo.</>
     ),
-    done: () => valDe('[data-tour="cfg-nombre"]').trim().length > 0,
-    delayMs: 5000, debounce: true, // avanza recién tras 5 s sin tipear (no salta al primer carácter)
+    // Arranca a contar recién cuando empieza el APELLIDO (hay nombre + espacio + ≥1 letra después);
+    // SIN debounce → 7 s fijos desde ese momento (no se reinician con cada tecla).
+    done: () => { const v = valDe('[data-tour="cfg-nombre"]').trim(); const sp = v.indexOf(' '); return sp > 0 && v.slice(sp + 1).trim().length > 0 },
+    delayMs: 7000,
   },
   {
     id: 'cfg-respaldo', tab: 'settings', target: '[data-tour="cfg-respaldo"]',
     titulo: 'Respaldo en la nube',
-    texto: 'Tocá Generar: crea tu código y tu planilla se guarda cifrada en la nube, sola cada pocos días. Anotá tu nombre + código.',
+    // Automático: al entrar a este paso, Settings genera el código y sube el primer respaldo solo
+    // (ver `enTourRespaldo` en Settings.tsx). El paso avanza cuando aparece el código de 6 dígitos.
+    texto: 'Te genero un código de 6 dígitos y guardo tu planilla cifrada en la nube, sola. Anotá tu nombre + el código que aparece: son la llave para recuperarla en otro celular.',
     done: () => valDe('[data-tour="cfg-respaldo"] input').replace(/\D/g, '').length === 6,
+    delayMs: 2500, // espera a que aparezca el código y se respalde antes de seguir
   },
   {
     id: 'cfg-linea', tab: 'settings', target: '[data-tour="cfg-linea"]',
@@ -262,24 +267,6 @@ const PASOS: Paso[] = [
   },
 ]
 
-// ─── Mini-tour de respaldo en la nube (para el modal de usuarios con nombre sin nube) ───
-// Sólo 2 pasos: 1) nombre y apellido, 2) tocar Generar.
-const PASOS_NUBE: Paso[] = [
-  {
-    id: 'cfg-nombre', tab: 'settings', target: '[data-tour="cfg-nombre"]',
-    titulo: 'Tu nombre y apellido',
-    texto: (
-      <>Colocá tu <strong className="font-bold text-white">nombre y apellido real</strong>: es el que va en la planilla y en el archivo Excel que exportás (también es la llave del respaldo en la nube). Tocá Siguiente cuando esté.</>
-    ),
-  },
-  {
-    id: 'cfg-respaldo', tab: 'settings', target: '[data-tour="cfg-respaldo"]',
-    titulo: 'Generá tu código',
-    texto: 'Tocá Generar: crea tu código de 6 dígitos y activa el respaldo. Anotá tu nombre + código.',
-    done: () => valDe('[data-tour="cfg-respaldo"] input').replace(/\D/g, '').length === 6,
-  },
-]
-
 interface OnboardingCtx {
   activo: boolean
   paso: Paso | null
@@ -340,7 +327,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   }, [entrar, terminar])
 
   const start = useCallback((modo: TourModo = 'full', opts?: { saltearConfig?: boolean }) => {
-    pasosRef.current = modo === 'cloud' ? PASOS_NUBE : PASOS
+    pasosRef.current = PASOS
     modoRef.current = modo
     if (modo === 'full') { try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ } }
     let i = 0

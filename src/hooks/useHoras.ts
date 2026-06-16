@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { db, shadowBackup, type RegistroHoras } from '../db/database'
+import { db, shadowBackup, getSettings, type RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd } from '../lib/diagrama'
 
 export function useHoras(mes: number, anio: number) {
@@ -49,10 +49,11 @@ export function useFrancoCounter(registros: RegistroHoras[] = []) {
   const [disponibles, setDisponibles] = useState(0)
 
   useEffect(() => {
-    db.registros.toArray().then(all => {
+    Promise.all([db.registros.toArray(), getSettings()]).then(([all, s]) => {
       const ganados = all.filter(r => r.esFrancoTrabajado).length
       const usados = all.filter(r => r.esFrancoCompensatorio).length
-      setDisponibles(ganados - usados)
+      // Sumar el saldo arrastrado de los meses ya podados (>6 meses) para no perder esos francos.
+      setDisponibles((s.francosCompSaldoBase ?? 0) + ganados - usados)
     })
   }, [registros])
 
