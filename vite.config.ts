@@ -30,6 +30,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,xlsx}'],
+        // Agrega el handler de recordatorio (periodicsync + notificationclick) al SW generado.
+        importScripts: ['sw-recordatorio.js'],
         runtimeCaching: [],
       },
     }),

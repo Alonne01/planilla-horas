@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Bell, BellRing } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
@@ -9,6 +9,7 @@ import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasi
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
 import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto } from '../lib/cloud-backup'
 import { useOnboarding } from '../onboarding/OnboardingContext'
+import { activarRecordatorios, notificacionesConcedidas, notificacionesSoportadas } from '../lib/recordatorio'
 import { APP_VERSION } from '../version'
 
 declare const __BUILD_TIME__: string
@@ -52,6 +53,10 @@ export function SettingsPage() {
   const [deleteStep, setDeleteStep] = useState<0 | 1 | 2>(0)
   const [feriadosBusy, setFeriadosBusy] = useState(false)
   const [feriadosUpd, setFeriadosUpd] = useState(() => feriadosActualizadoMs())
+  // Recordatorio de fin de período (notificaciones)
+  const [recordOn, setRecordOn] = useState(notificacionesConcedidas())
+  const [recordBusy, setRecordBusy] = useState(false)
+  const permisoNotifDenegado = typeof Notification !== 'undefined' && Notification.permission === 'denied'
 
   // Estado local del formulario — auto-guardado (con debounce) tras cada cambio
   const [nombre, setNombre] = useState('')
@@ -345,6 +350,17 @@ export function SettingsPage() {
     } catch {
       setDeleteStep(0)
       flash('Error al borrar. Intentá de nuevo.', 'err')
+    }
+  }
+
+  async function handleActivarRecordatorios() {
+    setRecordBusy(true)
+    try {
+      const ok = await activarRecordatorios()
+      setRecordOn(ok)
+      flash(ok ? 'Recordatorio activado ✓' : 'No se pudo activar (permiso de notificaciones denegado).', ok ? 'ok' : 'err')
+    } finally {
+      setRecordBusy(false)
     }
   }
 
@@ -643,6 +659,34 @@ export function SettingsPage() {
             </p>
           )}
         </Section>
+
+        {/* Recordatorio de fin de período */}
+        {notificacionesSoportadas() && (
+          <Section title="Recordatorio de fin de período">
+            <p className="text-xs text-slate-400 leading-snug">
+              Te aviso un día antes del cierre para que no te olvides de cargar y enviar la planilla.
+              En Android (con la app instalada) el aviso llega aunque tengas la app cerrada; en iPhone aparece al abrir la app.
+            </p>
+            {recordOn ? (
+              <p className="text-xs text-emerald-300 flex items-center gap-1.5">
+                <BellRing size={14} className="shrink-0" /> Recordatorio activado.
+              </p>
+            ) : permisoNotifDenegado ? (
+              <p className="text-[11px] text-amber-300/90 leading-snug">
+                Las notificaciones están bloqueadas para esta app. Activálas desde los ajustes del teléfono
+                (notificaciones de "Planilla") y volvé a entrar.
+              </p>
+            ) : (
+              <button
+                onClick={handleActivarRecordatorios}
+                disabled={recordBusy}
+                className={`w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors ${recordBusy ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}
+              >
+                <Bell size={16} /> {recordBusy ? 'Activando…' : 'Activar recordatorio'}
+              </button>
+            )}
+          </Section>
+        )}
 
         {/* Instalar app */}
         <InstallSection />

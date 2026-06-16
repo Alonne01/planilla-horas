@@ -16,6 +16,8 @@ import "./index.css"
 import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding/OnboardingContext"
 import { GuideTooltip } from "./components/GuideTooltip"
 import { UpdateToast } from "./components/UpdateToast"
+import { RecordatorioToast } from "./components/RecordatorioToast"
+import { actualizarAgenda, enVentana, recordatorioDescartado, descartarRecordatorio, notificacionesConcedidas, registrarSyncPeriodico } from "./lib/recordatorio"
 import { BroadcastToast } from "./components/BroadcastToast"
 import { Caracol } from "./components/Caracol"
 
@@ -83,6 +85,7 @@ function AppContent() {
   const [autoBackupDone, setAutoBackupDone] = useState(false)
   const [cloudBackupDone, setCloudBackupDone] = useState(false)
   const [cloudRestoreOffer, setCloudRestoreOffer] = useState(false)
+  const [recordatorio, setRecordatorio] = useState<{ cierreMs: number } | null>(null)
   const [emptyDb, setEmptyDb] = useState(false)
   const [gateSkipped, setGateSkipped] = useState(false)
   const [updateToast, setUpdateToast] = useState(false)
@@ -207,6 +210,16 @@ function AppContent() {
 
       // Limpiar restos de la "planilla de prueba" del tutorial (si se salió sin completar).
       try { await clearPeriodoPrueba() } catch { /* non-fatal */ }
+
+      // Recordatorio de fin de período: refresca la agenda (próximo cierre) que lee el SW y decide el
+      // aviso en-app. Si ya están activas las notificaciones, re-asegura el sync periódico (Android).
+      try {
+        const agenda = await actualizarAgenda()
+        if (notificacionesConcedidas()) await registrarSyncPeriodico()
+        if (enVentana(agenda) && !recordatorioDescartado(agenda.cierreMs)) {
+          setRecordatorio({ cierreMs: agenda.cierreMs })
+        }
+      } catch { /* non-fatal */ }
 
       if (navigator.storage?.persist) {
         const granted = await navigator.storage.persist()
@@ -506,6 +519,12 @@ function AppContent() {
       {tab === "settings" && <Caracol navH={navH} onSecret={desbloquearSalarioSecreto} onAdminSecret={desbloquearAdminSecreto} />}
 
       <GuideTooltip />
+      {recordatorio && !onb.activo && (
+        <RecordatorioToast
+          cierreMs={recordatorio.cierreMs}
+          onClose={() => { descartarRecordatorio(recordatorio.cierreMs); setRecordatorio(null) }}
+        />
+      )}
       {updateToast && <UpdateToast />}
       {broadcast && <BroadcastToast titulo={broadcast.titulo} cuerpo={broadcast.cuerpo} onClose={cerrarBroadcast} />}
       {!broadcast && mensajeInd && <BroadcastToast titulo={mensajeInd.titulo} cuerpo={mensajeInd.cuerpo} onClose={cerrarMensajeInd} />}
