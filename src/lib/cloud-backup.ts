@@ -28,10 +28,10 @@ const PBKDF2_ITERATIONS = 100_000
 
 // ── Tope diario de operaciones de nube POR DISPOSITIVO ──────────────────────────
 // Firestore (plan gratis) comparte la cuota diaria de lecturas/escrituras entre TODOS los usuarios
-// del proyecto. El uso normal (auto cada 3 días + algún respaldo/restore manual) queda muy por
+// del proyecto. El uso normal (auto-respaldo diario + algún respaldo/restore manual) queda muy por
 // debajo; este tope corta el spam para no agotar la cuota.
 const OPS_KEY = 'planilla-cloud-ops'
-const MAX_OPS_DIA = 10
+const MAX_OPS_DIA = 11
 
 function hoyKey(): string {
   const d = new Date()
