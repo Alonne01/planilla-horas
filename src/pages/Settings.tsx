@@ -216,7 +216,9 @@ export function SettingsPage() {
   // Genera un código de 6 dígitos ÚNICO entre usuarios (segundo candado), lo aplica y BLOQUEA.
   // Verifica contra el registro `codigos` que no esté en uso por otro usuario y lo reserva.
   async function generarCodigo() {
-    if (!nombre.trim() || cloudBusy) return
+    // El código se genera UNA sola vez y es inmutable: si ya hay uno, no se regenera (evita crear
+    // combinaciones usuario+código huérfanas). El nombre sí se puede cambiar (migra, mismo código).
+    if (!nombre.trim() || cloudBusy || bkCodigo) return
     setCloudBusy(true)
     try {
       const { codigo, unico } = await generarCodigoUnico()
@@ -441,7 +443,7 @@ export function SettingsPage() {
           </Field>
           {bkBloqueado && (
             <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
-              <Lock size={11} className="shrink-0" /> Nombre y código bloqueados. Tocá el candado para editarlos.
+              <Lock size={11} className="shrink-0" /> Nombre bloqueado. Tocá el candado para cambiarlo (el código es permanente, no se cambia).
             </p>
           )}
 
@@ -469,16 +471,18 @@ export function SettingsPage() {
                 placeholder={nombre.trim() ? (bkCodigo ? '' : 'tocá Generar →') : 'completá tu nombre arriba'}
                 className="flex-1 min-w-0 bg-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono tracking-[0.3em] disabled:opacity-50 disabled:cursor-not-allowed placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-500 focus:outline-none"
               />
-              {!bkBloqueado && (
+              {/* "Generar" SÓLO la primera vez (sin código aún). Una vez generado, el código es
+                  permanente y no se puede regenerar (el nombre sí se cambia, desbloqueando el candado). */}
+              {!bkCodigo && (
                 <button onClick={generarCodigo} disabled={!nombre.trim() || cloudBusy}
-                  className={`shrink-0 px-3 rounded-xl text-xs font-medium flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:animate-none ${nombre.trim() && !bkCodigo ? 'generar-pulse bg-blue-600 text-white' : 'bg-slate-600 text-slate-200 active:bg-slate-500'}`}>
+                  className={`shrink-0 px-3 rounded-xl text-xs font-medium flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:animate-none ${nombre.trim() ? 'generar-pulse bg-blue-600 text-white' : 'bg-slate-600 text-slate-200 active:bg-slate-500'}`}>
                   <Shuffle size={14} /> Generar
                 </button>
               )}
             </div>
             <p className="text-[11px] text-amber-300/80 leading-snug flex items-start gap-1.5 mt-1.5">
               <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-              Tu nombre + este código son la llave del respaldo. El código se obtiene con <strong className="text-amber-200">Generar</strong> (no se escribe a mano). Anotalos: si los perdés, no vas a poder restaurar en otro dispositivo.
+              Tu nombre + este código son la llave del respaldo. El código se genera <strong className="text-amber-200">una sola vez</strong> y no se puede cambiar (el nombre sí). Anotalo: si lo perdés, no vas a poder restaurar en otro dispositivo.
             </p>
           </div>
 
