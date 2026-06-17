@@ -428,7 +428,12 @@ export function SettingsPage() {
         {/* Empleado + respaldo en la nube — en su propio recuadro para separarlo del resto */}
         <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
         <Section title="Empleado">
-          <Field label="Nombre completo">
+          <Field
+            label="Nombre completo"
+            action={(bkBloqueado || !!bkCodigo) && (
+              <CandadoChip bloqueado={bkBloqueado} onToggle={toggleLock} />
+            )}
+          >
             <input
               type="text"
               data-tour="cfg-nombre"
@@ -439,13 +444,12 @@ export function SettingsPage() {
               className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               placeholder="Ej: Juan Topo"
             />
-            <p className="text-[11px] text-slate-500 mt-1">Se usa en la planilla, en el Excel exportado y en el respaldo en la nube.</p>
-          </Field>
-          {bkBloqueado && (
-            <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
-              <Lock size={11} className="shrink-0" /> Nombre bloqueado. Tocá el candado para cambiarlo (el código es permanente, no se cambia).
+            <p className="text-[11px] text-slate-500 mt-1 flex items-start gap-1.5">
+              {bkBloqueado
+                ? <><Lock size={11} className="shrink-0 mt-0.5" /> <span>Nombre bloqueado. Tocá <span className="text-emerald-300 font-medium">Bloqueado</span> para cambiarlo (el código es permanente).</span></>
+                : <span>Se usa en la planilla, en el Excel exportado y en el respaldo en la nube.</span>}
             </p>
-          )}
+          </Field>
 
           {/* Respaldo en la nube — MISMO bloque que el empleado; el usuario ES el nombre de arriba */}
           <p className="text-xs text-slate-400 leading-snug">
@@ -454,15 +458,12 @@ export function SettingsPage() {
           </p>
 
           <div data-tour="cfg-respaldo">
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between gap-2 mb-1.5 min-h-[1.5rem]">
               <label className="text-xs text-slate-400">Código de respaldo (6 dígitos)</label>
-              {(bkBloqueado || !!bkCodigo) && (
-                <button
-                  onClick={toggleLock}
-                  className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg ${bkBloqueado ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}
-                >
-                  {bkBloqueado ? <><Lock size={12} /> Bloqueado</> : <><Unlock size={12} /> Desbloqueado</>}
-                </button>
+              {!!bkCodigo && (
+                <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg bg-slate-600/40 text-slate-400">
+                  <Lock size={12} /> Permanente
+                </span>
               )}
             </div>
             <div className="flex gap-2">
@@ -480,10 +481,12 @@ export function SettingsPage() {
                 </button>
               )}
             </div>
-            <p className="text-[11px] text-amber-300/80 leading-snug flex items-start gap-1.5 mt-1.5">
-              <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-              Tu nombre + este código son la llave del respaldo. El código se genera <strong className="text-amber-200">una sola vez</strong> y no se puede cambiar (el nombre sí). Anotalo: si lo perdés, no vas a poder restaurar en otro dispositivo.
-            </p>
+            <div className="flex items-start gap-1.5 mt-1.5">
+              <AlertTriangle size={12} className="shrink-0 mt-0.5 text-amber-300/80" />
+              <p className="text-[11px] text-amber-300/80 leading-snug">
+                Tu nombre + este código son la llave del respaldo. El código se genera <strong className="text-amber-200">una sola vez</strong> y no se puede cambiar (el nombre sí). Anotalo: si lo perdés, no vas a poder restaurar en otro dispositivo.
+              </p>
+            </div>
           </div>
 
           {/* Campo "Código" del admin: aparece SÓLO con nombre "Nicolas Vazquez" + código 000000.
@@ -1067,10 +1070,13 @@ function StorageWarningBanner() {
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, action }: { label: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div>
-      <label className="text-xs text-slate-400 mb-1 block">{label}</label>
+      <div className="mb-1 flex items-center justify-between gap-2 min-h-[1.5rem]">
+        <label className="text-xs text-slate-400">{label}</label>
+        {action}
+      </div>
       {children}
     </div>
   )
