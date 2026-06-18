@@ -3,7 +3,7 @@ import { AlertTriangle, Download, FolderOpen, ChevronDown, ChevronRight, X, Smar
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
-import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros, msSinceCloudBackup, markCloudBackupDone } from '../db/database'
+import { db, exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros, msSinceCloudBackup, markCloudBackupDone } from '../db/database'
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, esAdminNube, setAdminCodigo2, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
@@ -61,6 +61,10 @@ export function SettingsPage() {
   const [recordOn, setRecordOn] = useState(notificacionesConcedidas())
   const [recordBusy, setRecordBusy] = useState(false)
   const permisoNotifDenegado = typeof Notification !== 'undefined' && Notification.permission === 'denied'
+  // Francos compensatorios: contador actual (vivo) + edición manual del total.
+  const [francosDisp, setFrancosDisp] = useState<number | null>(null)
+  const [francosInput, setFrancosInput] = useState('')
+  const [francosBusy, setFrancosBusy] = useState(false)
 
   // Estado local del formulario — auto-guardado (con debounce) tras cada cambio
   const [nombre, setNombre] = useState('')
@@ -127,6 +131,19 @@ export function SettingsPage() {
     setDirty(false)
   }, [loaded]) // intentionally only on mount
 
+  // Contador vivo de francos compensatorios = saldo base arrastrado + ganados − usados.
+  // Se carga al entrar para mostrar el valor actual y precargar el campo editable.
+  useEffect(() => {
+    if (!loaded) return
+    db.registros.toArray().then(all => {
+      const ganados = all.filter(r => r.esFrancoTrabajado).length
+      const usados = all.filter(r => r.esFrancoCompensatorio).length
+      const disp = (settings.francosCompSaldoBase ?? 0) + ganados - usados
+      setFrancosDisp(disp)
+      setFrancosInput(String(disp))
+    })
+  }, [loaded])
+
   function flash(text: string, type: 'ok' | 'err' = 'ok') {
     setMsg({ text, type })
     setTimeout(() => setMsg(null), 3000)
@@ -159,6 +176,31 @@ export function SettingsPage() {
       flash('Configuración guardada ✓')
     } catch {
       flash('Error al guardar. Intentá de nuevo.', 'err')
+    }
+  }
+
+  // Ajuste manual del total de francos compensatorios. Como el contador se calcula a partir de los
+  // registros (ganados − usados) + un saldo base arrastrado, fijar el total = X equivale a recalcular
+  // ese saldo base: saldoBase = X − (ganados − usados). Así el contador queda en X y las altas/usos
+  // futuros lo siguen ajustando solos.
+  async function handleAjustarFrancos() {
+    const x = parseInt(francosInput.trim(), 10)
+    if (Number.isNaN(x) || x < 0) {
+      flash('Ingresá un número válido (0 o más).', 'err')
+      return
+    }
+    setFrancosBusy(true)
+    try {
+      const all = await db.registros.toArray()
+      const neto = all.filter(r => r.esFrancoTrabajado).length - all.filter(r => r.esFrancoCompensatorio).length
+      await update({ francosCompSaldoBase: x - neto })
+      setFrancosDisp(x)
+      setFrancosInput(String(x))
+      flash('Francos compensatorios actualizados ✓')
+    } catch {
+      flash('No se pudo actualizar. Intentá de nuevo.', 'err')
+    } finally {
+      setFrancosBusy(false)
     }
   }
 
@@ -684,6 +726,36 @@ export function SettingsPage() {
 
         {/* 4. Avisos y datos manuales: recordatorio de fin de período + exportar/importar */}
         <CollapsibleCard title="Avisos y datos manuales" defaultOpen={false}>
+          <SubSection title="Francos compensatorios">
+            <p className="text-[11px] text-slate-400 leading-snug">
+              Se cuentan solos (uno por franco trabajado, menos los que usás). Ajustá el total acá si arrastrás
+              un saldo de antes de usar la app o querés corregirlo a mano.
+            </p>
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className="text-[11px] text-slate-500 block mb-1">Total disponible</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={francosInput}
+                  onChange={e => setFrancosInput(e.target.value.replace(/[^\d]/g, ''))}
+                  className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
+                  placeholder="0"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleAjustarFrancos}
+                disabled={francosBusy || francosInput.trim() === '' || francosInput.trim() === String(francosDisp ?? '')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${francosBusy || francosInput.trim() === '' || francosInput.trim() === String(francosDisp ?? '') ? 'bg-slate-700/60 text-slate-500 cursor-default' : 'bg-blue-600 text-white active:bg-blue-700'}`}
+              >
+                {francosBusy ? 'Guardando…' : 'Ajustar'}
+              </button>
+            </div>
+            {francosDisp !== null && (
+              <p className="text-[11px] text-slate-500">Actual: {francosDisp} franco{francosDisp === 1 ? '' : 's'} compensatorio{francosDisp === 1 ? '' : 's'}.</p>
+            )}
+          </SubSection>
           {notificacionesSoportadas() && (
             <SubSection title="Recordatorio de fin de período">
               <div className="flex items-center justify-between gap-3">
