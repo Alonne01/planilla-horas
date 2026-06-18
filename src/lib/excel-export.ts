@@ -208,6 +208,7 @@ function buildRowParts(
 
     const etiqueta = reg.esFaltaInjustificada ? 'falta injustificada'
       : reg.esAusenciaJustificada ? 'ausencia just.'
+      : reg.esVacaciones ? 'vacaciones'
       : reg.esFeriado ? 'feriado'
       : reg.esFrancoCompensatorio ? 'franco (comp.)'
       : 'franco'

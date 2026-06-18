@@ -224,7 +224,7 @@ function agregar(registros: RegistroHoras[], linea: LineaTrabajo): Agregados {
 
   for (const reg of registros) {
     if (reg.esFaltaInjustificada) { faltasInjustificadas++; continue } // inasistencia: descuenta aparte
-    if (esDiaNoTrabajado(reg) || reg.esAusenciaJustificada) continue
+    if (esDiaNoTrabajado(reg) || reg.esAusenciaJustificada || reg.esVacaciones) continue // vacaciones: paga, no se trabaja
     const h = calcularHorasDia(reg, linea)
     if (h.horasTrabajadas > 0) {
       diasTrabajados++

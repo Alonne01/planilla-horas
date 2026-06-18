@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, type FocusEvent } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, type FocusEvent } from 'react'
 import { v4 as uuid } from 'uuid'
-import { X, CalendarDays, Clock, Moon, Palmtree, Check } from 'lucide-react'
+import { X, CalendarDays, Clock, Moon, Sun, Palmtree, Check } from 'lucide-react'
 import { TimeDrumPicker } from './TimeDrumPicker'
 import type { RegistroHoras } from '../db/database'
 import { esFeriadoNacional, nombreFeriado } from '../lib/feriados'
@@ -24,6 +24,8 @@ interface Props {
   onTourReady?: () => void
   /** Tour guiado: oculta Cancelar y la X (sólo se puede Guardar; para salir está "Omitir" del tour). */
   ocultarCierre?: boolean
+  /** Centro (viewport) de la celda tocada → el diálogo CRECE desde ahí ("container transform"). */
+  origin?: { x: number; y: number } | null
 }
 
 function timeToMs(base: Date, hhmm: string): number | null {
@@ -87,17 +89,18 @@ function getInitialViaje(existing: RegistroHoras | undefined): { modo: ViajeModo
 }
 
 /** Mutually-exclusive absence labels — shown only when no times entered */
-type SubFranco = 'COMP' | 'AUSENCIA' | 'FALTA' | null
+type SubFranco = 'COMP' | 'AUSENCIA' | 'FALTA' | 'VACACIONES' | null
 
 function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
   if (!existing) return null
   if (existing.esFrancoCompensatorio) return 'COMP'
   if (existing.esAusenciaJustificada) return 'AUSENCIA'
   if (existing.esFaltaInjustificada) return 'FALTA'
+  if (existing.esVacaciones) return 'VACACIONES'
   return null
 }
 
-export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose, onTourReady, ocultarCierre }: Props) {
+export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose, onTourReady, ocultarCierre, origin }: Props) {
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
   const esFeriadoHoy = esFeriadoNacional(fecha.getTime())
   const nombreFeriadoHoy = nombreFeriado(fecha.getTime())
@@ -201,6 +204,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
     : isDayOff ? (
         subFranco === 'FALTA' ? 'falta injustificada'
         : subFranco === 'AUSENCIA' ? 'ausencia just.'
+        : subFranco === 'VACACIONES' ? 'vacaciones'
         : esFeriadoHoy ? 'feriado'
         : subFranco === 'COMP' ? 'franco (comp.)'
         : esFrancoHoy ? 'franco'
@@ -247,6 +251,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       esFrancoTrabajado: isFrancoWorked,
       esAusenciaJustificada: isDayOff && subFranco === 'AUSENCIA',
       esFaltaInjustificada: isDayOff && subFranco === 'FALTA',
+      esVacaciones: isDayOff && subFranco === 'VACACIONES',
       fechaCreacion: existing?.fechaCreacion ?? Date.now(),
     }
     onSave(reg)
@@ -254,12 +259,33 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
   const closingRef = useRef(false)
   const [isClosing, setIsClosing] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // "Container transform": al abrir desde una celda, el panel CRECE desde el punto tocado. Seteamos la
+  // transform-origin (punto de la celda relativo al panel) antes del primer paint y disparamos la
+  // animación de crecer; reemplaza al slide normal. Sin `origin` (lista, etc.) queda el slide del CSS.
+  // El "container transform" (crecer desde la celda) se limita a DESKTOP (≥640px = `sm`, donde el
+  // diálogo ya es un modal centrado). En móvil es un bottom-sheet → queda el slide-up de siempre.
+  const usaGrow = () => !!origin && typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches
+
+  useLayoutEffect(() => {
+    const el = panelRef.current
+    if (!el || !usaGrow()) return
+    el.style.animation = 'none'           // medir la posición de REPOSO (sin el slide-in del CSS)
+    const r = el.getBoundingClientRect()  // fuerza reflow → rect real del panel
+    el.style.transformOrigin = `${origin!.x - r.left}px ${origin!.y - r.top}px`
+    el.style.animation = 'container-grow-in 300ms cubic-bezier(.22,1,.36,1) both'
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function handleClose() {
     if (closingRef.current) return
     closingRef.current = true
+    // Cierre simétrico: si creció desde una celda (desktop), vuelve a encogerse hacia ella.
+    const grow = usaGrow() && !!panelRef.current
+    if (grow) panelRef.current!.style.animation = 'container-grow-out 220ms cubic-bezier(.5,0,.75,0) forwards'
     setIsClosing(true)
-    setTimeout(onClose, 230)
+    setTimeout(onClose, grow ? 220 : 230)
   }
 
   const labelDia = fecha.toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long' })
@@ -274,11 +300,15 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       onClick={handleClose}
     >
       <div
+        ref={panelRef}
         className={`w-full max-w-md bg-slate-800 rounded-t-2xl sm:rounded-2xl p-5 pb-8 sm:pb-5 max-h-[92vh] overflow-y-auto ${isClosing ? 'animate-[dialog-slide-out_230ms_ease_both]' : 'animate-[dialog-slide-in_220ms_ease_both]'}`}
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between mb-5">
+        {/* Header — degradé sutil DÍA/NOCHE que cambia según el turno cargado (sol→luna). */}
+        <div
+          className="flex items-center justify-between mb-5 -mx-5 -mt-5 px-5 pt-5 pb-3 rounded-t-2xl transition-[background] duration-500"
+          style={{ background: turnoTipo === 'noche' ? 'linear-gradient(180deg, rgba(99,102,241,0.18), transparent)' : turnoTipo === 'dia' ? 'linear-gradient(180deg, rgba(251,191,36,0.15), transparent)' : undefined }}
+        >
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wide mb-0.5">Editar Registro</p>
             <h2 className="text-lg font-bold text-white capitalize">{labelDia}</h2>
@@ -339,12 +369,12 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
           {turnoTipo && (
             <div className="mt-2.5 flex items-center gap-2 animate-[apply-bar-in_220ms_ease_both]">
               {turnoTipo === 'noche' ? (
-                <span className="rounded-full bg-indigo-500/15 border border-indigo-500/30 px-2.5 py-1 text-[11px] font-semibold text-indigo-300">
-                  Turno noche
+                <span className="rounded-full bg-indigo-500/15 border border-indigo-500/30 px-2.5 py-1 text-[11px] font-semibold text-indigo-300 flex items-center gap-1">
+                  <Moon size={12} /> Turno noche
                 </span>
               ) : (
-                <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 text-[11px] font-semibold text-amber-300">
-                  Turno día
+                <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 text-[11px] font-semibold text-amber-300 flex items-center gap-1">
+                  <Sun size={12} /> Turno día
                 </span>
               )}
               {turnoCruza && (
@@ -436,7 +466,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
           <div className="flex gap-2">
             {(['Base', 'Campo'] as const).map(l => (
               <button key={l} data-tour={`dlg-lugar-${l.toLowerCase()}`} onClick={() => handleSetLugar(l)}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${lugar === l ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-[transform,background-color,color] active:scale-95 ${lugar === l ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
                 {l}
               </button>
             ))}
@@ -445,21 +475,28 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
         {/* ── Tipo de ausencia — only when no times entered AND not a scheduled franco day ── */}
         {isDayOff && !esFrancoHoy && (
-          <div className="bg-slate-700/40 rounded-xl p-3 mb-4" data-tour="dlg-ausencia">
+          <div className="bg-slate-700/40 rounded-xl p-3 mb-4 animate-[apply-bar-in_240ms_ease_both]" data-tour="dlg-ausencia">
             <p className="text-xs text-slate-400 mb-2">Tipo de ausencia</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {([
                 ['COMP', 'Compensatorio'],
                 ['AUSENCIA', 'Ausencia just.'],
                 ['FALTA', 'Falta injust.'],
-              ] as [SubFranco, string][]).map(([key, label]) => (
-                <button
-                  key={key!}
-                  onClick={() => setSubFranco(subFranco === key ? null : key)}
-                  className={`py-2 px-1 rounded-lg text-xs font-medium text-center transition-colors ${subFranco === key ? (key === 'FALTA' ? 'bg-rose-600 text-white' : 'bg-blue-600 text-white') : 'bg-slate-700 text-slate-300'}`}>
-                  {label}
-                </button>
-              ))}
+                ['VACACIONES', 'Vacaciones'],
+              ] as [SubFranco, string][]).map(([key, label]) => {
+                const sel = subFranco === key
+                const selColor = key === 'FALTA' ? 'bg-rose-600 text-white'
+                  : key === 'VACACIONES' ? 'bg-teal-600 text-white'
+                  : 'bg-blue-600 text-white'
+                return (
+                  <button
+                    key={key!}
+                    onClick={() => setSubFranco(sel ? null : key)}
+                    className={`py-2 px-1 rounded-lg text-xs font-medium text-center transition-[transform,background-color,color] active:scale-95 ${sel ? selColor : 'bg-slate-700 text-slate-300'}`}>
+                    {label}
+                  </button>
+                )
+              })}
             </div>
             {usaCompensatorio && (
               baseFrancos > 0 ? (
@@ -482,13 +519,13 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
         {/* ── Pernocte / Maneja / Horas viaje — Campo only ── */}
         {!isDayOff && lugar === 'Campo' && (
-          <div className="space-y-3 mb-4" data-tour="dlg-viaje">
+          <div className="space-y-3 mb-4 animate-[apply-bar-in_240ms_ease_both]" data-tour="dlg-viaje">
             <div data-tour="dlg-pernocte">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Pernocte</p>
               <div className="flex gap-2">
                 {(['NO', 'Hotel', 'Trailer'] as Pernocte[]).map(p => (
                   <button key={p} onClick={() => setPernocte(p)}
-                    className={`flex-1 py-2 rounded-xl text-sm font-medium ${pernocte === p ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                    className={`flex-1 py-2 rounded-xl text-sm font-medium transition-[transform,background-color,color] active:scale-95 ${pernocte === p ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
                     {p}
                   </button>
                 ))}
@@ -505,7 +542,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
                   ['OTRO', 'Otro', ''],
                 ] as [ViajeModo, string, string][]).map(([key, label, sub]) => (
                   <button key={key} onClick={() => handleSetViajeModo(key)}
-                    className={`py-2.5 rounded-xl text-sm font-medium transition-colors ${viajeModo === key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                    className={`py-2.5 rounded-xl text-sm font-medium transition-[transform,background-color,color] active:scale-95 ${viajeModo === key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
                     {label}
                     {sub && <span className={`block text-[10px] ${viajeModo === key ? 'text-blue-100/80' : 'text-slate-400'}`}>{sub}</span>}
                   </button>
@@ -554,7 +591,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
         {/* ── Viaje a base (+1h) — Base only ── */}
         {!isDayOff && lugar === 'Base' && (
-          <div className="mb-4 space-y-2" data-tour="dlg-viaje-base">
+          <div className="mb-4 space-y-2 animate-[apply-bar-in_240ms_ease_both]" data-tour="dlg-viaje-base">
             <Toggle label="Viaje a base (+1h)" value={viajeActivo} onChange={handleSetViaje} />
             {viajeActivo && (
               <p className="text-[11px] text-slate-400 leading-snug">
@@ -587,9 +624,9 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               Eliminar
             </button>
           )}
-          {!ocultarCierre && <button onClick={handleClose} className="flex-1 py-3 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">Cancelar</button>}
+          {!ocultarCierre && <button onClick={handleClose} className="flex-1 py-3 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium transition-transform active:scale-95">Cancelar</button>}
           <button data-tour="dlg-guardar" onClick={handleSave} disabled={isPartialEntry}
-            className={`flex-1 py-3 rounded-xl text-sm font-bold transition-colors ${isPartialEntry ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
+            className={`flex-1 py-3 rounded-xl text-sm font-bold transition-[transform,background-color,color] active:scale-95 disabled:active:scale-100 ${isPartialEntry ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
             Guardar
           </button>
         </div>
@@ -697,7 +734,7 @@ function ProjectInput({ value, onChange, suggestions, prefijo, sufijo }: { value
               key={s}
               type="button"
               onClick={() => onChange(s)}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-[transform,background-color,color] active:scale-95 ${
                 s === value ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200 active:bg-slate-600'
               }`}
             >

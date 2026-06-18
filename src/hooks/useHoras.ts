@@ -7,7 +7,9 @@ export function useHoras(mes: number, anio: number) {
   const [loading, setLoading] = useState(true)
 
   const reload = useCallback(async () => {
-    setLoading(true)
+    // OJO: NO ponemos loading=true acá. Si lo hiciéramos, cada reload (al aplicar/copiar/borrar días)
+    // desmontaría el calendario y volvería a correr toda la cascada de entrada → "reaparece". El loader
+    // de pantalla completa sólo aplica al PRIMER load (useState(true)); los reloads actualizan en su lugar.
     const start = periodoStart(mes, anio).getTime()
     const end = periodoEnd(mes, anio).getTime() + 86_400_000 // end of day 20
     const rows = await db.registros

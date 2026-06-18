@@ -14,6 +14,7 @@ function tipoLabel(reg: RegistroHoras): string {
   if (reg.esFrancoTrabajado) return 'Franco Trab.'
   if (reg.esFeriadoTrabajado) return 'Feriado Trab.'
   if (reg.esFaltaInjustificada) return 'Falta injust.'
+  if (reg.esVacaciones) return 'Vacaciones'
   if (reg.esFeriado) return 'Feriado'
   if (reg.esAusenciaJustificada) return 'Ausencia'
   if (reg.lugarTrabajo === 'Franco') return 'Franco'

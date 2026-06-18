@@ -47,7 +47,7 @@ function computePeriodo(mes: number, anio: number, registros: RegistroHoras[], l
 
   for (const reg of registros) {
     const h = calcularHorasDia(reg, linea)
-    const off = esDiaNoTrabajado(reg) || reg.esAusenciaJustificada
+    const off = esDiaNoTrabajado(reg) || reg.esAusenciaJustificada || reg.esVacaciones
 
     if (off) {
       diasFranco++

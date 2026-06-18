@@ -52,7 +52,10 @@ export function AnalyticsPage() {
       </div>
 
       {loading ? (
-        <div className="text-center text-slate-500 py-16">Cargando…</div>
+        <div className="px-4 space-y-4 py-2">
+          <div className="h-52 rounded-2xl bg-slate-800/60 animate-pulse" />
+          <div className="h-40 rounded-2xl bg-slate-800/60 animate-pulse" style={{ animationDelay: '120ms' }} />
+        </div>
       ) : !hayDatos ? (
         <div className="px-6 py-16 text-center text-slate-500">
           <BarChart3 size={40} className="mx-auto mb-3 opacity-40" />

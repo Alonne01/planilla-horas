@@ -656,6 +656,66 @@ export async function marcarMensajeRecibido(usuario: string, codigo: string): Pr
   } catch { /* acuse best-effort: no debe romper nada */ }
 }
 
+// ── Sugerencias (usuario → admin) ───────────────────────────────────────────────
+// El usuario manda una sugerencia de texto libre; el admin la lee en su pantalla. Va en claro como
+// la difusión (read/list público para el admin; create con validación de campos/tamaño). Anti-spam:
+// 1 envío por día POR DISPOSITIVO (localStorage), igual criterio que el resto de los topes de nube.
+const SUGERENCIAS = 'sugerencias'
+const SUGERENCIA_DIA_KEY = 'planilla-sugerencia-dia'
+
+/** ¿Este dispositivo todavía puede enviar una sugerencia hoy? (1/día; el admin no tiene tope). */
+export function puedeEnviarSugerenciaHoy(): boolean {
+  if (esAdminDispositivo()) return true
+  try { return localStorage.getItem(SUGERENCIA_DIA_KEY) !== hoyKey() } catch { return true }
+}
+function marcarSugerenciaEnviadaHoy(): void {
+  try { localStorage.setItem(SUGERENCIA_DIA_KEY, hoyKey()) } catch { /* ignore */ }
+}
+
+export interface SugerenciaEntry {
+  id: string
+  nombre: string
+  texto: string
+  version: string
+  linea: string
+  createdAt: number
+}
+
+/**
+ * [usuario] Envía una sugerencia (nombre + versión + texto) a `sugerencias/{ts}`. Lanza si falla la
+ * red o si las reglas la rechazan. Marca el envío del día (tope 1/día por dispositivo) sólo si subió.
+ */
+export async function enviarSugerencia(nombre: string, texto: string, linea?: string): Promise<SugerenciaEntry> {
+  const createdAt = Date.now()
+  const id = String(createdAt)
+  const n = nombre.trim(), t = texto.trim(), l = linea?.trim() ?? ''
+  const payload: Record<string, unknown> = { nombre: n, texto: t, version: APP_VERSION, createdAt }
+  if (l) payload.linea = l // Firestore no acepta undefined: sólo se incluye si hay valor
+  await setDoc(doc(getDb(), SUGERENCIAS, id), payload)
+  marcarSugerenciaEnviadaHoy()
+  registrarOperacionNube()
+  contarUso(0, 1)
+  return { id, nombre: n, texto: t, version: APP_VERSION, linea: l, createdAt }
+}
+
+/** [admin] Lista las sugerencias recibidas (más nuevas primero). */
+export async function listarSugerencias(): Promise<SugerenciaEntry[]> {
+  const snap = await getDocs(collection(getDb(), SUGERENCIAS))
+  registrarOperacionNube()
+  contarUso(Math.max(1, snap.docs.length), 0)
+  return snap.docs.map(d => {
+    const x = d.data() as Partial<SugerenciaEntry>
+    return {
+      id: d.id,
+      nombre: String(x.nombre ?? '').trim(),
+      texto: String(x.texto ?? ''),
+      version: x.version != null ? String(x.version) : '',
+      linea: String(x.linea ?? '').trim(),
+      createdAt: typeof x.createdAt === 'number' ? x.createdAt : 0,
+    }
+  }).sort((a, b) => b.createdAt - a.createdAt)
+}
+
 // ── Códigos ÚNICOS (segundo candado): que no se repitan entre usuarios ──────────
 // Registro global `codigos/{hash}` (hash del código, NO el código en claro) para reservar cada
 // código de 6 dígitos. Un 6 dígitos es enumerable, así que el registro solo revela "tomado/libre"

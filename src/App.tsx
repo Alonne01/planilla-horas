@@ -13,8 +13,10 @@ import { refrescarParitarias } from "./lib/paritarias"
 import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, type AppConfig } from "./lib/cloud-backup"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
-import { OnboardingProvider, useOnboarding, onboardingHecho } from "./onboarding/OnboardingContext"
-import { GuideTooltip } from "./components/GuideTooltip"
+import { setupHecho, marcarSetupHecho, tutorialVisto, marcarTutorialVisto, diagramaConfirmado, marcarDiagramaConfirmado } from "./onboarding/tutorial"
+import { WelcomeSetup } from "./components/WelcomeSetup"
+import { DiagramaSetup } from "./components/DiagramaSetup"
+import { TutorialSlides } from "./components/TutorialSlides"
 import { UpdateToast } from "./components/UpdateToast"
 import { RecordatorioToast } from "./components/RecordatorioToast"
 import { actualizarAgenda, enVentana, recordatorioDescartado, descartarRecordatorio, notificacionesConcedidas, registrarSyncPeriodico, recordatorioHabilitado } from "./lib/recordatorio"
@@ -62,11 +64,7 @@ function goToTab(next: Tab, current: Tab, setter: (t: Tab) => void) {
 }
 
 export default function App() {
-  return (
-    <OnboardingProvider>
-      <AppContent />
-    </OnboardingProvider>
-  )
+  return <AppContent />
 }
 
 function AppContent() {
@@ -103,9 +101,45 @@ function AppContent() {
   const navRef = useRef<HTMLElement>(null)
   const [navH, setNavH] = useState(56)
 
-  // ─── Walkthrough / onboarding: auto-arranca en el 1er inicio para CUALQUIER usuario (hasta completarlo/omitirlo) ───
-  const onb = useOnboarding()
-  useEffect(() => { onb.registrar({ setTab }) }, [])
+  // ─── Primer inicio: setup OBLIGATORIO (nombre + apellido → código → respaldo) + tutorial simple ───
+  // El setup bloquea la pantalla hasta cargar el nombre; el tutorial (carrusel) se muestra una vez
+  // después y se puede reabrir desde el menú ⋮.
+  const [showWelcome, setShowWelcome] = useState(false)
+  const [showDiagrama, setShowDiagrama] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
+  useEffect(() => {
+    void (async () => {
+      try {
+        const s = await getSettings()
+        // Auto-confirmar el diagrama para usuarios EXISTENTES (ya tienen datos o eligieron inicio):
+        // así no se les muestra el prompt. Sólo queda pendiente para usuarios genuinamente nuevos.
+        if (!diagramaConfirmado()) {
+          const count = await db.registros.count()
+          if (count > 0 || s.diagramaInicioMs > 0) marcarDiagramaConfirmado()
+        }
+        // Setup obligatorio sólo a usuarios nuevos (sin nombre y sin haber pasado por el setup).
+        if (!s.nombreUsuario.trim() && !setupHecho()) setShowWelcome(true)
+        // Tiene nombre pero nunca confirmó el diagrama → prompt del diagrama al abrir.
+        else if (!diagramaConfirmado()) setShowDiagrama(true)
+      } catch { /* ignore */ }
+    })()
+  }, [])
+
+  function welcomeDone() {
+    marcarSetupHecho()
+    setShowWelcome(false)
+    // Tras el setup viene el diagrama (obligatorio); el tutorial va después.
+    if (!diagramaConfirmado()) setShowDiagrama(true)
+    else if (!tutorialVisto()) setShowTutorial(true)
+  }
+  function diagramaDone() {
+    setShowDiagrama(false)
+    if (!tutorialVisto()) setShowTutorial(true) // tras confirmar el diagrama, el tutorial una vez
+  }
+  function tutorialDone() {
+    marcarTutorialVisto()
+    setShowTutorial(false)
+  }
 
   // Auto-actualización: cuando el SW nuevo toma el control (autoUpdate lo activa solo), mostramos el
   // toast y recargamos. `controllerchange` dispara en updates reales (y 1 vez en la 1ª instalación).
@@ -122,10 +156,6 @@ function AppContent() {
     navigator.serviceWorker.addEventListener('controllerchange', onChange)
     return () => navigator.serviceWorker.removeEventListener('controllerchange', onChange)
   }, [])
-  useEffect(() => {
-    if (!onboardingHecho()) onb.start()
-  }, [])
-
   // Config global desde la nube: actualiza el flag del donador y, si hay un mensaje de difusión que
   // este usuario no vio, lo muestra (una sola vez). Lectura automática (no cuenta contra el tope diario).
   useEffect(() => {
@@ -262,10 +292,10 @@ function AppContent() {
               markCloudBackupDone()
               if (subido) setCloudBackupDone(true)
             } catch { /* sin conexión: reintenta en el próximo arranque */ }
-          } else if (!cloudOn && s.nombreUsuario.trim() && onboardingHecho() && quedanOperacionesNube()) {
+          } else if (!cloudOn && s.nombreUsuario.trim() && setupHecho() && quedanOperacionesNube()) {
             // Usuario con nombre y datos pero SIN respaldo en la nube: le generamos el código y subimos
             // su primer respaldo automáticamente (una sola vez; después cae en la rama cloudOn de arriba).
-            // No corre si va a arrancar el tour completo (1ª vez), que ya configura la nube en su paso.
+            // No corre para usuarios nuevos: a ésos los configura el setup obligatorio del primer inicio.
             try {
               const { subido } = await configurarNubeAuto(s.nombreUsuario, lineaLabel(s.lineaTrabajo))
               if (subido) { markCloudBackupDone(); setCloudBackupDone(true) }
@@ -511,7 +541,7 @@ function AppContent() {
         {/* Input de restauración: fuera del banner para que sobreviva al auto-cierre durante la selección de archivo */}
         <input ref={restoreRef} type="file" accept=".json" onChange={handleRestoreFromFile} className="hidden" />
 
-        {tab === "horas" && <HorasTrabajoPage beggarActivo={config.beggarActivo || beggarUser} />}
+        {tab === "horas" && <HorasTrabajoPage beggarActivo={config.beggarActivo || beggarUser} onAbrirTutorial={() => setShowTutorial(true)} />}
         {tab === "analytics" && <AnalyticsPage />}
         {tab === "settings" && <SettingsPage />}
         {tab === "salary" && showSalary && <ProyeccionSalarialPage />}
@@ -519,7 +549,23 @@ function AppContent() {
       </div>
 
       <nav ref={navRef} className="vt-bottom-nav fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30 pb-[env(safe-area-inset-bottom)]">
-        <div className="flex">
+        <div className="relative flex">
+          {/* Indicador activo que SE DESLIZA entre pestañas (en vez de saltar). Se posiciona sobre la
+              pestaña activa según su índice entre las pestañas visibles (Sueldo/Admin son opcionales). */}
+          {(() => {
+            const order: Tab[] = ["horas", "analytics", "settings"]
+            if (showSalary) order.push("salary")
+            if (showAdmin) order.push("admin")
+            const idx = Math.max(0, order.indexOf(tab))
+            return (
+              <span
+                className="pointer-events-none absolute top-0 flex justify-center transition-transform duration-300 ease-out"
+                style={{ width: `${100 / order.length}%`, transform: `translateX(${idx * 100}%)` }}
+              >
+                <span className="h-0.5 w-8 rounded-full bg-blue-400" />
+              </span>
+            )
+          })()}
           <NavTab icon={<Clock size={22} />} label="Horas" active={tab === "horas"} onClick={() => goToTab("horas", tab, setTab)} />
           <NavTab icon={<BarChart3 size={22} />} label="Análisis" active={tab === "analytics"} onClick={() => goToTab("analytics", tab, setTab)} />
           <NavTab icon={<Settings2 size={22} />} label="Config" active={tab === "settings"} onClick={() => goToTab("settings", tab, setTab)} />
@@ -535,16 +581,22 @@ function AppContent() {
       {/* Easter egg: el caracol sólo en Configuración, asomando al scrollear hasta el fondo. */}
       {tab === "settings" && <Caracol navH={navH} onSecret={desbloquearSalarioSecreto} onAdminSecret={desbloquearAdminSecreto} />}
 
-      <GuideTooltip />
-      {recordatorio && !onb.activo && (
+      {recordatorio && !showWelcome && !showDiagrama && (
         <RecordatorioToast
           cierreMs={recordatorio.cierreMs}
           onClose={() => { descartarRecordatorio(recordatorio.cierreMs); setRecordatorio(null) }}
         />
       )}
       {updateToast && <UpdateToast />}
-      {broadcast && <BroadcastToast titulo={broadcast.titulo} cuerpo={broadcast.cuerpo} onClose={cerrarBroadcast} />}
-      {!broadcast && mensajeInd && <BroadcastToast titulo={mensajeInd.titulo} cuerpo={mensajeInd.cuerpo} onClose={cerrarMensajeInd} />}
+      {/* Si hay actualización en curso, la difusión/mensaje ESPERA: primero se actualiza y recarga,
+          y al volver a abrir (sin updateToast) la difusión se muestra (no se marcó como vista). */}
+      {!updateToast && broadcast && <BroadcastToast titulo={broadcast.titulo} cuerpo={broadcast.cuerpo} onClose={cerrarBroadcast} />}
+      {!updateToast && !broadcast && mensajeInd && <BroadcastToast titulo={mensajeInd.titulo} cuerpo={mensajeInd.cuerpo} onClose={cerrarMensajeInd} />}
+
+      {/* Primer inicio: setup obligatorio → diagrama (vista previa) → tutorial simple (carrusel) */}
+      {showTutorial && <TutorialSlides onClose={tutorialDone} />}
+      {showDiagrama && !showWelcome && <DiagramaSetup onDone={diagramaDone} />}
+      {showWelcome && <WelcomeSetup onDone={welcomeDone} />}
     </div>
   )
 }
@@ -572,8 +624,7 @@ function NavTab({ icon, label, active, onClick }: { icon: React.ReactNode; label
       onClick={onClick}
       className={"relative flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 transition-colors active:bg-slate-800/50 " + (active ? "text-blue-400" : "text-slate-500")}
     >
-      {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-blue-400" />}
-      <span className="leading-none">{icon}</span>
+      <span className={"leading-none transition-transform duration-200 " + (active ? "scale-110" : "scale-100")}>{icon}</span>
       <span className="text-[11px] font-medium">{label}</span>
     </button>
   )

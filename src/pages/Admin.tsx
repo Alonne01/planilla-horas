@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual } from '../lib/cloud-backup'
+import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye, LayoutDashboard, Lightbulb, Copy, Check } from 'lucide-react'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, listarSugerencias, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry } from '../lib/cloud-backup'
 import { APP_VERSION } from '../version'
 
 const ACTIVO_MS = 7 * 24 * 60 * 60 * 1000 // "activo" = respaldó en los últimos 7 días
 const SIN_LINEA = '(sin línea)'
 const SIN_VERSION = '(?)'
+
+type AdminTab = 'resumen' | 'usuarios' | 'difusion' | 'sugerencias'
+
+// Marca local de la sugerencia más nueva ya vista por el admin → para el badge de "nuevas".
+const SUG_SEEN_KEY = 'planilla-admin-sug-seen'
+function leerSugVistas(): number {
+  try { return Number(localStorage.getItem(SUG_SEEN_KEY) || 0) } catch { return 0 }
+}
+function guardarSugVistas(ms: number): void {
+  try { localStorage.setItem(SUG_SEEN_KEY, String(ms)) } catch { /* ignore */ }
+}
 
 /** Tiempo relativo corto desde un timestamp (para "última actividad"). */
 function hace(ms: number): string {
@@ -62,6 +73,10 @@ export function AdminPage() {
   const [enviando, setEnviando] = useState(false)
   // Usuario seleccionado para enviarle un mensaje individual (abre MensajeModal).
   const [msgUser, setMsgUser] = useState<PadronEntry | null>(null)
+  // Pestaña activa + sugerencias recibidas + marca de "nuevas vistas" (badge).
+  const [tab, setTab] = useState<AdminTab>('resumen')
+  const [sugerencias, setSugerencias] = useState<SugerenciaEntry[]>([])
+  const [sugVistas, setSugVistas] = useState(leerSugVistas)
 
   async function cargar() {
     setBusy(true); setErr(null)
@@ -75,11 +90,20 @@ export function AdminPage() {
     } finally {
       setBusy(false)
     }
-    // Config + historial: independientes del padrón (si fallan sus reglas, no rompen el resto).
+    // Config + historial + sugerencias: independientes del padrón (si fallan sus reglas, no rompen el resto).
     try { setConfig(await leerConfigNube()) } catch { /* ignore */ }
     try { setDifusiones(await listarDifusiones()) } catch { /* ignore */ }
+    try { setSugerencias(await listarSugerencias()) } catch { /* ignore */ }
   }
   useEffect(() => { void cargar() }, [])
+
+  // Sugerencias más nuevas que la última vista → badge. Al entrar a la pestaña, se marcan como vistas.
+  const sugNuevas = useMemo(() => sugerencias.filter(s => s.createdAt > sugVistas).length, [sugerencias, sugVistas])
+  useEffect(() => {
+    if (tab !== 'sugerencias' || sugerencias.length === 0) return
+    const masNueva = Math.max(...sugerencias.map(s => s.createdAt))
+    if (masNueva > sugVistas) { guardarSugVistas(masNueva); setSugVistas(masNueva) }
+  }, [tab, sugerencias, sugVistas])
 
   // Activa/desactiva el donador para todos (tras la doble confirmación).
   async function confirmarBeggar() {
@@ -159,133 +183,163 @@ export function AdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-900 pb-12">
-      <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-4 flex items-center justify-between">
-        <h1 className="text-lg font-bold text-white">Admin</h1>
-        <button
-          onClick={cargar}
-          disabled={busy}
-          className="flex items-center gap-1.5 text-xs font-medium text-slate-300 bg-slate-800 rounded-lg px-3 py-1.5 active:bg-slate-700 disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={busy ? 'animate-spin' : ''} /> {busy ? 'Cargando…' : 'Refrescar'}
-        </button>
+      {/* Header + pestañas (sticky): cortan el scroll infinito y agrupan por tarea. */}
+      <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+        <div className="px-4 pt-4 pb-2.5 flex items-center justify-between">
+          <h1 className="text-lg font-bold text-white">Admin</h1>
+          <button
+            onClick={cargar}
+            disabled={busy}
+            className="flex items-center gap-1.5 text-xs font-medium text-slate-300 bg-slate-800 rounded-lg px-3 py-1.5 active:bg-slate-700 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={busy ? 'animate-spin' : ''} /> {busy ? 'Cargando…' : 'Refrescar'}
+          </button>
+        </div>
+        <div className="flex gap-1 px-2 pb-1.5 overflow-x-auto">
+          <TabBtn active={tab === 'resumen'} label="Resumen" icon={<LayoutDashboard size={14} />} onClick={() => setTab('resumen')} />
+          <TabBtn active={tab === 'usuarios'} label="Usuarios" icon={<Users size={14} />} badge={all.length || undefined} onClick={() => setTab('usuarios')} />
+          <TabBtn active={tab === 'difusion'} label="Difusión" icon={<Megaphone size={14} />} onClick={() => setTab('difusion')} />
+          <TabBtn active={tab === 'sugerencias'} label="Sugerencias" icon={<Lightbulb size={14} />} badge={sugNuevas || undefined} onClick={() => setTab('sugerencias')} />
+        </div>
       </div>
 
-      <div className="px-4 py-4 space-y-4">
+      <div key={tab} className="px-4 py-4 space-y-4 animate-[view-fade-in_180ms_ease_both]">
         {err && (
           <div className="p-3 rounded-xl bg-red-900/40 text-red-300 text-sm flex items-start gap-2">
             <AlertTriangle size={16} className="shrink-0 mt-0.5" /> <span>{err}</span>
           </div>
         )}
 
-        {/* Medidor de uso GLOBAL de Firebase (todos los usuarios) vs cuota del plan gratis */}
-        {uso && (
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-white flex items-center gap-1.5"><Cloud size={15} /> Uso de Firebase hoy (todos)</span>
-              <span className="text-[11px] text-slate-400">reinicia en {fmtReset(uso.resetEnMs)}</span>
-            </div>
-            <UsoBar label="Lecturas" usado={uso.reads} tope={uso.quotaReads} />
-            <UsoBar label="Escrituras" usado={uso.writes} tope={uso.quotaWrites} />
-            <p className="text-[10px] text-slate-500">Estimado: suma las operaciones de todos los dispositivos. La cuota gratis reinicia a la medianoche del Pacífico.</p>
-          </div>
-        )}
+        {/* ─── RESUMEN: uso de Firebase + métricas + gráficos ─── */}
+        {tab === 'resumen' && (
+          <>
+            {uso && (
+              <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-white flex items-center gap-1.5"><Cloud size={15} /> Uso de Firebase hoy (todos)</span>
+                  <span className="text-[11px] text-slate-400">reinicia en {fmtReset(uso.resetEnMs)}</span>
+                </div>
+                <UsoBar label="Lecturas" usado={uso.reads} tope={uso.quotaReads} />
+                <UsoBar label="Escrituras" usado={uso.writes} tope={uso.quotaWrites} />
+                <p className="text-[10px] text-slate-500">Estimado: suma las operaciones de todos los dispositivos. La cuota gratis reinicia a la medianoche del Pacífico.</p>
+              </div>
+            )}
 
-        {/* Tarjetas de métricas (reflejan el filtro) */}
-        <div className="grid grid-cols-2 gap-2">
-          <Stat icon={<Users size={15} />} valor={filtrado.length} label={filtrado.length === 1 ? 'usuario' : 'usuarios'} sub={`${activos} activos (7 d)`} color="text-white" />
-          <Stat icon={<Activity size={15} />} valor={desactualizados} label="desactualizados" sub={`última: v${APP_VERSION}`} color="text-amber-300" />
-          <Stat icon={<FileSpreadsheet size={15} />} valor={totalExp} label="exportaciones" color="text-emerald-300" />
-          <Stat icon={<Heart size={15} />} valor={totalDon} label="toques a donar" color="text-pink-300" />
-          <Stat icon={<Sparkles size={15} />} valor={totalGra} label='veces "gracias"' color="text-amber-300" />
-          <Stat icon={<Eye size={15} />} valor={vieronDifusion} label="vieron difusión" sub={difusionActivaId ? `de ${filtrado.length}` : 'sin difusión activa'} color="text-sky-300" />
-        </div>
-
-        {/* Acciones globales: donador on/off + difusión a todos */}
-        <AdminAcciones
-          config={config}
-          difusiones={difusiones}
-          titulo={titulo} setTitulo={setTitulo}
-          cuerpo={cuerpo} setCuerpo={setCuerpo}
-          onToggleBeggar={() => setAccion('beggar')}
-          onEnviar={() => setAccion('difusion')}
-          onLimpiar={() => setAccion('limpiar')}
-        />
-
-        {/* Filtros dinámicos */}
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-3 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Filtros</span>
+            {/* Si hay un filtro activo (se setea en la pestaña Usuarios), los números lo reflejan: aviso + limpiar. */}
             {hayFiltro && (
-              <button onClick={limpiar} className="text-[11px] text-blue-300 active:text-blue-200 flex items-center gap-1">
-                <X size={12} /> Limpiar
+              <button onClick={limpiar} className="w-full flex items-center justify-between gap-2 rounded-xl border border-blue-700/40 bg-blue-950/40 px-3 py-2 text-[11px] text-blue-200 active:bg-blue-900/40">
+                <span>Mostrando datos filtrados ({filtrado.length} de {all.length})</span>
+                <span className="flex items-center gap-1 font-medium"><X size={12} /> Limpiar</span>
               </button>
             )}
-          </div>
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              placeholder="Buscar por nombre…"
-              className="w-full bg-slate-700 text-white rounded-xl pl-9 pr-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          {lineasDisp.length > 0 && (
-            <ChipRow titulo="Línea" valores={lineasDisp} sel={lineasSel} onToggle={v => setLineasSel(toggle(lineasSel, v))} />
-          )}
-          {versionesDisp.length > 0 && (
-            <ChipRow titulo="Versión" valores={versionesDisp} sel={versionesSel} onToggle={v => setVersionesSel(toggle(versionesSel, v))} />
-          )}
-          <button
-            onClick={() => setSoloActivos(v => !v)}
-            className={`text-[11px] font-medium px-2.5 py-1 rounded-lg ${soloActivos ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400'}`}
-          >
-            Solo activos (7 días)
-          </button>
-        </div>
 
-        {/* Gráficos de uso */}
-        {filtrado.length > 0 && (
-          <>
-            <Grafico titulo="Usuarios por línea"><Barras datos={porLinea} color="#38bdf8" /></Grafico>
-            <Grafico titulo="Usuarios por versión"><Barras datos={porVersion} color="#a78bfa" /></Grafico>
+            {/* Tarjetas de métricas (reflejan el filtro) */}
+            <div className="grid grid-cols-2 gap-2">
+              <Stat icon={<Users size={15} />} valor={filtrado.length} label={filtrado.length === 1 ? 'usuario' : 'usuarios'} sub={`${activos} activos (7 d)`} color="text-white" />
+              <Stat icon={<Activity size={15} />} valor={desactualizados} label="desactualizados" sub={`última: v${APP_VERSION}`} color="text-amber-300" />
+              <Stat icon={<FileSpreadsheet size={15} />} valor={totalExp} label="exportaciones" color="text-emerald-300" />
+              <Stat icon={<Heart size={15} />} valor={totalDon} label="toques a donar" color="text-pink-300" />
+              <Stat icon={<Sparkles size={15} />} valor={totalGra} label='veces "gracias"' color="text-amber-300" />
+              <Stat icon={<Eye size={15} />} valor={vieronDifusion} label="vieron difusión" sub={difusionActivaId ? `de ${filtrado.length}` : 'sin difusión activa'} color="text-sky-300" />
+            </div>
+
+            {filtrado.length > 0 && (
+              <>
+                <Grafico titulo="Usuarios por línea"><Barras datos={porLinea} color="#38bdf8" /></Grafico>
+                <Grafico titulo="Usuarios por versión"><Barras datos={porVersion} color="#a78bfa" /></Grafico>
+              </>
+            )}
           </>
         )}
 
-        {/* Lista */}
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
-            Lista {hayFiltro && <span className="text-slate-400">({filtrado.length} de {all.length})</span>}
-          </p>
-          {padron === null ? (
-            <p className="text-sm text-slate-500 py-6 text-center">Cargando…</p>
-          ) : filtrado.length === 0 ? (
-            <p className="text-sm text-slate-500 py-6 text-center">{all.length === 0 ? 'Todavía no hay usuarios en el padrón.' : 'Ningún usuario coincide con el filtro.'}</p>
-          ) : (
-            <div className="space-y-1">
-              {filtrado.map((e, i) => {
-                const vieja = e.version && e.version !== APP_VERSION
-                return (
-                  <div key={i} className="flex items-center justify-between gap-2 bg-slate-700/40 rounded-lg px-3 py-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-slate-200 truncate">{e.nombre || '(sin nombre)'}</p>
-                      <p className="text-[11px] text-slate-500 truncate">
-                        {e.linea || '—'} · <span className={vieja ? 'text-amber-400' : 'text-slate-500'}>v{e.version || '?'}</span> · {hace(e.updatedAt)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 text-[11px] tabular-nums">
-                      {difusionActivaId !== '' && e.difusionVista === difusionActivaId && <span className="flex items-center text-sky-300" title="Vio la última difusión"><Eye size={11} /></span>}
-                      {(e.exportaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-emerald-300"><FileSpreadsheet size={11} /> {e.exportaciones}</span>}
-                      {(e.donaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-pink-300"><Heart size={11} /> {e.donaciones}</span>}
-                      {(e.gracias ?? 0) > 0 && <span className="flex items-center gap-0.5 text-amber-300"><Sparkles size={11} /> {e.gracias}</span>}
-                      {e.id && <button onClick={() => setMsgUser(e)} className="ml-0.5 flex items-center text-slate-400 active:text-emerald-300" title="Enviar mensaje a este usuario"><Send size={13} /></button>}
-                    </div>
-                  </div>
-                )
-              })}
+        {/* ─── USUARIOS: filtros + lista ─── */}
+        {tab === 'usuarios' && (
+          <>
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Filtros</span>
+                {hayFiltro && (
+                  <button onClick={limpiar} className="text-[11px] text-blue-300 active:text-blue-200 flex items-center gap-1">
+                    <X size={12} /> Limpiar
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  value={q}
+                  onChange={e => setQ(e.target.value)}
+                  placeholder="Buscar por nombre…"
+                  className="w-full bg-slate-700 text-white rounded-xl pl-9 pr-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {lineasDisp.length > 0 && (
+                <ChipRow titulo="Línea" valores={lineasDisp} sel={lineasSel} onToggle={v => setLineasSel(toggle(lineasSel, v))} />
+              )}
+              {versionesDisp.length > 0 && (
+                <ChipRow titulo="Versión" valores={versionesDisp} sel={versionesSel} onToggle={v => setVersionesSel(toggle(versionesSel, v))} />
+              )}
+              <button
+                onClick={() => setSoloActivos(v => !v)}
+                className={`text-[11px] font-medium px-2.5 py-1 rounded-lg ${soloActivos ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400'}`}
+              >
+                Solo activos (7 días)
+              </button>
             </div>
-          )}
-        </div>
+
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
+                Lista {hayFiltro && <span className="text-slate-400">({filtrado.length} de {all.length})</span>}
+              </p>
+              {padron === null ? (
+                <p className="text-sm text-slate-500 py-6 text-center">Cargando…</p>
+              ) : filtrado.length === 0 ? (
+                <p className="text-sm text-slate-500 py-6 text-center">{all.length === 0 ? 'Todavía no hay usuarios en el padrón.' : 'Ningún usuario coincide con el filtro.'}</p>
+              ) : (
+                <div className="space-y-1">
+                  {filtrado.map((e, i) => {
+                    const vieja = e.version && e.version !== APP_VERSION
+                    return (
+                      <div key={i} className="flex items-center justify-between gap-2 bg-slate-700/40 rounded-lg px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-slate-200 truncate">{e.nombre || '(sin nombre)'}</p>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {e.linea || '—'} · <span className={vieja ? 'text-amber-400' : 'text-slate-500'}>v{e.version || '?'}</span> · {hace(e.updatedAt)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 text-[11px] tabular-nums">
+                          {difusionActivaId !== '' && e.difusionVista === difusionActivaId && <span className="flex items-center text-sky-300" title="Vio la última difusión"><Eye size={11} /></span>}
+                          {(e.exportaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-emerald-300"><FileSpreadsheet size={11} /> {e.exportaciones}</span>}
+                          {(e.donaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-pink-300"><Heart size={11} /> {e.donaciones}</span>}
+                          {(e.gracias ?? 0) > 0 && <span className="flex items-center gap-0.5 text-amber-300"><Sparkles size={11} /> {e.gracias}</span>}
+                          {e.id && <button onClick={() => setMsgUser(e)} className="ml-0.5 flex items-center text-slate-400 active:text-emerald-300" title="Enviar mensaje a este usuario"><Send size={13} /></button>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ─── DIFUSIÓN: donador on/off + mensaje a todos + historial ─── */}
+        {tab === 'difusion' && (
+          <AdminAcciones
+            config={config}
+            difusiones={difusiones}
+            titulo={titulo} setTitulo={setTitulo}
+            cuerpo={cuerpo} setCuerpo={setCuerpo}
+            onToggleBeggar={() => setAccion('beggar')}
+            onEnviar={() => setAccion('difusion')}
+            onLimpiar={() => setAccion('limpiar')}
+          />
+        )}
+
+        {/* ─── SUGERENCIAS: historial + filtros ─── */}
+        {tab === 'sugerencias' && (
+          <SugerenciasPanel sugerencias={sugerencias} cargando={busy && sugerencias.length === 0} sugVistas={sugVistas} />
+        )}
       </div>
 
       {/* Confirmaciones dobles (afectan a TODOS los usuarios) */}
@@ -447,6 +501,134 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Botón de pestaña del header de admin. `badge` muestra un contador (ej. sugerencias nuevas). */
+function TabBtn({ active, label, icon, badge, onClick }: { active: boolean; label: string; icon: React.ReactNode; badge?: number; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active ? 'bg-slate-700 text-white' : 'text-slate-400 active:bg-slate-800'}`}
+    >
+      {icon} {label}
+      {badge ? <span className="grid h-4 min-w-[16px] place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-slate-900 tabular-nums">{badge}</span> : null}
+    </button>
+  )
+}
+
+const SUG_SIN_VERSION = '(?)'
+const verDeSug = (s: SugerenciaEntry) => s.version || SUG_SIN_VERSION
+
+/** Panel de sugerencias recibidas: historial completo (Firestore es inmutable) + filtros. */
+function SugerenciasPanel({ sugerencias, cargando, sugVistas }: { sugerencias: SugerenciaEntry[]; cargando: boolean; sugVistas: number }) {
+  const [q, setQ] = useState('')
+  const [verSel, setVerSel] = useState<Set<string>>(new Set())
+  const [soloNuevas, setSoloNuevas] = useState(false)
+  // Snapshot de "vistas" al abrir la pestaña: las que eran nuevas siguen marcadas mientras estás acá
+  // (el padre actualiza sugVistas al entrar para limpiar el badge; este snapshot conserva el estado).
+  const [vistasSnapshot] = useState(() => sugVistas)
+
+  const versiones = useMemo(() => [...new Set(sugerencias.map(verDeSug))].sort().reverse(), [sugerencias])
+  const nuevasCount = useMemo(() => sugerencias.filter(s => s.createdAt > vistasSnapshot).length, [sugerencias, vistasSnapshot])
+  const filtradas = useMemo(() => {
+    const qn = q.trim().toLowerCase()
+    return sugerencias.filter(s => {
+      if (qn && !(s.nombre.toLowerCase().includes(qn) || s.texto.toLowerCase().includes(qn))) return false
+      if (verSel.size && !verSel.has(verDeSug(s))) return false
+      if (soloNuevas && !(s.createdAt > vistasSnapshot)) return false
+      return true
+    })
+  }, [sugerencias, q, verSel, soloNuevas, vistasSnapshot])
+
+  const hayFiltro = !!q.trim() || verSel.size > 0 || soloNuevas
+  function limpiar() { setQ(''); setVerSel(new Set()); setSoloNuevas(false) }
+
+  if (cargando) return <p className="text-sm text-slate-500 py-10 text-center">Cargando…</p>
+  if (sugerencias.length === 0) {
+    return (
+      <div className="py-12 text-center">
+        <Lightbulb size={28} className="mx-auto text-slate-600 mb-2" />
+        <p className="text-sm text-slate-500">Todavía no recibiste sugerencias.</p>
+        <p className="text-[11px] text-slate-600 mt-1">Aparecen acá cuando un usuario envía una desde Configuración.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Filtros */}
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Filtros</span>
+          {hayFiltro && (
+            <button onClick={limpiar} className="text-[11px] text-blue-300 active:text-blue-200 flex items-center gap-1">
+              <X size={12} /> Limpiar
+            </button>
+          )}
+        </div>
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Buscar por nombre o texto…"
+            className="w-full bg-slate-700 text-white rounded-xl pl-9 pr-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/70"
+          />
+        </div>
+        {versiones.length > 1 && (
+          <ChipRow titulo="Versión" valores={versiones} sel={verSel} onToggle={v => setVerSel(toggle(verSel, v))} />
+        )}
+        <button
+          onClick={() => setSoloNuevas(v => !v)}
+          disabled={nuevasCount === 0}
+          className={`text-[11px] font-medium px-2.5 py-1 rounded-lg disabled:opacity-40 ${soloNuevas ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-700 text-slate-400'}`}
+        >
+          Solo nuevas{nuevasCount > 0 ? ` (${nuevasCount})` : ''}
+        </button>
+      </div>
+
+      {/* Historial */}
+      <div>
+        <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5 flex items-center gap-1.5">
+          <History size={12} /> Historial {hayFiltro ? <span className="text-slate-400">({filtradas.length} de {sugerencias.length})</span> : <span className="text-slate-400">({sugerencias.length})</span>}
+        </p>
+        {filtradas.length === 0 ? (
+          <p className="text-sm text-slate-500 py-6 text-center">Ninguna sugerencia coincide con el filtro.</p>
+        ) : (
+          <div className="space-y-2">
+            {filtradas.map(s => <SugerenciaCard key={s.id} s={s} nueva={s.createdAt > vistasSnapshot} />)}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SugerenciaCard({ s, nueva }: { s: SugerenciaEntry; nueva: boolean }) {
+  const [copiado, setCopiado] = useState(false)
+  const vieja = s.version && s.version !== APP_VERSION
+  async function copiar() {
+    try { await navigator.clipboard.writeText(s.texto); setCopiado(true); setTimeout(() => setCopiado(false), 1500) } catch { /* ignore */ }
+  }
+  return (
+    <div className={`rounded-xl border bg-slate-800/50 p-3 ${nueva ? 'border-amber-500/40' : 'border-slate-700'}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-amber-200 truncate flex items-center gap-1.5">
+            {nueva && <span className="shrink-0 rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-900">Nueva</span>}
+            <span className="truncate">{s.nombre || '(sin nombre)'}</span>
+          </p>
+          <p className="text-[11px] text-slate-500 truncate">
+            {s.linea && `${s.linea} · `}<span className={vieja ? 'text-amber-400' : 'text-slate-500'}>v{s.version || '?'}</span> · {fmtFecha(s.createdAt)}
+          </p>
+        </div>
+        <button onClick={copiar} className="shrink-0 text-slate-400 active:text-emerald-300" title="Copiar texto">
+          {copiado ? <Check size={15} className="text-emerald-400" /> : <Copy size={15} />}
+        </button>
+      </div>
+      <p className="mt-2 text-sm text-slate-200 whitespace-pre-wrap break-words leading-snug">{s.texto}</p>
     </div>
   )
 }

@@ -50,6 +50,7 @@ export interface RegistroHoras {
   esFrancoTrabajado: boolean
   esAusenciaJustificada: boolean
   esFaltaInjustificada: boolean  // inasistencia injustificada → descuenta básico proporcional + presentismo
+  esVacaciones?: boolean  // licencia por vacaciones (paga, no se trabaja; no descuenta ni pierde presentismo)
   fechaCreacion: number
 }
 

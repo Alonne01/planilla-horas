@@ -157,7 +157,7 @@ export function calcularHorasDia(
   reg: RegistroHoras,
   linea: LineaTrabajo = 'SURFACE_WELL_TESTING',
 ): Pick<ResumenDia, 'horasTrabajadas' | 'horasNormales' | 'horasAl50' | 'horasAl100'> {
-  if (esDiaNoTrabajado(reg) || reg.esAusenciaJustificada) {
+  if (esDiaNoTrabajado(reg) || reg.esAusenciaJustificada || reg.esVacaciones) {
     return { horasTrabajadas: 0, horasNormales: 0, horasAl50: 0, horasAl100: 0 }
   }
 
@@ -226,6 +226,7 @@ export function resumenDia(reg: RegistroHoras, linea: LineaTrabajo = 'SURFACE_WE
   else if (reg.esFrancoTrabajado) tipoDisplay = 'Franco Trab.'
   else if (reg.esFeriadoTrabajado) tipoDisplay = 'Feriado Trab.'
   else if (reg.esFaltaInjustificada) tipoDisplay = 'Falta injust.'
+  else if (reg.esVacaciones) tipoDisplay = 'Vacaciones'
   else if (reg.esFeriado) tipoDisplay = 'Feriado'
   else if (reg.esAusenciaJustificada) tipoDisplay = 'Ausencia'
 

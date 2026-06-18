@@ -98,6 +98,22 @@ service cloud.firestore {
         );
     }
 
+    // Sugerencias (usuario -> admin). id = timestamp. Texto libre EN CLARO.
+    // read si (el admin las lista); create si (con validacion de campos + tamano); update/delete no (inmutable).
+    // El tope 1/dia por dispositivo es client-side (localStorage), como el resto de los topes de nube.
+    match /sugerencias/{id} {
+      allow read: if true;
+      allow update, delete: if false;
+      allow create: if
+        request.resource.data.keys().hasOnly(['nombre', 'texto', 'version', 'createdAt', 'linea'])
+        && request.resource.data.texto is string
+        && request.resource.data.texto.size() > 0
+        && request.resource.data.texto.size() < 2000
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() < 200
+        && request.resource.data.createdAt is number;
+    }
+
     // Codigos RESERVADOS (segundo candado: codigos unicos entre usuarios). id = hash("planilla-codigo:"+codigo).
     // get si (verificar disponibilidad); create si (reservar); update/delete no (inmutable: nadie pisa el de otro).
     match /codigos/{id} {

@@ -25,21 +25,17 @@ input, select, textarea {
 }
 
 /* ─── View Transitions (tab navigation) ─── */
-.vt-page-content { view-transition-name: page-content; }
+@keyframes vt-slide-right-in  { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes vt-slide-right-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-28px); } }
+@keyframes vt-slide-left-in   { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@keyframes vt-slide-left-out  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(28px); } }
 
-/* Suppress default root cross-fade when using named transitions */
-::view-transition-old(root),
-::view-transition-new(root) { animation: none; }
-
-@keyframes vt-slide-right-in  { from { opacity: 0; transform: translateX(32px); } to { opacity: 1; transform: none; } }
-@keyframes vt-slide-right-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-32px); } }
-@keyframes vt-slide-left-in   { from { opacity: 0; transform: translateX(-32px); } to { opacity: 1; transform: none; } }
-@keyframes vt-slide-left-out  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(32px); } }
-
-::view-transition-old(page-content) { animation: 180ms ease both vt-slide-right-out; }
-::view-transition-new(page-content) { animation: 200ms ease both vt-slide-right-in; }
-html.vt-back ::view-transition-old(page-content) { animation: 180ms ease both vt-slide-left-out; }
-html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt-slide-left-in; }
+/* Animamos el ROOT (tamaño del VIEWPORT → no escala el contenido alto/scrollable, que era lo que hacía
+   ver "zoom" por un segundo al entrar a Config). El nav, con su propio nombre, queda aislado y estático. */
+::view-transition-old(root) { animation: 170ms ease both vt-slide-right-out; }
+::view-transition-new(root) { animation: 190ms ease both vt-slide-right-in; }
+html.vt-back ::view-transition-old(root) { animation: 170ms ease both vt-slide-left-out; }
+html.vt-back ::view-transition-new(root) { animation: 190ms ease both vt-slide-left-in; }
 
 /* El nav inferior es fijo y persistente: se le da su PROPIO nombre de transición para que NO quede
    atrapado en el snapshot de `root`. Los elementos `position: fixed` parpadean/saltan durante la
@@ -56,6 +52,11 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
 @keyframes backdrop-fade-in  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes backdrop-fade-out { from { opacity: 1; } to { opacity: 0; } }
 
+/* "Container transform": el diálogo CRECE desde la celda tocada (la transform-origin se setea por JS
+   al punto de la celda relativo al panel). El fallback (sin origen) sigue siendo el slide normal. */
+@keyframes container-grow-in  { from { opacity: 0; transform: scale(0.18); } to { opacity: 1; transform: scale(1); } }
+@keyframes container-grow-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.18); } }
+
 /* ─── Calendar month slide ─── */
 @keyframes cal-slide-right { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 @keyframes cal-slide-left  { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
@@ -64,21 +65,74 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
 @keyframes view-fade-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
 
 /* ─── Aplicar datos a otro día (pop con rebote + halo celeste) ─── */
-@keyframes apply-pulse {
-  0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); }
-  30%  { transform: scale(1.18); box-shadow: 0 0 0 8px rgba(56, 189, 248, 0.28); }
-  55%  { transform: scale(0.95); box-shadow: 0 0 0 10px rgba(56, 189, 248, 0.12); }
-  75%  { transform: scale(1.05); }
-  100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+/* ─── Pintado de días (copiar / borrar) — eje central de la app ───
+   El relleno "salpica" desde el centro con overshoot (paint-splash); el borde luego respira
+   con un glow que usa currentColor (paint-breathe, un solo keyframe para todos los colores);
+   y la celda rebota elásticamente al pintarse (paint-bounce). */
+@keyframes paint-splash {
+  0%   { opacity: 0; transform: scale(0.2); }
+  60%  { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+/* Glow que "respira": animamos sólo opacity (compositing, barato) sobre una capa con box-shadow
+   estático → fluido aunque haya muchos días pintados a la vez. */
+@keyframes paint-glow {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+@keyframes paint-bounce {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.13); }
+  62%  { transform: scale(0.95); }
+  82%  { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+/* Indicador de HOY: el punto acentuado late suavemente. */
+@keyframes today-dot { 0%, 100% { opacity: 0.5; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.2); } }
+/* Entrada escalonada de las celdas del calendario (con animation-delay por índice). */
+@keyframes cell-in { from { opacity: 0; transform: translateY(7px) scale(0.96); } to { opacity: 1; transform: none; } }
+/* Reescritura de un día al copiar/borrar: card-flip de PUERTA (eje Y) de dos caras (vieja → nueva).
+   La perspectiva va POR-ELEMENTO (`perspective()` dentro del transform), NO en el ancestro, así
+   ningún `transform` de un padre aplana el 3D. Cada cara maneja su PROPIA opacidad: a la mitad del
+   giro (90°, de canto) la vieja se apaga y entra la nueva → nunca se solapan ni se ven espejadas.
+   Escalonado por día (animation-delay en JS). */
+@keyframes day-flip-out {
+  0%           { transform: perspective(620px) rotateY(0deg);  opacity: 1; }
+  50%          { transform: perspective(620px) rotateY(90deg); opacity: 1; }
+  50.01%, 100% { transform: perspective(620px) rotateY(90deg); opacity: 0; }
+}
+@keyframes day-flip-in {
+  0%, 50%  { transform: perspective(620px) rotateY(-90deg); opacity: 0; }
+  50.01%   { transform: perspective(620px) rotateY(-90deg); opacity: 1; }
+  100%     { transform: perspective(620px) rotateY(0deg);   opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [class*="today-dot"], [class*="cell-in"], [class*="day-flip"] { animation: none !important; }
+}
+/* Animación de envío de sugerencia: el avión "despega" en diagonal y se desvanece (en loop). */
+@keyframes send-fly {
+  0%   { transform: translate(-6px, 6px) rotate(0deg); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: translate(18px, -18px) rotate(12deg); opacity: 0; }
 }
 
-/* ─── Borrar día (pop con rebote + halo rojo al seleccionar) ─── */
-@keyframes delete-pulse {
-  0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.7); }
-  30%  { transform: scale(1.16); box-shadow: 0 0 0 8px rgba(248, 113, 113, 0.28); }
-  55%  { transform: scale(0.95); box-shadow: 0 0 0 10px rgba(248, 113, 113, 0.12); }
-  75%  { transform: scale(1.05); }
-  100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+/* Textura sutil de rayas diagonales para francos/findes (se lee el diagrama sin mirar etiquetas). */
+.franco-stripes { background-image: repeating-linear-gradient(-45deg, rgba(148,163,184,0.06) 0 2px, transparent 2px 7px); }
+
+/* Entrada escalonada de las tarjetas de Configuración (cascada al abrir la pantalla). */
+@keyframes card-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.settings-stagger > * { animation: card-in 360ms ease-out both; }
+.settings-stagger > *:nth-child(1) { animation-delay: 30ms; }
+.settings-stagger > *:nth-child(2) { animation-delay: 75ms; }
+.settings-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.settings-stagger > *:nth-child(4) { animation-delay: 165ms; }
+.settings-stagger > *:nth-child(5) { animation-delay: 210ms; }
+.settings-stagger > *:nth-child(6) { animation-delay: 255ms; }
+.settings-stagger > *:nth-child(7) { animation-delay: 300ms; }
+.settings-stagger > *:nth-child(n+8) { animation-delay: 340ms; }
+@media (prefers-reduced-motion: reduce) { .settings-stagger > * { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) {
+  [class*="paint-glow"], [class*="paint-splash"], [class*="paint-bounce"] { animation: none !important; }
 }
 
 /* ─── Pulso "tocá Generar": invita a generar el código del respaldo cuando ya hay nombre ─── */
@@ -105,6 +159,16 @@ html.vt-back ::view-transition-new(page-content) { animation: 200ms ease both vt
   100% { transform: translateY(0); }
 }
 @keyframes fab-pop { 0% { transform: scale(1); } 50% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+/* Candado (bloquear/desbloquear): pop elástico con giro al cambiar de estado (key → remonta el
+   ícono y re-dispara). Mismo keyframe para TODOS los candados de la app. */
+@keyframes lock-pop {
+  0%   { transform: scale(0.3) rotate(-20deg); }
+  40%  { transform: scale(1.3) rotate(12deg); }
+  62%  { transform: scale(0.88) rotate(-6deg); }
+  82%  { transform: scale(1.08) rotate(3deg); }
+  100% { transform: scale(1) rotate(0); }
+}
 
 /* ─── Barra de cuenta regresiva (aviso de backup) ─── */
 @keyframes countdown-bar { from { width: 100%; } to { width: 0%; } }

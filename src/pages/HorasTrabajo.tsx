@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb, MoreVertical, Trash2, CalendarX2, Download } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
@@ -6,17 +6,16 @@ import { RegistroDialog } from '../components/RegistroDialog'
 import { DayCard } from '../components/DayCard'
 import { CalendarGrid } from '../components/CalendarGrid'
 import { ResumenBar } from '../components/ResumenBar'
+import { BgBlobs } from '../components/BgBlobs'
 import { calcularResumenPeriodo } from '../lib/calculo-horas'
-import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd, fechaCobro, esFrancoPorDiagrama, PERIODO_PRUEBA, type DiagramaPatternKey } from '../lib/diagrama'
+import { defaultPeriodoMes, defaultPeriodoAnio, diasDelPeriodo, MESES_ES, DIAGRAMAS, periodoStart, periodoEnd, fechaCobro, esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
 import { esFeriadoNacional } from '../lib/feriados'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
-import { credencialesNubeValidas } from '../lib/cloud-backup'
 import { registrarExportacion } from '../lib/metricas'
 import { DonadorDonacion, DonadorGracias } from '../components/DonadorDonacion'
 import { esBeggarUnlock } from '../lib/calculo-salarial'
-import { useOnboarding } from '../onboarding/OnboardingContext'
-import { db, shadowBackup, getSettings, clearPeriodoPrueba, type RegistroHoras } from '../db/database'
+import { db, shadowBackup, type RegistroHoras } from '../db/database'
 
 function dayKey(d: Date) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
@@ -71,10 +70,11 @@ function cloneForDate(source: RegistroHoras, target: Date, diagrama: DiagramaPat
     esFrancoCompensatorio: false,
     esAusenciaJustificada: false,
     esFaltaInjustificada: false,
+    esVacaciones: false,
   }
 }
 
-export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: boolean }) {
+export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { beggarActivo?: boolean; onAbrirTutorial?: () => void }) {
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const { registros, loading, upsert, remove, reload } = useHoras(mes, anio)
@@ -86,6 +86,7 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
   const francosDisponibles = useFrancoCounter(registros)
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [dialogOrigin, setDialogOrigin] = useState<{ x: number; y: number } | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar')
@@ -138,9 +139,6 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
     }
   }, [])
 
-  // ─── Tour / walkthrough: abrir un diálogo demo y registrar acciones ───
-  const onb = useOnboarding()
-  const [tourExisting, setTourExisting] = useState<RegistroHoras | null | undefined>(undefined)
   // yaAgradecioHoy se decide por usuario+código: se sincroniza según la identidad.
   useEffect(() => {
     try {
@@ -168,79 +166,6 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
       setBeggarKey(n => n + 1)
     }
   }, [])
-  function elegirDiaDemo(): Date {
-    // Día de TRABAJO garantizado para la demo: lunes (si el diagrama es Lun-Vie) o el primer día
-    // no-franco (= día del diagrama) si es otro. Así nunca cae en un franco (que ocultaría los
-    // botones de turno/lugar/ausencia). Se busca dentro del período visible para que el resaltado
-    // del día funcione.
-    const esLV = settings.diagrama === 'LUNES_VIERNES'
-    const hit = dias.find(d => {
-      const ms = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0).getTime()
-      if (esFeriadoNacional(ms)) return false
-      return esLV ? d.getDay() === 1 : !esFrancoPorDiagrama(ms, settings.diagrama, settings.diagramaInicioMs)
-    })
-    if (hit) return hit
-    // Fallback (período sin día válido visible): el inicio del diagrama o el próximo lunes.
-    if (!esLV && settings.diagramaInicioMs) return new Date(settings.diagramaInicioMs)
-    const d = new Date(); d.setHours(12, 0, 0, 0)
-    while (d.getDay() !== 1) d.setDate(d.getDate() + 1)
-    return d
-  }
-  function abrirDiaTour(modo: 'ausencia' | 'trabajo') {
-    const base = elegirDiaDemo()
-    const dia = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 12, 0, 0)
-    if (modo === 'trabajo') {
-      const e = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 8, 0, 0).getTime()
-      const s = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 16, 0, 0).getTime()
-      setTourExisting({
-        id: 'tour-demo', fechaMs: dia.getTime(),
-        entradaInicioMs: e, salidaInicioMs: s, entradaFinMs: null, salidaFinMs: null,
-        lugarTrabajo: 'Campo', pernocte: 'NO', maneja: false, horasViaje: 3,
-        observaciones: '', proyecto: '',
-        esFeriado: false, esFeriadoTrabajado: false, esFrancoCompensatorio: false,
-        esFrancoTrabajado: false, esAusenciaJustificada: false, esFaltaInjustificada: false,
-        fechaCreacion: Date.now(),
-      })
-    } else {
-      setTourExisting(null) // sin datos → isDayOff → botones de ausencia
-    }
-    setSelectedDate(dia)
-  }
-  function cerrarDialogoTour() { setSelectedDate(null); setTourExisting(undefined) }
-  // El tutorial corre en una "planilla de prueba" (período sentinela): no toca los datos reales.
-  function entrarPrueba() { setMes(PERIODO_PRUEBA.mes); setAnio(PERIODO_PRUEBA.anio) }
-  function salirPrueba() {
-    clearPeriodoPrueba().catch(() => { /* ignore */ })
-    setMes(defaultPeriodoMes()); setAnio(defaultPeriodoAnio())
-  }
-  // Tour guiado "aprender haciendo": abre el día demo + offset (0=día1/1=día2/2=día3) VACÍO y real;
-  // el usuario lo carga y se guarda de verdad (necesario para después pintar/borrar).
-  function abrirDiaDemo(offset: number) {
-    const base = elegirDiaDemo()
-    const dia = new Date(base.getFullYear(), base.getMonth(), base.getDate() + offset, 12, 0, 0)
-    setTourExisting(undefined)
-    setSelectedDate(dia)
-  }
-  // Sin deps: re-registra el closure fresco en cada render para que abrirDiaTour/abrirDiaDemo usen el
-  // diagrama/settings ACTUALES (si no, elige el día demo con datos viejos y cae en un franco).
-  useEffect(() => { onb.registrar({ abrirDiaTour, abrirDiaDemo, cerrarDialogo: cerrarDialogoTour, entrarPrueba, salirPrueba }) })
-
-  // Ref siempre fresca a onb (para timeouts del tour que disparan onb.next() tras un retardo).
-  const onbRef = useRef(onb)
-  onbRef.current = onb
-  // Avance del tour con retardo. DEBOUNCE: cada llamada reinicia la cuenta (p.ej. al pintar/marcar
-  // cada día), así avanza recién `ms` tras la ÚLTIMA acción, no tras la primera.
-  const tourDelayRef = useRef<{ id: string; t: number } | null>(null)
-  const scheduleTourAdvance = useCallback((id: string, ms: number) => {
-    if (tourDelayRef.current) clearTimeout(tourDelayRef.current.t)
-    const t = window.setTimeout(() => {
-      tourDelayRef.current = null
-      const o = onbRef.current
-      if (o.activo && o.paso?.id === id) o.next()
-    }, ms)
-    tourDelayRef.current = { id, t }
-  }, [])
-
   // ─── Modo "aplicar datos a otro día": se pintan los días destino (tocando o arrastrando) ───
   const [applySource, setApplySource] = useState<RegistroHoras | null>(null)
   const [applySourceKey, setApplySourceKey] = useState<string | null>(null)
@@ -248,6 +173,19 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
   const [paintedKeys, setPaintedKeys] = useState<Set<string>>(new Set())     // días pintados (aún sin escribir en DB)
   const [confirmCommit, setConfirmCommit] = useState<number | null>(null)    // nº de días con datos a sobrescribir (pendiente de confirmar)
   const [pulseKey, setPulseKey] = useState<string | null>(null)
+  // Días recién REESCRITOS (copiados/borrados): animación de "reescritura" escalonada SÓLO en esos
+  // días; el resto del calendario queda estático (no se re-monta). `token` incrementa para re-disparar.
+  const [rewrite, setRewrite] = useState<{ keys: Set<string>; token: number; prev: Map<string, RegistroHoras | undefined>; stagger: boolean }>({ keys: new Set(), token: 0, prev: new Map(), stagger: true })
+  const rewriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function triggerRewrite(keys: Set<string>, prev: Map<string, RegistroHoras | undefined>, stagger = true) {
+    if (keys.size === 0) return
+    if (rewriteTimer.current) clearTimeout(rewriteTimer.current)
+    setRewrite(p => ({ keys: new Set(keys), token: p.token + 1, prev, stagger }))
+    // Limpiar las keys recién cuando TODA la cascada terminó. Escalonado: 0,3s base + 80ms por día +
+    // ~0,8s de animación; simultáneo (borrar período): sólo 0,3s base + 0,8s (todos giran a la vez).
+    const total = stagger ? 300 + keys.size * 80 + 800 : 300 + 800
+    rewriteTimer.current = setTimeout(() => setRewrite(p => ({ keys: new Set(), token: p.token, prev: new Map(), stagger: p.stagger })), total)
+  }
 
   // ─── Acciones de borrado: menú + modo "borrar días" + borrar período ───
   const [showActionsMenu, setShowActionsMenu] = useState(false)
@@ -330,11 +268,8 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
   function paintDay(date: Date, mode: 'add' | 'remove') {
     const key = dayKey(date)
     if (key === applySourceKey) return  // nunca el día origen
-    // Tour "Aplicá la copia": se puede despintar, pero siempre debe quedar al menos 1 día pintado.
-    const dejarUno = mode === 'remove' && onb.activo && onb.paso?.id === 'g-paint-finalizar'
     setPaintedKeys(prev => {
       if (mode === 'add' ? prev.has(key) : !prev.has(key)) return prev
-      if (dejarUno && prev.size <= 1) return prev
       const next = new Set(prev)
       if (mode === 'add') next.add(key)
       else next.delete(key)
@@ -344,10 +279,11 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
   }
 
   /** Tap de un día: en modo aplicar no hace nada (lo maneja el pintado); si no, abre el diálogo. */
-  function handleDayTap(date: Date) {
-    if (onb.activo && onb.paso?.id === 'g-paint-longpress') return  // tour pintar: el tap NO abre el día (sólo click derecho / long-press copia)
+  function handleDayTap(date: Date, rect?: DOMRect) {
     if (deleteMode) { toggleDeleteDay(date); return }
     if (applySource) return
+    // Origen para el "container transform": centro de la celda tocada (el diálogo crece desde ahí).
+    setDialogOrigin(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null)
     setSelectedDate(date)
   }
 
@@ -378,6 +314,8 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
   /** Escribe en DB todos los días pintados (sobrescribe en su lugar si ya existían → sin duplicados). */
   async function commitPaint() {
     if (!applySource || paintedKeys.size === 0) { exitApplyMode(); return }
+    const afectados = new Set(paintedKeys)  // capturar antes de limpiar (para animar la reescritura)
+    const prevDatos = new Map([...afectados].map(k => [k, byDay.get(k)] as [string, RegistroHoras | undefined]))  // estado VIEJO
     const writes = [...paintedKeys].map(key => {
       const clone = cloneForDate(applySource, dateFromKey(key), settings.diagrama, settings.diagramaInicioMs)
       const existing = byDay.get(key)
@@ -388,6 +326,7 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
       await db.transaction('rw', db.registros, async () => { await db.registros.bulkPut(writes) })
       await shadowBackup()
       await reload()
+      triggerRewrite(afectados, prevDatos)
     } catch (e) {
       console.error('Error al aplicar los días:', e)
     }
@@ -405,8 +344,6 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
   function openContext(date: Date) {
     if (applySource || deleteMode) return  // ya estamos en un modo de selección
     if (!byDay.has(dayKey(date))) return   // solo días que ya tienen datos cargados
-    // Tour guiado: el long-press entra DIRECTO a modo pintar (sin el confirm "¿Aplicar a otro día?").
-    if (onb.activo && onb.paso?.id === 'g-paint-longpress') { startApplyMode(date); return }
     setConfirmApply(date)
   }
 
@@ -451,30 +388,10 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
     if (mode === 'add') pulse(key)
   }
 
-  // Tour guiado: avanzar los pasos de pintar/borrar según el estado de la pantalla.
-  useEffect(() => {
-    if (!onb.activo) {
-      if (tourDelayRef.current) { clearTimeout(tourDelayRef.current.t); tourDelayRef.current = null }
-      return
-    }
-    const id = onb.paso?.id
-    // Si cambió el paso, cancelar cualquier retardo pendiente del paso anterior.
-    if (tourDelayRef.current && tourDelayRef.current.id !== id) {
-      clearTimeout(tourDelayRef.current.t); tourDelayRef.current = null
-    }
-    if (id === 'g-paint-longpress' && applySource) onb.next()
-    // 1,5 s tras la ÚLTIMA pintada (debounce) y pasar a "Aplicar".
-    else if (id === 'g-paint-pintar' && paintedKeys.size >= 1) scheduleTourAdvance('g-paint-pintar', 1500)
-    else if (id === 'g-paint-finalizar' && !applySource) onb.next()
-    else if (id === 'g-del-menu' && showActionsMenu) onb.next()
-    else if (id === 'g-del-item' && deleteMode) onb.next()
-    // 1,5 s tras la ÚLTIMA marca (debounce) y pasar a "Borrar".
-    else if (id === 'g-del-pintar' && selectedToDelete.size >= 1) scheduleTourAdvance('g-del-pintar', 1500)
-    else if (id === 'g-del-borrar' && !deleteMode) onb.next()
-  }, [onb, applySource, deleteMode, paintedKeys, selectedToDelete, showActionsMenu, scheduleTourAdvance])
-
   /** Borra los días seleccionados (segunda confirmación ya aceptada). */
   async function doBorrarDias() {
+    const afectados = new Set(selectedToDelete)  // capturar antes de limpiar (para animar la reescritura)
+    const prevDatos = new Map([...afectados].map(k => [k, byDay.get(k)] as [string, RegistroHoras | undefined]))  // estado VIEJO
     const ids = [...selectedToDelete]
       .map(k => byDay.get(k)?.id)
       .filter((id): id is string => !!id)
@@ -483,6 +400,7 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
         await db.registros.bulkDelete(ids)
         await shadowBackup()
         await reload()
+        triggerRewrite(afectados, prevDatos)
       } catch (e) {
         console.error('Error al borrar días:', e)
       }
@@ -492,12 +410,16 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
 
   /** Borra todos los registros del período actual (segunda confirmación ya aceptada). */
   async function doBorrarPeriodo() {
+    // Todos los días CON datos vuelven al estado 0 girando a la VEZ (flip simultáneo, sin escalonar).
+    const afectados = new Set(byDay.keys())
+    const prevDatos = new Map([...afectados].map(k => [k, byDay.get(k)] as [string, RegistroHoras | undefined]))
     const ids = registros.map(r => r.id)
     if (ids.length) {
       try {
         await db.registros.bulkDelete(ids)
         await shadowBackup()
         await reload()
+        triggerRewrite(afectados, prevDatos, false)  // false = todos giran simultáneamente
       } catch (e) {
         console.error('Error al borrar el período:', e)
       }
@@ -510,19 +432,12 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
     setDownloading(true)
     try {
       await fn()
-      // Durante el tutorial la exportación es demostrativa: no activa el donador y, al terminar de
-      // descargar, avanza al paso final. Fuera del tour, habilita el donador.
-      const o = onbRef.current
-      if (!o.activo) {
-        registrarExportacion()   // cuenta sólo exportaciones reales (no el demo del tutorial)
-        // Marca para que el donador reaparezca en la PRÓXIMA apertura de la app (otra sesión).
-        exportadoEnEstaSesion = true
-        try { localStorage.setItem(`planilla-beggar-post-export:${idKeyRef.current}`, '1') } catch { /* ignore */ }
-        setBeggarVisible(true)    // al exportar: el donador aparece ahora
-        setBeggarKey(k => k + 1)  // remonta el donador para mostrarlo de nuevo
-      } else if (o.paso?.id === 'g-export-normal') {
-        o.next()
-      }
+      registrarExportacion()
+      // Marca para que el donador reaparezca en la PRÓXIMA apertura de la app (otra sesión).
+      exportadoEnEstaSesion = true
+      try { localStorage.setItem(`planilla-beggar-post-export:${idKeyRef.current}`, '1') } catch { /* ignore */ }
+      setBeggarVisible(true)    // al exportar: el donador aparece ahora
+      setBeggarKey(k => k + 1)  // remonta el donador para mostrarlo de nuevo
     } catch (e) {
       console.error('Error exportando Excel:', e)
       alert('Error al generar el Excel.')
@@ -540,32 +455,17 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
   const cobroStr = fechaCobro(mes, anio)
     .toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })
     .replace(/[.,]/g, '')
-  // ¿Estamos en un paso guiado de Horas (g-*)? Para ocultar "Cancelar" en las barras de aplicar/borrar.
-  const tourGuiado = onb.activo && (onb.paso?.id ?? '').startsWith('g-')
-  // Tour: resaltar el día a tocar (día1/2/3 según el paso) o el último cargado (pintar = día3).
-  const tourDiaKey = (() => {
-    if (!onb.activo) return null
-    const b = elegirDiaDemo()
-    const k = (off: number) => dayKey(new Date(b.getFullYear(), b.getMonth(), b.getDate() + off))
-    switch (onb.paso?.id) {
-      case 'g-aus-dia': return k(0)
-      case 'g-base-dia': return k(1)
-      case 'g-campo-dia': case 'g-paint-longpress': return k(2)
-      default: return null
-    }
-  })()
 
   return (
-    <div className={`h-[100dvh] ${viewMode === 'list' ? 'overflow-y-auto' : 'overflow-hidden'} bg-slate-900 pb-24`}>
+    <div className={`relative isolate h-[100dvh] ${viewMode === 'list' ? 'overflow-y-auto' : 'overflow-hidden'} bg-slate-900 pb-24`}>
+      <BgBlobs />
       {/* Header */}
       <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={() => cambiarMes(-1)} className="p-2 text-slate-400 active:text-white">‹</button>
           <div className="text-center">
-            <div className="text-base font-bold text-white">{anio === PERIODO_PRUEBA.anio ? 'Planilla de prueba' : `${MESES_ES[mes]} ${anio}`}</div>
-            {anio === PERIODO_PRUEBA.anio
-              ? <div className="text-xs text-amber-400/80">tutorial · no afecta tus datos</div>
-              : <div className="text-xs text-slate-500">{periodoStartStr} – {periodoEndStr} · cobro: {cobroStr}</div>}
+            <div className="text-base font-bold text-white">{MESES_ES[mes]} {anio}</div>
+            <div className="text-xs text-slate-500">{periodoStartStr} – {periodoEndStr} · cobro: {cobroStr}</div>
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -612,7 +512,21 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
 
       {/* Day view */}
       {loading ? (
-        <div className="text-center text-slate-500 py-12">Cargando…</div>
+        // Skeleton del calendario (sólo en el 1er load): grilla de celdas con pulso escalonado.
+        <div className="px-2 pb-2">
+          <div className="grid grid-cols-7 mb-1">
+            {Array.from({ length: 7 }).map((_, i) => <div key={i} className="mx-auto my-1.5 h-2 w-5 rounded bg-slate-700/50" />)}
+          </div>
+          <div className="space-y-1">
+            {Array.from({ length: 6 }).map((_, r) => (
+              <div key={r} className="grid grid-cols-7 gap-1">
+                {Array.from({ length: 7 }).map((_, c) => (
+                  <div key={c} className="aspect-square sm:aspect-auto sm:h-[clamp(2.5rem,8vh,4.25rem)] rounded-lg bg-slate-800/70 animate-pulse" style={{ animationDelay: `${(r * 7 + c) * 22}ms` }} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       ) : (
         <div
           key={calAnimKey}
@@ -631,11 +545,14 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
               paintedKeys={paintedKeys}
               onPaint={paintDay}
               pulseKey={pulseKey}
-              tourDayKey={tourDiaKey}
               deleteMode={deleteMode}
               selectedDeleteKeys={selectedToDelete}
               onDeletePaint={paintDeleteDay}
               lineaTrabajo={settings.lineaTrabajo}
+              rewriteKeys={rewrite.keys}
+              rewriteToken={rewrite.token}
+              rewritePrev={rewrite.prev}
+              rewriteStagger={rewrite.stagger}
             />
           ) : (
             <div className="px-4 space-y-1.5">
@@ -711,23 +628,18 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
       {/* Registro dialog */}
       {selectedDate && (
         <RegistroDialog
-          key={tourExisting === undefined ? 'real' : (tourExisting ? 'tour-trabajo' : 'tour-ausencia')}
           fecha={selectedDate}
-          existing={tourExisting !== undefined ? (tourExisting ?? undefined) : selectedRegistro}
+          existing={selectedRegistro}
           prevDayRegistro={prevDayRegistro}
           lastWorkedRegistro={lastWorkedRegistro}
           proyectosFrecuentes={settings.proyectosFrecuentes}
           diagrama={settings.diagrama}
           diagramaInicioMs={settings.diagramaInicioMs}
           francosDisponibles={francosDisponibles}
-          onSave={async (reg) => {
-            if (tourExisting !== undefined) { onb.next(); return }
-            await upsert(reg); setSelectedDate(null)
-            if (onb.activo && (onb.paso?.id ?? '').endsWith('-guardar')) onb.next()  // tour guiado: avanzar tras guardar
-          }}
-          onDelete={async (id) => { if (tourExisting !== undefined) { onb.skip(); return } await remove(id); setSelectedDate(null) }}
-          onClose={() => { if (tourExisting !== undefined) { onb.skip(); return } setSelectedDate(null) }}
-          ocultarCierre={tourGuiado}
+          origin={dialogOrigin}
+          onSave={async (reg) => { await upsert(reg); setSelectedDate(null) }}
+          onDelete={async (id) => { await remove(id); setSelectedDate(null) }}
+          onClose={() => setSelectedDate(null)}
         />
       )}
 
@@ -757,16 +669,10 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
             </button>
             <div className="h-px bg-slate-700/70" />
             <button
-              onClick={async () => {
-                setShowActionsMenu(false)
-                // Leer settings FRESCOS (el `settings` de este componente puede estar desactualizado
-                // si el código se generó en la pestaña Config sin re-montar Horas).
-                const s = await getSettings()
-                onb.start('full', { saltearConfig: credencialesNubeValidas(s.nombreUsuario, s.backupCodigo) })
-              }}
+              onClick={() => { setShowActionsMenu(false); onAbrirTutorial?.() }}
               className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-sky-300 active:bg-slate-700/60"
             >
-              <Lightbulb size={16} className="shrink-0" /> Iniciar tutorial
+              <Lightbulb size={16} className="shrink-0" /> Ver tutorial
             </button>
           </div>
         </>
@@ -790,16 +696,13 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
               </div>
             </div>
             <div className="flex gap-2 mt-3">
-              {!tourGuiado && (
-                <button
-                  onClick={exitApplyMode}
-                  className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
-                >
-                  <X size={15} /> Cancelar
-                </button>
-              )}
               <button
-                data-tour="hrs-aplicar"
+                onClick={exitApplyMode}
+                className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+              >
+                <X size={15} /> Cancelar
+              </button>
+              <button
                 onClick={finalizarApply}
                 disabled={paintedKeys.size === 0}
                 className="flex-1 py-2 rounded-xl bg-sky-600 text-white text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:active:scale-100"
@@ -852,16 +755,13 @@ export function HorasTrabajoPage({ beggarActivo = false }: { beggarActivo?: bool
               </div>
             </div>
             <div className="flex gap-2 mt-3">
-              {!tourGuiado && (
-                <button
-                  onClick={exitDeleteMode}
-                  className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
-                >
-                  <X size={15} /> Cancelar
-                </button>
-              )}
               <button
-                data-tour="hrs-borrar"
+                onClick={exitDeleteMode}
+                className="flex-1 py-2 rounded-xl bg-slate-700 text-white text-sm font-medium active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+              >
+                <X size={15} /> Cancelar
+              </button>
+              <button
                 onClick={() => setConfirmDeleteDias(true)}
                 disabled={selectedToDelete.size === 0}
                 className="flex-1 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:active:scale-100"

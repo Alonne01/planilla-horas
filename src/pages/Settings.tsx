@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronUp, ChevronDown, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Bell, BellRing } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronDown, ChevronRight, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Bell, BellRing } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
@@ -7,10 +7,12 @@ import { exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, 
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, esAdminNube, setAdminCodigo2, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
-import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto } from '../lib/cloud-backup'
-import { useOnboarding } from '../onboarding/OnboardingContext'
+import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube } from '../lib/cloud-backup'
 import { activarRecordatorios, desactivarRecordatorios, notificacionesConcedidas, notificacionesSoportadas, recordatorioHabilitado, setRecordatorioHabilitado, actualizarAgenda, registrarSyncPeriodico } from '../lib/recordatorio'
 import { APP_VERSION } from '../version'
+import { BgBlobs } from '../components/BgBlobs'
+import { SugerenciaModal } from '../components/SugerenciaModal'
+import { Lightbulb } from 'lucide-react'
 
 declare const __BUILD_TIME__: string
 
@@ -53,6 +55,7 @@ export function SettingsPage() {
   const [deleteStep, setDeleteStep] = useState<0 | 1 | 2>(0)
   const [feriadosBusy, setFeriadosBusy] = useState(false)
   const [feriadosUpd, setFeriadosUpd] = useState(() => feriadosActualizadoMs())
+  const [showSugerencia, setShowSugerencia] = useState(false)
   // Recordatorio de fin de período (activado por defecto; toggle para apagarlo + permiso de notificaciones)
   const [recordHabilitado, setRecordHabilitado] = useState(recordatorioHabilitado())
   const [recordOn, setRecordOn] = useState(notificacionesConcedidas())
@@ -92,20 +95,12 @@ export function SettingsPage() {
     setBackupOverdue(!cloudOn && msSinceLastBackup() > SEVEN_DAYS_MS)
   }, [loaded])
 
-  // Acciones del tour: actualizar feriados + guardar (referencias frescas cada render).
-  const onb = useOnboarding()
-  useEffect(() => { onb.registrar({ actualizarFeriados: handleActualizarFeriados, guardarConfig: handleGuardar }) })
-
-  // Candado de línea/diagrama/fecha. Bloqueado por defecto; durante el tour se ignora para poder
-  // configurar. `cfgEditable` = se pueden tocar esos controles.
+  // Candado de línea/diagrama/fecha. Bloqueado por defecto para evitar cambios accidentales.
+  // `cfgEditable` = se pueden tocar esos controles.
   const [cfgBloqueado, setCfgBloqueado] = useState(leerConfigLock)
-  const cfgEditable = !cfgBloqueado || onb.activo
-  // Durante el tour, el paso de línea es de elección libre (se puede deslizar): tocar una línea sólo
-  // la selecciona; el avance lo dispara el botón "Elegir …" (abajo) → onb.next().
-  const enTourLinea = onb.activo && onb.paso?.id === 'cfg-linea'
-  // Paso de respaldo del tour: es AUTOMÁTICO. Al entrar, si todavía no hay código, generamos uno y
-  // subimos el primer respaldo solos (el paso avanza cuando aparece el código de 6 dígitos).
-  const enTourRespaldo = onb.activo && onb.paso?.id === 'cfg-respaldo'
+  const cfgEditable = !cfgBloqueado
+  // Pestaña activa de la tarjeta "Trabajo" (Línea / Diagrama).
+  const [trabajoTab, setTrabajoTab] = useState<'linea' | 'diagrama'>('linea')
   function toggleConfigLock() {
     const next = !cfgBloqueado
     setCfgBloqueado(next)
@@ -234,29 +229,6 @@ export function SettingsPage() {
       setCloudBusy(false)
     }
   }
-
-  // Paso AUTOMÁTICO del tutorial: persiste el nombre (para que el respaldo lleve el nombre real),
-  // genera un código único y sube el primer respaldo, sin que el usuario toque "Generar".
-  async function autoRespaldoNubeTour() {
-    if (!nombre.trim() || cloudBusy) return
-    setCloudBusy(true)
-    try {
-      await persistConfig() // asegura que el nombre/linea estén en el DB antes de exportar el respaldo
-      const { codigo, subido } = await configurarNubeAuto(nombre, lineaLabel(linea))
-      setBkCodigo(codigo); setBkBloqueado(true)
-      if (subido) { markCloudBackupDone(); setCloudMs(0) }
-    } catch { /* offline: el código quedó guardado y el auto-respaldo reintenta al próximo arranque */ } finally {
-      setCloudBusy(false)
-    }
-  }
-
-  // Al entrar al paso de respaldo del tour (y si todavía no hay código), dispara la generación + respaldo.
-  useEffect(() => {
-    if (enTourRespaldo && nombre.trim() && !bkCodigo && !bkBloqueado && !cloudBusy) {
-      void autoRespaldoNubeTour()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enTourRespaldo])
 
   // Corrección de nombre (mismo código): al salir del campo, si el nombre cambió respecto del último
   // respaldo, migra el respaldo en la nube (re-sube bajo el nombre nuevo, verifica el viejo y lo borra)
@@ -403,10 +375,18 @@ export function SettingsPage() {
     }
   }
 
-  if (!loaded) return <div className="text-center text-slate-500 py-12">Cargando…</div>
+  if (!loaded) return (
+    <div className="min-h-screen bg-slate-900 p-4 space-y-4">
+      <div className="h-7 w-40 rounded-lg bg-slate-800 animate-pulse" />
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="h-24 rounded-2xl bg-slate-800/60 animate-pulse" style={{ animationDelay: `${i * 80}ms` }} />
+      ))}
+    </div>
+  )
 
   return (
-    <div className="min-h-screen bg-slate-900 pb-12">
+    <div className="relative isolate min-h-screen bg-slate-900 pb-12">
+      <BgBlobs />
       <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-4">
         <h1 className="text-lg font-bold text-white">Configuración</h1>
       </div>
@@ -424,29 +404,29 @@ export function SettingsPage() {
         </div>
       )}
 
-      <div className="px-4 py-4 space-y-6">
-        {/* Empleado + respaldo en la nube — en su propio recuadro para separarlo del resto */}
+      <div className="px-4 py-4 space-y-4 settings-stagger">
+        {/* 1. Datos de usuario + respaldo en la nube — su propia tarjeta (siempre visible) */}
         <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
-        <Section title="Empleado">
-          <Field
-            label="Nombre completo"
-            action={(bkBloqueado || !!bkCodigo) && (
-              <CandadoChip bloqueado={bkBloqueado} onToggle={toggleLock} />
-            )}
-          >
-            <input
-              type="text"
-              data-tour="cfg-nombre"
-              value={nombre}
-              disabled={bkBloqueado}
-              onChange={e => { setNombre(e.target.value); setDirty(true) }}
-              onBlur={handleNombreBlur}
-              className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-              placeholder="Ej: Juan Topo"
-            />
+        <SubSection title="Empleado">
+          <Field label="Nombre completo">
+            <div className="relative">
+              <input
+                type="text"
+                value={nombre}
+                disabled={bkBloqueado}
+                onChange={e => { setNombre(e.target.value); setDirty(true) }}
+                onBlur={handleNombreBlur}
+                className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 pr-11 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                placeholder="Ej: Juan Topo"
+              />
+              {/* Candado al final del campo (mismo componente/animación que el resto de la app). */}
+              {(bkBloqueado || !!bkCodigo) && (
+                <CandadoBtn bloqueado={bkBloqueado} onToggle={toggleLock} className="absolute right-1.5 top-1/2 -translate-y-1/2" />
+              )}
+            </div>
             <p className="text-[11px] text-slate-500 mt-1 flex items-start gap-1.5">
               {bkBloqueado
-                ? <><Lock size={11} className="shrink-0 mt-0.5" /> <span>Nombre bloqueado. Tocá <span className="text-emerald-300 font-medium">Bloqueado</span> para cambiarlo (el código es permanente).</span></>
+                ? <><Lock size={11} className="shrink-0 mt-0.5" /> <span>Nombre bloqueado. Tocá el <span className="text-emerald-300 font-medium">candado</span> al final del campo para cambiarlo (el código es permanente).</span></>
                 : <span>Se usa en la planilla, en el Excel exportado y en el respaldo en la nube.</span>}
             </p>
           </Field>
@@ -541,52 +521,87 @@ export function SettingsPage() {
           )}
 
           <p className="text-xs text-slate-500 px-1">Último respaldo en la nube: {haceTexto(cloudMs)}.</p>
-        </Section>
+        </SubSection>
         </div>
 
-        {/* Línea de trabajo — afecta el conteo de horas (visible para todos) */}
-        <Section title="Línea de trabajo" action={<CandadoChip bloqueado={cfgBloqueado} onToggle={toggleConfigLock} />}>
-          {!cfgEditable && (
-            <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
-              <Lock size={11} className="shrink-0" /> Tocá el candado para cambiar la línea.
-            </p>
-          )}
-          <div className="space-y-2" data-tour="cfg-linea">
-            {LINEAS_TRABAJO.map(l => (
+        {/* 2. Línea + Diagrama — tarjeta COLAPSABLE (colapsada por defecto) con dos pestañas animadas */}
+        <CollapsibleCard title="Línea y diagrama" defaultOpen={false} action={<CandadoBtn bloqueado={cfgBloqueado} onToggle={toggleConfigLock} />}>
+          <div className="flex w-fit gap-1 rounded-xl bg-slate-900/50 p-1">
+            {([['linea', 'Línea'], ['diagrama', 'Diagrama']] as const).map(([t, label]) => (
               <button
-                key={l.key}
-                onClick={() => { setLinea(l.key); setDirty(true) }}
-                disabled={!cfgEditable}
-                className={`w-full py-2.5 px-3 rounded-xl text-left transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${linea === l.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                key={t}
+                onClick={() => setTrabajoTab(t)}
+                className={`rounded-lg px-4 py-1.5 text-xs font-bold transition-colors ${trabajoTab === t ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 active:text-slate-200'}`}
               >
-                <div className="text-sm font-medium">{l.label}</div>
-                <div className={`text-xs mt-0.5 ${linea === l.key ? 'text-blue-100/80' : 'text-slate-400'}`}>{l.desc}</div>
+                {label}
               </button>
             ))}
-            {enTourLinea && (
-              <button
-                onClick={() => onb.next()}
-                className="mt-1 w-full py-3 rounded-xl bg-emerald-600 text-white text-sm font-bold active:bg-emerald-700"
-              >
-                Elegir "{lineaLabel(linea)}"
-              </button>
-            )}
           </div>
-          {linea === 'SBDP' && (
-            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-2.5">
-              <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                <strong className="text-amber-300">Arreglo SBDP:</strong> cada día marcado como{' '}
-                <strong>Campo</strong> (con o sin pernocte) cuenta <strong>12 h al 50%</strong> fijas y{' '}
-                <strong>ninguna hora normal</strong>, sin importar cuántas se hayan cargado (6, 8, 12 o 16 hs).
-                No afecta días Base, francos ni feriados; tampoco la planilla oficial (que muestra los horarios reales).
-              </p>
+          {!cfgEditable && (
+            <p className="mb-3 text-[11px] text-slate-500 flex items-center gap-1.5">
+              <Lock size={11} className="shrink-0" /> Tocá el candado para cambiar {trabajoTab === 'linea' ? 'la línea' : 'el diagrama o la fecha'}.
+            </p>
+          )}
+
+          {trabajoTab === 'linea' ? (
+            <div key="linea" className="space-y-3 animate-[view-fade-in_220ms_ease_both]">
+              <div className="space-y-2">
+                {LINEAS_TRABAJO.map(l => (
+                  <button
+                    key={l.key}
+                    onClick={() => { setLinea(l.key); setDirty(true) }}
+                    disabled={!cfgEditable}
+                    className={`w-full py-2.5 px-3 rounded-xl text-left transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${linea === l.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                  >
+                    <div className="text-sm font-medium">{l.label}</div>
+                    <div className={`text-xs mt-0.5 ${linea === l.key ? 'text-blue-100/80' : 'text-slate-400'}`}>{l.desc}</div>
+                  </button>
+                ))}
+              </div>
+              {linea === 'SBDP' && (
+                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-2.5">
+                  <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                    <strong className="text-amber-300">Arreglo SBDP:</strong> cada día marcado como{' '}
+                    <strong>Campo</strong> (con o sin pernocte) cuenta <strong>12 h al 50%</strong> fijas y{' '}
+                    <strong>ninguna hora normal</strong>, sin importar cuántas se hayan cargado (6, 8, 12 o 16 hs).
+                    No afecta días Base, francos ni feriados; tampoco la planilla oficial (que muestra los horarios reales).
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div key="diagrama" className="space-y-3 animate-[view-fade-in_220ms_ease_both]">
+              <div className="grid grid-cols-2 gap-2">
+                {DIAGRAMAS.map(d => (
+                  <button
+                    key={d.key}
+                    onClick={() => { setDiagrama(d.key); setDirty(true) }}
+                    disabled={!cfgEditable}
+                    className={`py-3 px-4 rounded-xl text-sm font-medium text-left transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${diagrama === d.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                  >
+                    <div className="font-bold">{d.label}</div>
+                    <div className="text-xs opacity-70 mt-0.5">{d.diasTrabajo} trabajo · {d.diasFranco} franco</div>
+                  </button>
+                ))}
+              </div>
+              {diagrama !== 'LUNES_VIERNES' && (
+                <Field label="Fecha inicio de diagrama">
+                  <input
+                    type="date"
+                    value={diagramaFecha}
+                    disabled={!cfgEditable}
+                    onChange={e => { setDiagramaFecha(e.target.value); setDirty(true) }}
+                    className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                </Field>
+              )}
             </div>
           )}
-        </Section>
+        </CollapsibleCard>
 
-        {/* Salario y convenio — visible sólo para el usuario de prueba */}
+        {/* Salario y convenio — visible sólo para el usuario de prueba (easter egg) */}
         {isSalaryUser(nombre) && (
-          <Section title="Salario y convenio">
+          <CollapsibleCard title="Salario y convenio" defaultOpen={false}>
             <Field label="Convenio">
               <div className="space-y-2">
                 {CONVENIOS.map(c => (
@@ -635,47 +650,106 @@ export function SettingsPage() {
               <Banknote size={13} className="text-slate-600 shrink-0 mt-0.5" />
               Las horas, viaje y nocturnas salen de la planilla. El detalle se ve en la pestaña Sueldo y el resumen en Análisis.
             </p>
-          </Section>
+          </CollapsibleCard>
         )}
 
-        {/* Diagrama */}
-        <Section title="Diagrama de trabajo" action={<CandadoChip bloqueado={cfgBloqueado} onToggle={toggleConfigLock} />}>
-          {!cfgEditable && (
-            <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
-              <Lock size={11} className="shrink-0" /> Tocá el candado para cambiar el diagrama o la fecha.
+        {/* 3. Frecuentes: observaciones frecuentes + feriados nacionales */}
+        <CollapsibleCard title="Observaciones frecuentes y feriados" defaultOpen={false}>
+          <SubSection title="Observaciones frecuentes">
+            <ProyectosEditor
+              proyectos={settings.proyectosFrecuentes}
+              onChange={proyectosFrecuentes => update({ proyectosFrecuentes })}
+            />
+          </SubSection>
+          <SubSection title="Feriados nacionales">
+            <p className="text-xs text-slate-400">
+              Los feriados nacionales se detectan automáticamente: si trabajás uno, las horas van al 100%.
+              No incluye feriados puente ni días no laborables (se pagan como día normal). Actualizá la lista
+              para sumar años nuevos o aplicar correcciones oficiales.
             </p>
+            <button
+              onClick={handleActualizarFeriados}
+              disabled={feriadosBusy}
+              className={`w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors ${feriadosBusy ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}
+            >
+              <CalendarDays size={16} /> {feriadosBusy ? 'Actualizando…' : 'Actualizar feriados nacionales'}
+            </button>
+            {feriadosUpd > 0 && (
+              <p className="text-xs text-slate-500 px-1">
+                Última actualización: {new Date(feriadosUpd).toLocaleDateString('es-AR')}
+              </p>
+            )}
+          </SubSection>
+        </CollapsibleCard>
+
+        {/* 4. Avisos y datos manuales: recordatorio de fin de período + exportar/importar */}
+        <CollapsibleCard title="Avisos y datos manuales" defaultOpen={false}>
+          {notificacionesSoportadas() && (
+            <SubSection title="Recordatorio de fin de período">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-slate-400 leading-snug flex-1">
+                  Te avisamos un día antes del cierre para que no te olvides de cargar y enviar la planilla.
+                </p>
+                <button
+                  type="button"
+                  onClick={toggleRecordatorioHabilitado}
+                  disabled={recordBusy}
+                  role="switch"
+                  aria-checked={recordHabilitado}
+                  aria-label="Activar recordatorio"
+                  className={`relative w-11 h-6 shrink-0 appearance-none border-0 p-0 rounded-full overflow-hidden transition-colors duration-200 disabled:opacity-50 ${recordHabilitado ? 'bg-blue-600' : 'bg-slate-600'}`}
+                >
+                  <span className={`absolute top-0.5 left-0 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${recordHabilitado ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              {recordHabilitado && (
+                recordOn ? (
+                  <p className="text-xs text-emerald-300 flex items-center gap-1.5">
+                    <BellRing size={14} className="shrink-0" /> Notificaciones activas (también con la app cerrada en Android).
+                  </p>
+                ) : permisoNotifDenegado ? (
+                  <p className="text-[11px] text-amber-300/90 leading-snug">
+                    El aviso aparece al abrir la app. Las notificaciones del sistema están bloqueadas: activálas desde
+                    los ajustes del teléfono (notificaciones de "Planilla") para que también lleguen con la app cerrada.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] text-slate-400 leading-snug">
+                      El aviso aparece al abrir la app. En Android, activá las notificaciones para que también llegue con la app cerrada:
+                    </p>
+                    <button
+                      onClick={handleActivarRecordatorios}
+                      disabled={recordBusy}
+                      className={`w-full py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors ${recordBusy ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}
+                    >
+                      <Bell size={16} /> {recordBusy ? 'Activando…' : 'Activar notificaciones'}
+                    </button>
+                  </div>
+                )
+              )}
+            </SubSection>
           )}
-          <div className="grid grid-cols-2 gap-2" data-tour="cfg-diagrama">
-            {DIAGRAMAS.map(d => (
-              <button
-                key={d.key}
-                onClick={() => { setDiagrama(d.key); setDirty(true) }}
-                disabled={!cfgEditable}
-                className={`py-3 px-4 rounded-xl text-sm font-medium text-left transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${diagrama === d.key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
-              >
-                <div className="font-bold">{d.label}</div>
-                <div className="text-xs opacity-70 mt-0.5">{d.diasTrabajo} trabajo · {d.diasFranco} franco</div>
+          <SubSection title="Exportar / importar datos">
+            <div className="flex gap-2">
+              <button onClick={handleExportBackup}
+                className="flex-1 py-2.5 rounded-xl bg-slate-700/70 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 active:bg-slate-600">
+                <Download size={14} /> Exportar
               </button>
-            ))}
-          </div>
+              <label className="flex-1">
+                <span className="w-full py-2.5 rounded-xl bg-slate-700/70 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer active:bg-slate-600">
+                  <FolderOpen size={14} /> Importar
+                </span>
+                <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
+              </label>
+            </div>
+            <p className="text-[11px] text-slate-500 px-1">
+              Backup manual a un archivo. Importar reemplaza TODOS los datos. El respaldo automático es el de la nube (arriba).
+            </p>
+          </SubSection>
+        </CollapsibleCard>
 
-          {diagrama !== 'LUNES_VIERNES' && (
-            <Field label="Fecha inicio de diagrama">
-              <input
-                type="date"
-                data-tour="cfg-fecha"
-                value={diagramaFecha}
-                disabled={!cfgEditable}
-                onChange={e => { setDiagramaFecha(e.target.value); setDirty(true) }}
-                className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-              />
-            </Field>
-          )}
-        </Section>
-
-        {/* Guardar button */}
+        {/* 5. Indicador de cambios guardados (auto-guardado) */}
         <button
-          data-tour="cfg-guardar"
           onClick={handleGuardar}
           disabled={!dirty}
           className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${dirty ? 'bg-blue-600 text-white active:bg-blue-700' : 'bg-slate-700/60 text-slate-400 cursor-default'}`}
@@ -683,155 +757,76 @@ export function SettingsPage() {
           {dirty ? 'Guardando…' : 'Cambios guardados ✓'}
         </button>
 
-        {/* Feriados nacionales */}
-        <Section title="Feriados nacionales">
-          <p className="text-xs text-slate-400">
-            Los feriados nacionales se detectan automáticamente: si trabajás uno, las horas van al 100%.
-            No incluye feriados puente ni días no laborables (se pagan como día normal). Actualizá la lista
-            para sumar años nuevos o aplicar correcciones oficiales.
-          </p>
-          <button
-            data-tour="cfg-feriados"
-            onClick={handleActualizarFeriados}
-            disabled={feriadosBusy}
-            className={`w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors ${feriadosBusy ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}
-          >
-            <CalendarDays size={16} /> {feriadosBusy ? 'Actualizando…' : 'Actualizar feriados nacionales'}
-          </button>
-          {feriadosUpd > 0 && (
-            <p className="text-xs text-slate-500 px-1">
-              Última actualización: {new Date(feriadosUpd).toLocaleDateString('es-AR')}
-            </p>
-          )}
-        </Section>
-
-        {/* Recordatorio de fin de período (activado por defecto) */}
-        {notificacionesSoportadas() && (
-          <Section title="Recordatorio de fin de período">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-slate-400 leading-snug flex-1">
-                Te avisamos un día antes del cierre para que no te olvides de cargar y enviar la planilla.
-              </p>
+        {/* 6. Tus datos y seguridad: instalar app + consideraciones + zona de peligro */}
+        <Card className="space-y-4">
+          <InstallSection />
+          <StorageWarningBanner />
+          <SubSection title="Zona de peligro">
+            {deleteStep === 0 && (
               <button
-                type="button"
-                onClick={toggleRecordatorioHabilitado}
-                disabled={recordBusy}
-                role="switch"
-                aria-checked={recordHabilitado}
-                aria-label="Activar recordatorio"
-                className={`relative w-11 h-6 shrink-0 appearance-none border-0 p-0 rounded-full overflow-hidden transition-colors duration-200 disabled:opacity-50 ${recordHabilitado ? 'bg-blue-600' : 'bg-slate-600'}`}
+                onClick={() => setDeleteStep(1)}
+                className="w-full py-3 rounded-xl bg-red-900/20 text-red-400 border border-red-800/40 text-sm font-medium flex items-center justify-center gap-2 active:bg-red-900/40 transition-colors"
               >
-                <span className={`absolute top-0.5 left-0 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${recordHabilitado ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                <Trash2 size={16} /> Borrar planilla
               </button>
-            </div>
-            {recordHabilitado && (
-              recordOn ? (
-                <p className="text-xs text-emerald-300 flex items-center gap-1.5">
-                  <BellRing size={14} className="shrink-0" /> Notificaciones activas (también con la app cerrada en Android).
+            )}
+
+            {deleteStep === 1 && (
+              <div className="rounded-xl border border-red-800/50 bg-red-900/20 p-4 space-y-3">
+                <p className="text-sm font-semibold text-red-300 flex items-center gap-2">
+                  <AlertTriangle size={15} /> ¿Borrar toda la planilla?
                 </p>
-              ) : permisoNotifDenegado ? (
-                <p className="text-[11px] text-amber-300/90 leading-snug">
-                  El aviso aparece al abrir la app. Las notificaciones del sistema están bloqueadas: activálas desde
-                  los ajustes del teléfono (notificaciones de "Planilla") para que también lleguen con la app cerrada.
-                </p>
-              ) : (
-                <div className="space-y-1.5">
-                  <p className="text-[11px] text-slate-400 leading-snug">
-                    El aviso aparece al abrir la app. En Android, activá las notificaciones para que también llegue con la app cerrada:
-                  </p>
-                  <button
-                    onClick={handleActivarRecordatorios}
-                    disabled={recordBusy}
-                    className={`w-full py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors ${recordBusy ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}
-                  >
-                    <Bell size={16} /> {recordBusy ? 'Activando…' : 'Activar notificaciones'}
+                <p className="text-xs text-slate-400">Se eliminarán todos los registros de horas. Esta acción no se puede deshacer.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setDeleteStep(0)} className="flex-1 py-2.5 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">
+                    Cancelar
+                  </button>
+                  <button onClick={() => setDeleteStep(2)} className="flex-1 py-2.5 rounded-xl bg-red-700/60 text-red-200 text-sm font-medium border border-red-600/40">
+                    Sí, borrar →
                   </button>
                 </div>
-              )
+              </div>
             )}
-          </Section>
-        )}
 
-        {/* Instalar app */}
-        <InstallSection />
+            {deleteStep === 2 && (
+              <div className="rounded-xl border border-red-600/70 bg-red-900/30 p-4 space-y-3">
+                <p className="text-sm font-bold text-red-300 flex items-center gap-2">
+                  <AlertTriangle size={15} /> Última confirmación
+                </p>
+                <p className="text-xs text-slate-300">Todos los registros se borrarán definitivamente. No hay forma de recuperarlos si no tenés un backup.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setDeleteStep(0)} className="flex-1 py-2.5 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">
+                    Cancelar
+                  </button>
+                  <button onClick={handleClearAll} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold active:bg-red-700 transition-colors">
+                    Borrar definitivamente
+                  </button>
+                </div>
+              </div>
+            )}
 
-        {/* Proyectos frecuentes */}
-        <Section title="Proyectos frecuentes">
-          <ProyectosEditor
-            proyectos={settings.proyectosFrecuentes}
-            onChange={proyectosFrecuentes => update({ proyectosFrecuentes })}
-          />
-        </Section>
+            <p className="text-xs text-slate-600 px-1">Los registros con más de 6 meses se eliminan automáticamente al abrir la app.</p>
+          </SubSection>
+        </Card>
 
-        {/* Exportar / importar datos — backup manual a archivo; el respaldo principal es la nube */}
-        <Section title="Exportar / importar datos">
-          <div className="flex gap-2">
-            <button onClick={handleExportBackup}
-              className="flex-1 py-2.5 rounded-xl bg-slate-700/70 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 active:bg-slate-600">
-              <Download size={14} /> Exportar
-            </button>
-            <label className="flex-1">
-              <span className="w-full py-2.5 rounded-xl bg-slate-700/70 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer active:bg-slate-600">
-                <FolderOpen size={14} /> Importar
-              </span>
-              <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
-            </label>
+        {/* 7. Sugerencias: el usuario manda feedback que le llega al admin (1 por día) */}
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-300">
+              <Lightbulb size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-white">¿Se te ocurre una mejora?</p>
+              <p className="text-xs text-slate-400 mt-0.5 leading-snug">Mandame tu sugerencia y la leo. Se puede enviar una por día.</p>
+            </div>
           </div>
-          <p className="text-[11px] text-slate-500 px-1">
-            Backup manual a un archivo. Importar reemplaza TODOS los datos. El respaldo automático es el de la nube (arriba).
-          </p>
-        </Section>
-
-        {/* Advertencia de almacenamiento */}
-        <StorageWarningBanner />
-
-        {/* Zona de peligro */}
-        <Section title="Zona de peligro">
-          {deleteStep === 0 && (
-            <button
-              onClick={() => setDeleteStep(1)}
-              className="w-full py-3 rounded-xl bg-red-900/20 text-red-400 border border-red-800/40 text-sm font-medium flex items-center justify-center gap-2 active:bg-red-900/40 transition-colors"
-            >
-              <Trash2 size={16} /> Borrar planilla
-            </button>
-          )}
-
-          {deleteStep === 1 && (
-            <div className="rounded-xl border border-red-800/50 bg-red-900/20 p-4 space-y-3">
-              <p className="text-sm font-semibold text-red-300 flex items-center gap-2">
-                <AlertTriangle size={15} /> ¿Borrar toda la planilla?
-              </p>
-              <p className="text-xs text-slate-400">Se eliminarán todos los registros de horas. Esta acción no se puede deshacer.</p>
-              <div className="flex gap-2">
-                <button onClick={() => setDeleteStep(0)} className="flex-1 py-2.5 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">
-                  Cancelar
-                </button>
-                <button onClick={() => setDeleteStep(2)} className="flex-1 py-2.5 rounded-xl bg-red-700/60 text-red-200 text-sm font-medium border border-red-600/40">
-                  Sí, borrar →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {deleteStep === 2 && (
-            <div className="rounded-xl border border-red-600/70 bg-red-900/30 p-4 space-y-3">
-              <p className="text-sm font-bold text-red-300 flex items-center gap-2">
-                <AlertTriangle size={15} /> Última confirmación
-              </p>
-              <p className="text-xs text-slate-300">Todos los registros se borrarán definitivamente. No hay forma de recuperarlos si no tenés un backup.</p>
-              <div className="flex gap-2">
-                <button onClick={() => setDeleteStep(0)} className="flex-1 py-2.5 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium">
-                  Cancelar
-                </button>
-                <button onClick={handleClearAll} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold active:bg-red-700 transition-colors">
-                  Borrar definitivamente
-                </button>
-              </div>
-            </div>
-          )}
-
-          <p className="text-xs text-slate-600 px-1">Los registros con más de 6 meses se eliminan automáticamente al abrir la app.</p>
-        </Section>
+          <button
+            onClick={() => setShowSugerencia(true)}
+            className="mt-3 w-full py-2.5 rounded-xl bg-amber-600/90 text-white text-sm font-semibold flex items-center justify-center gap-2 active:bg-amber-700 active:scale-95 transition-all"
+          >
+            <Lightbulb size={16} /> Enviar sugerencia
+          </button>
+        </Card>
 
         {/* Créditos */}
         <div className="pt-4 pb-2 text-center space-y-0.5">
@@ -864,6 +859,15 @@ export function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* Modal de sugerencia (feedback al admin) */}
+      {showSugerencia && (
+        <SugerenciaModal
+          nombre={settings.nombreUsuario}
+          linea={lineaLabel(settings.lineaTrabajo)}
+          onClose={() => setShowSugerencia(false)}
+        />
+      )}
     </div>
   )
 }
@@ -878,7 +882,7 @@ function InstallSection() {
   const isFirefox = /firefox/i.test(ua)
 
   return (
-    <Section title="Instalar app">
+    <SubSection title="Instalar app">
       {canInstall ? (
         <button
           onClick={install}
@@ -920,15 +924,51 @@ function InstallSection() {
           <p>Buscá el ícono <span className="text-blue-300 font-medium">⊕</span> en la barra de dirección de Chrome, o andá al menú → <span className="text-blue-300 font-medium">"Guardar e instalar"</span></p>
         </div>
       )}
-    </Section>
+    </SubSection>
   )
 }
 
-function Section({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+// Animación de expansión/compresión por altura (grid-rows 0fr↔1fr) + fade. Pura CSS, sin librerías.
+function AnimatedCollapse({ open, children }: { open: boolean; children: React.ReactNode }) {
+  return (
+    <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+      <div className={`min-h-0 overflow-hidden transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0'}`}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// Tarjeta contenedora (mismo estilo que el bloque de Empleado/nube).
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`rounded-2xl border border-slate-700 bg-slate-800/40 p-4 ${className}`}>{children}</div>
+}
+
+// Tarjeta COLAPSABLE con encabezado animado (chevron que rota + cuerpo que se expande/comprime suave).
+function CollapsibleCard({ title, children, defaultOpen = false, action }: { title: string; children: React.ReactNode; defaultOpen?: boolean; action?: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <Card>
+      <div className="flex items-center justify-between gap-2">
+        <button onClick={() => setOpen(o => !o)} className="flex flex-1 items-center gap-2 text-left active:opacity-80">
+          <ChevronRight size={16} className={`shrink-0 text-slate-500 transition-transform duration-300 ${open ? 'rotate-90' : ''}`} />
+          <h2 className="text-sm font-bold text-white">{title}</h2>
+        </button>
+        {open && action}
+      </div>
+      <AnimatedCollapse open={open}>
+        <div className="space-y-5 pt-4">{children}</div>
+      </AnimatedCollapse>
+    </Card>
+  )
+}
+
+// Sub-sección dentro de una tarjeta: encabezado + contenido (no colapsa por sí sola).
+function SubSection({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-xs font-bold uppercase text-slate-500 tracking-wider">{title}</h2>
+        <h3 className="text-xs font-bold uppercase text-slate-500 tracking-wider">{title}</h3>
         {action}
       </div>
       <div className="space-y-3">{children}</div>
@@ -936,16 +976,20 @@ function Section({ title, children, action }: { title: string; children: React.R
   )
 }
 
-// Chip de candado para bloquear/desbloquear la configuración de trabajo (mismo estilo que el del
-// código de respaldo). Bloqueado = verde (protegido); desbloqueado = ámbar (editable, ojo).
-function CandadoChip({ bloqueado, onToggle }: { bloqueado: boolean; onToggle: () => void }) {
+// Candado UNIFICADO para bloquear/desbloquear (nombre, línea/diagrama, etc.): ícono Lock/Unlock,
+// verde = bloqueado, ámbar = editable. Misma animación elástica (lock-pop) en TODOS los candados:
+// el `key` remonta el span al cambiar de estado → re-dispara el keyframe.
+function CandadoBtn({ bloqueado, onToggle, className = '' }: { bloqueado: boolean; onToggle: () => void; className?: string }) {
   return (
     <button
+      type="button"
       onClick={onToggle}
-      className={`flex shrink-0 items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg ${bloqueado ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}
-      aria-label={bloqueado ? 'Desbloquear para editar' : 'Bloquear para evitar cambios'}
+      aria-label={bloqueado ? 'Desbloquear' : 'Bloquear'}
+      className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors ${bloqueado ? 'text-emerald-300 active:bg-emerald-500/15' : 'text-amber-300 active:bg-amber-500/15'} ${className}`}
     >
-      {bloqueado ? <><Lock size={12} /> Bloqueado</> : <><Unlock size={12} /> Desbloqueado</>}
+      <span key={bloqueado ? 'lock' : 'unlock'} className="inline-flex animate-[lock-pop_420ms_cubic-bezier(.34,1.56,.64,1)]">
+        {bloqueado ? <Lock size={17} /> : <Unlock size={17} />}
+      </span>
     </button>
   )
 }
@@ -967,11 +1011,11 @@ function StorageWarningBanner() {
             Almacenamiento local · Respaldo en la nube disponible
           </p>
         </div>
-        <span className="text-slate-500 ml-2">{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
+        <span className="text-slate-500 ml-2"><ChevronDown size={14} className={`transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`} /></span>
       </button>
 
-      {/* Expandable body */}
-      {expanded && (
+      {/* Expandable body (animado) */}
+      <AnimatedCollapse open={expanded}>
         <div className="px-4 pb-4 space-y-4 border-t border-amber-500/20">
           {/* Cómo se guardan */}
           <div className="pt-3">
@@ -1065,7 +1109,7 @@ function StorageWarningBanner() {
             </ul>
           </div>
         </div>
-      )}
+      </AnimatedCollapse>
     </div>
   )
 }
