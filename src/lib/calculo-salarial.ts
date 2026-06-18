@@ -16,8 +16,6 @@ export type TipoTurno = 'NINGUNO' | 'TURNO_A' | 'TURNO_B' | 'TURNO_S'
 
 /** Tope previsional ANSES (abril 2026). Escala ~mensual: actualizar cuando cambie. */
 const TOPE_ANSES = 4_162_912.55
-/** Divisor del desarraigo jerárquico (147,78 ÷ 5). */
-const DIAS_BASE_637 = 147.78 / 5.0
 
 // CCT 644/12 — escenario fijo de WENLEN (servicios especiales en Vaca Muerta).
 // Verificado contra 13 recibos (mar-2025 → abr-2026): el operario SIEMPRE cobra
@@ -28,7 +26,7 @@ const PRIV_ZONA_VM = true               // Añelo / Rincón de los Sauces = Vaca
 const PRIV_TASA_DESARRAIGO = 0.20       // "Desarraigo 20%" (cód. 191) en los 13 recibos
 
 export const CONVENIOS: { key: Convenio; label: string; divisor: number }[] = [
-  { key: 'CCT_637_11', label: 'CCT 637/11 · Jerárquicos', divisor: 147.78 },
+  { key: 'CCT_637_11', label: 'CCT 637/11 · Jerárquicos', divisor: 151.045 },
   { key: 'CCT_644_12', label: 'CCT 644/12 · Privados', divisor: 180.0 },
 ]
 
@@ -294,20 +292,30 @@ function fmtHs(h: number): string {
 // ══════════════════════════════════════════════════════════════════════════════
 export function calcularSueldo(registros: RegistroHoras[], config: SalaryConfig): SalaryEstimate {
   const agg = agregar(registros, config.lineaTrabajo)
-  return config.convenio === 'CCT_644_12' ? calcular644(config, agg) : calcular637(config, agg)
+  if (config.convenio === 'CCT_644_12') return calcular644(config, agg)
+  // Mes de cierre del período (día más tardío cargado ≈ el 20/18/15) → define el tramo de actas vigente.
+  const maxMs = registros.reduce((m, r) => Math.max(m, r.fechaMs), 0)
+  const d = new Date(maxMs)
+  const periodoYm = maxMs > 0 ? d.getFullYear() * 12 + d.getMonth() : 0
+  return calcular637(config, agg, periodoYm)
 }
 
-// ── CCT 637/11 — Jerárquicos (ratios verificados recibo 04/2026) ──
-function calcular637(config: SalaryConfig, a: Agregados): SalaryEstimate {
+// ── CCT 637/11 — Jerárquicos (ratios verificados recibos 04-05/2026) ──
+// divisor 151,045 → hora base $13.620,07 (extra 100% = $27.240,14, verificado contra recibos).
+function calcular637(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryEstimate {
   const B = config.sueldoBasico
-  const hb = B / 147.78
+  const hb = B / 151.045
 
   const antiguedad = (B / 342.46) * config.antiguedadAnios
   const presentismo = B * 0.057449
   const bonoPaz = B * 0.122516
   const adicTorre = B * 0.195777
-  const acta1 = B * 0.392576
-  const acta2 = B * 0.058886
+  // Actas "a cuenta" (cód 3373/3374): tramos por vigencia (suben sin que cambie el básico).
+  const [ratioActa1, ratioActa2] = periodoYm >= 2026 * 12 + 4
+    ? [0.41496, 0.062244]   // mayo 2026 en adelante
+    : [0.392576, 0.058886]  // hasta abril 2026
+  const acta1 = B * ratioActa1
+  const acta2 = B * ratioActa2
 
   const fijoItems: LineItem[] = [
     { codigo: '3001', concepto: 'Sueldo Básico', monto: B },
@@ -320,16 +328,18 @@ function calcular637(config: SalaryConfig, a: Agregados): SalaryEstimate {
   ]
   const subtotalFijos = fijoItems.reduce((s, i) => s + i.monto, 0)
 
-  const varViaje = a.totalViaje * (hb * 0.43157)
+  const varViaje = a.totalViaje * (hb * 0.44105)  // viaje $6.007,12 re-anclado al hb nuevo
   const varExtra50 = a.total50 * (hb * 1.5)
   const varExtra100 = a.total100 * (hb * 2.0)
-  const desarraigo = (B * 0.20) / DIAS_BASE_637 * a.pernoctes
+  // Desarraigo: estimación calibrada por día de campo (~2,09% del básico/día ≈ $43.000). Recibos
+  // 04-05/2026: abril 18 días≈$763k, mayo 27 días≈$1,17M (±1,5%). RRHH liquida el valor exacto.
+  const desarraigo = a.diasCampo * B * 0.0209
 
   const variableItems: LineItem[] = []
   if (a.totalViaje > 0) variableItems.push({ codigo: '3130', concepto: `Horas Viaje (${fmtHs(a.totalViaje)} hs)`, monto: varViaje })
   if (a.total50 > 0) variableItems.push({ codigo: '3150', concepto: `Extras 50% (${fmtHs(a.total50)} hs)`, monto: varExtra50 })
   if (a.total100 > 0) variableItems.push({ codigo: '3155', concepto: `Extras 100% (${fmtHs(a.total100)} hs)`, monto: varExtra100 })
-  if (desarraigo > 0) variableItems.push({ codigo: '3172', concepto: `Desarraigo 20% (${a.pernoctes} días)`, monto: desarraigo })
+  if (desarraigo > 0) variableItems.push({ codigo: '3172', concepto: `Desarraigo 20% (${a.diasCampo} días)`, monto: desarraigo })
   variableItems.push(...itemsInasistencia(a.faltasInjustificadas, B, presentismo, '3500', '3501'))
   const subtotalVariables = variableItems.reduce((s, i) => s + i.monto, 0)
 
@@ -354,7 +364,7 @@ function calcular637(config: SalaryConfig, a: Agregados): SalaryEstimate {
   noRemItems.push(
     { codigo: '40497', concepto: 'SNR 3% s/remunerativo', monto: biRaw * 0.03 },
     { codigo: '40498', concepto: 'SNR 3% s/no remunerativo', monto: 3 * 14787 },
-    { codigo: '42220', concepto: 'Asig. Vaca Muerta', monto: 448400 },
+    { codigo: '42220', concepto: 'Asig. Vaca Muerta', monto: 380000 },
     { codigo: '42210', concepto: 'Asig. Vianda Fija', monto: 546197 },
   )
   const subtotalNoRemunerativo = noRemItems.reduce((s, i) => s + i.monto, 0)
