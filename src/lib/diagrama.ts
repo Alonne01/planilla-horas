@@ -12,7 +12,7 @@ export interface DiagramaPattern {
 }
 
 export const DIAGRAMAS: DiagramaPattern[] = [
-  { key: 'LUNES_VIERNES', label: 'Lunes a Viernes', diasTrabajo: 5, diasFranco: 2 },
+  { key: 'LUNES_VIERNES', label: '5x2. Lun a Vie', diasTrabajo: 5, diasFranco: 2 },
   { key: 'D10X5',         label: '10 × 5',          diasTrabajo: 10, diasFranco: 5 },
   { key: 'D7X7',          label: '7 × 7',            diasTrabajo: 7,  diasFranco: 7 },
   { key: 'D10X4',         label: '10 × 4',           diasTrabajo: 10, diasFranco: 4 },
@@ -28,7 +28,9 @@ export function esFrancoPorDiagrama(
   diagramaKey: DiagramaPatternKey,
   diagramaInicioMs: number,
 ): boolean {
-  if (diagramaKey === 'LUNES_VIERNES') {
+  // 5x2 (Lun a Vie por defecto): SIN fecha de inicio → sábado y domingo franco. CON fecha de inicio,
+  // rota 5 días de trabajo / 2 de franco desde ese día (permite arrancar un martes → Mar a Sáb, etc.).
+  if (diagramaKey === 'LUNES_VIERNES' && diagramaInicioMs <= 0) {
     const dow = new Date(fechaMs).getDay()
     return dow === 0 || dow === 6
   }

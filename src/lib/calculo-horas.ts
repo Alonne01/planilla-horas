@@ -24,7 +24,7 @@ const MAX_HORAS_DIA = 16
  */
 export type LineaTrabajo =
   | 'SURFACE_WELL_TESTING' | 'SBDP' | 'FRACTURA'
-  | 'MANTENIMIENTO' | 'BASE' | 'PH' | 'WIRELINE' | 'OTRO'
+  | 'MANTENIMIENTO' | 'BASE' | 'PH' | 'WIRELINE' | 'ALMACEN' | 'OTRO'
 
 export const LINEAS_TRABAJO: { key: LineaTrabajo; label: string; desc: string }[] = [
   { key: 'SURFACE_WELL_TESTING', label: 'Surface Well Testing', desc: 'Conteo estándar de horas.' },
@@ -34,6 +34,7 @@ export const LINEAS_TRABAJO: { key: LineaTrabajo; label: string; desc: string }[
   { key: 'BASE', label: 'Base', desc: 'Conteo estándar de horas.' },
   { key: 'PH', label: 'PH', desc: 'Conteo estándar de horas.' },
   { key: 'WIRELINE', label: 'Wireline', desc: 'Conteo estándar de horas.' },
+  { key: 'ALMACEN', label: 'Almacén', desc: 'Conteo estándar de horas.' },
   { key: 'OTRO', label: 'Otro', desc: 'Conteo estándar de horas.' },
 ]
 

@@ -13,8 +13,9 @@ import { refrescarParitarias } from "./lib/paritarias"
 import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, type AppConfig } from "./lib/cloud-backup"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
-import { setupHecho, marcarSetupHecho, tutorialVisto, marcarTutorialVisto, diagramaConfirmado, marcarDiagramaConfirmado } from "./onboarding/tutorial"
+import { setupHecho, marcarSetupHecho, tutorialVisto, marcarTutorialVisto, diagramaConfirmado, marcarDiagramaConfirmado, sectorConfirmado, marcarSectorConfirmado } from "./onboarding/tutorial"
 import { WelcomeSetup } from "./components/WelcomeSetup"
+import { SectorSetup } from "./components/SectorSetup"
 import { DiagramaSetup } from "./components/DiagramaSetup"
 import { TutorialSlides } from "./components/TutorialSlides"
 import { UpdateToast } from "./components/UpdateToast"
@@ -105,21 +106,22 @@ function AppContent() {
   // El setup bloquea la pantalla hasta cargar el nombre; el tutorial (carrusel) se muestra una vez
   // después y se puede reabrir desde el menú ⋮.
   const [showWelcome, setShowWelcome] = useState(false)
+  const [showSector, setShowSector] = useState(false)
   const [showDiagrama, setShowDiagrama] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
   useEffect(() => {
     void (async () => {
       try {
         const s = await getSettings()
-        // Auto-confirmar el diagrama para usuarios EXISTENTES (ya tienen datos o eligieron inicio):
-        // así no se les muestra el prompt. Sólo queda pendiente para usuarios genuinamente nuevos.
-        if (!diagramaConfirmado()) {
-          const count = await db.registros.count()
-          if (count > 0 || s.diagramaInicioMs > 0) marcarDiagramaConfirmado()
-        }
+        // Auto-confirmar sector y diagrama para usuarios EXISTENTES (ya tienen datos): así no se les
+        // muestran los prompts. Sólo quedan pendientes para usuarios genuinamente nuevos.
+        const count = await db.registros.count()
+        if (!diagramaConfirmado() && (count > 0 || s.diagramaInicioMs > 0)) marcarDiagramaConfirmado()
+        if (!sectorConfirmado() && count > 0) marcarSectorConfirmado()
         // Setup obligatorio sólo a usuarios nuevos (sin nombre y sin haber pasado por el setup).
         if (!s.nombreUsuario.trim() && !setupHecho()) setShowWelcome(true)
-        // Tiene nombre pero nunca confirmó el diagrama → prompt del diagrama al abrir.
+        // Tiene nombre pero falta elegir sector / diagrama → prompts al abrir (sector primero).
+        else if (!sectorConfirmado()) setShowSector(true)
         else if (!diagramaConfirmado()) setShowDiagrama(true)
       } catch { /* ignore */ }
     })()
@@ -128,7 +130,13 @@ function AppContent() {
   function welcomeDone() {
     marcarSetupHecho()
     setShowWelcome(false)
-    // Tras el setup viene el diagrama (obligatorio); el tutorial va después.
+    // Tras el setup vienen el sector y el diagrama (obligatorios); el tutorial va después.
+    if (!sectorConfirmado()) setShowSector(true)
+    else if (!diagramaConfirmado()) setShowDiagrama(true)
+    else if (!tutorialVisto()) setShowTutorial(true)
+  }
+  function sectorDone() {
+    setShowSector(false)
     if (!diagramaConfirmado()) setShowDiagrama(true)
     else if (!tutorialVisto()) setShowTutorial(true)
   }
@@ -581,7 +589,7 @@ function AppContent() {
       {/* Easter egg: el caracol sólo en Configuración, asomando al scrollear hasta el fondo. */}
       {tab === "settings" && <Caracol navH={navH} onSecret={desbloquearSalarioSecreto} onAdminSecret={desbloquearAdminSecreto} />}
 
-      {recordatorio && !showWelcome && !showDiagrama && (
+      {recordatorio && !showWelcome && !showSector && !showDiagrama && (
         <RecordatorioToast
           cierreMs={recordatorio.cierreMs}
           onClose={() => { descartarRecordatorio(recordatorio.cierreMs); setRecordatorio(null) }}
@@ -593,9 +601,10 @@ function AppContent() {
       {!updateToast && broadcast && <BroadcastToast titulo={broadcast.titulo} cuerpo={broadcast.cuerpo} onClose={cerrarBroadcast} />}
       {!updateToast && !broadcast && mensajeInd && <BroadcastToast titulo={mensajeInd.titulo} cuerpo={mensajeInd.cuerpo} onClose={cerrarMensajeInd} />}
 
-      {/* Primer inicio: setup obligatorio → diagrama (vista previa) → tutorial simple (carrusel) */}
+      {/* Primer inicio: setup obligatorio → sector → diagrama (vista previa) → tutorial simple (carrusel) */}
       {showTutorial && <TutorialSlides onClose={tutorialDone} />}
-      {showDiagrama && !showWelcome && <DiagramaSetup onDone={diagramaDone} />}
+      {showDiagrama && !showWelcome && !showSector && <DiagramaSetup onDone={diagramaDone} />}
+      {showSector && !showWelcome && <SectorSetup onDone={sectorDone} />}
       {showWelcome && <WelcomeSetup onDone={welcomeDone} />}
     </div>
   )

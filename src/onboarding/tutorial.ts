@@ -9,6 +9,7 @@
 const SETUP_KEY = 'planilla-onboarding-done'
 const TUTORIAL_KEY = 'planilla-tutorial-visto'
 const DIAGRAMA_KEY = 'planilla-diagrama-confirmado'
+const SECTOR_KEY = 'planilla-sector-confirmado'
 
 /** True si el usuario ya pasó por el setup obligatorio (nombre + código + respaldo en la nube). */
 export function setupHecho(): boolean {
@@ -33,4 +34,13 @@ export function diagramaConfirmado(): boolean {
 }
 export function marcarDiagramaConfirmado(): void {
   try { localStorage.setItem(DIAGRAMA_KEY, '1') } catch { /* ignore */ }
+}
+
+/** True si el usuario ya eligió su sector (línea de trabajo) en el onboarding. Si no, se le muestra
+ *  el prompt de sector al abrir la app (igual que el de diagrama). */
+export function sectorConfirmado(): boolean {
+  try { return localStorage.getItem(SECTOR_KEY) === '1' } catch { return false }
+}
+export function marcarSectorConfirmado(): void {
+  try { localStorage.setItem(SECTOR_KEY, '1') } catch { /* ignore */ }
 }

@@ -626,17 +626,21 @@ export function SettingsPage() {
                   </button>
                 ))}
               </div>
-              {diagrama !== 'LUNES_VIERNES' && (
-                <Field label="Fecha inicio de diagrama">
-                  <input
-                    type="date"
-                    value={diagramaFecha}
-                    disabled={!cfgEditable}
-                    onChange={e => { setDiagramaFecha(e.target.value); setDirty(true) }}
-                    className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                  />
-                </Field>
-              )}
+              <Field label={diagrama === 'LUNES_VIERNES' ? 'Primer día de trabajo (opcional)' : 'Fecha inicio de diagrama'}>
+                <input
+                  type="date"
+                  value={diagramaFecha}
+                  disabled={!cfgEditable}
+                  onChange={e => { setDiagramaFecha(e.target.value); setDirty(true) }}
+                  className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+                {diagrama === 'LUNES_VIERNES' && (
+                  <p className="mt-1 px-1 text-[11px] leading-snug text-slate-500">
+                    Elegí un <strong className="text-slate-400">martes</strong> para trabajar Mar a Sáb (5×2 corrido).
+                    Si lo dejás vacío, es Lun a Vie (sábado y domingo franco).
+                  </p>
+                )}
+              </Field>
             </div>
           )}
         </CollapsibleCard>
