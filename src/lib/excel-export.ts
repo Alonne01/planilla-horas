@@ -192,8 +192,8 @@ function buildRowParts(
         : isOvernightFT
         ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cNum(`D${n}`, s.D, 24),
            cNum(`E${n}`, s.E, 0),                    cTime(`F${n}`, s.F, reg.salidaInicioMs)]
-        : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cEmpty(`D${n}`, s.D),
-           cEmpty(`E${n}`, s.E),                     cSalida(`F${n}`, s.F, reg.entradaInicioMs, reg.salidaInicioMs)]
+        : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
+           cEmpty(`E${n}`, s.E),                     cEmpty(`F${n}`, s.F)]
       const obsBase = reg.observaciones ?? ''
       const obs = isFrancoTrab
         ? `franco trabajado${obsBase ? ' - ' + obsBase : ''}`
@@ -234,8 +234,8 @@ function buildRowParts(
     : isOvernight
     ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cNum(`D${n}`, s.D, 24),
        cNum(`E${n}`, s.E, 0),                    cTime(`F${n}`, s.F, reg.salidaInicioMs)]
-    : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cEmpty(`D${n}`, s.D),
-       cEmpty(`E${n}`, s.E),                     cSalida(`F${n}`, s.F, reg.entradaInicioMs, reg.salidaInicioMs)]
+    : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
+       cEmpty(`E${n}`, s.E),                     cEmpty(`F${n}`, s.F)]
   let obs = reg.observaciones ?? ''
   if (reg.esFrancoTrabajado) obs = `franco trabajado${obs ? ' - ' + obs : ''}`
   else if (reg.esFeriadoTrabajado) obs = `feriado trabajado${obs ? ' - ' + obs : ''}`
