@@ -145,14 +145,17 @@ function HeroNeto({ est, settings, mes, anio, hsActivas, festejo, onToggleFestej
   const vhProm = valorHoraEstable(est, settings, mes, anio, hsActivas)
   const [billetes, setBilletes] = useState(false)
   const nivel = nivelNeto(est.netoEstimado, settings.sueldoBasico)
+  const festejando = festejo && billetes
   return (
-    <div className="relative rounded-2xl bg-gradient-to-br from-emerald-900/50 to-slate-800/60 border border-emerald-800/40 p-5">
+    <div className="relative rounded-2xl bg-gradient-to-br from-emerald-900/50 to-slate-800/60 border border-emerald-800/40 p-5"
+      style={festejando && nivel >= 4 ? { animation: 'hero-shake 0.6s ease-in-out' } : undefined}>
       <button onClick={onToggleFestejo} aria-label="Festejo del neto" title="Festejo"
         className={`absolute top-3 right-3 p-1.5 rounded-lg transition-colors ${festejo ? 'text-amber-300 bg-amber-400/10' : 'text-slate-500 active:text-slate-300'}`}>
         <PartyPopper size={16} />
       </button>
       <div className="text-xs text-emerald-300/80 tracking-wide">NETO ESTIMADO · {MESES_ES[mes]} {anio}</div>
-      <div className="text-4xl font-bold text-white leading-none mt-1 tabular-nums">
+      <div className="text-4xl font-bold text-white leading-none mt-1 tabular-nums"
+        style={festejando ? { animation: 'neto-glow 1.2s ease-in-out 2' } : undefined}>
         {festejo
           ? <SlotMachineMoney value={est.netoEstimado} onSettled={() => setBilletes(true)} />
           : fmtPesos(Math.round(netoAnim))}

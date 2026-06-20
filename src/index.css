@@ -250,19 +250,44 @@ html.vt-back ::view-transition-new(root) { animation: 190ms ease both vt-slide-l
   transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease;
 }
 
-/* ─── Festejo del neto (Proyección Salarial): lluvia de billetes + jackpot ─── */
+/* ─── Festejo del neto (Proyección Salarial): billetes + monedas + confeti + rayos + jackpot ─── */
 @keyframes bill-fall {
   0%   { opacity: 0; transform: translateY(0) translateX(0) rotate(0deg); }
   8%   { opacity: 1; }
   100% { opacity: 1; transform: translateY(112vh) translateX(var(--bill-drift, 0)) rotate(var(--bill-rot, 0deg)); }
 }
-@keyframes jackpot-flash {
-  0%   { opacity: 0; transform: scale(0.6); }
-  18%  { opacity: 1; transform: scale(1.12); }
-  72%  { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1); }
+@keyframes bill-sway { from { transform: translateX(-4px); } to { transform: translateX(4px); } }
+@keyframes coin-spin { from { transform: rotateY(0deg); } to { transform: rotateY(360deg); } }
+@keyframes rays-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+@keyframes festejo-flash { 0% { opacity: 0; } 14% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes festejo-fade  { 0% { opacity: 0; } 12% { opacity: 1; } 80% { opacity: 0.7; } 100% { opacity: 0; } }
+@keyframes jackpot-zoom {
+  0%   { opacity: 0; transform: scale(0.3); }
+  28%  { opacity: 1; transform: scale(1.28); }
+  44%  { transform: scale(0.92); }
+  60%  { transform: scale(1.12); }
+  76%  { transform: scale(1); }
+  90%  { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.06); }
+}
+@keyframes neto-glow {
+  0%, 100% { text-shadow: 0 0 8px rgba(251,191,36,0.35); }
+  50%      { text-shadow: 0 0 22px rgba(251,191,36,0.9), 0 0 40px rgba(251,191,36,0.5); }
+}
+@keyframes hero-shake {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  15% { transform: translateX(-6px) rotate(-0.4deg); }
+  30% { transform: translateX(6px) rotate(0.4deg); }
+  45% { transform: translateX(-5px); }
+  60% { transform: translateX(5px); }
+  78% { transform: translateX(-3px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  [style*="bill-fall"], [style*="jackpot-flash"] { animation: none !important; }
+  [style*="bill-fall"], [style*="bill-sway"], [style*="coin-spin"], [style*="rays-spin"],
+  [style*="festejo-flash"], [style*="festejo-fade"], [style*="jackpot-zoom"],
+  [style*="neto-glow"], [style*="hero-shake"] { animation: none !important; }
 }
 
