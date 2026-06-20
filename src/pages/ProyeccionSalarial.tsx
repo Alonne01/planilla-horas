@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   Construction, Banknote, TrendingUp, Minus, Plus, Wallet, Info,
-  LayoutGrid, BarChart3, ListTree, CalendarRange,
+  LayoutGrid, BarChart3, ListTree, CalendarRange, PartyPopper,
 } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { useAnalytics, shiftPeriodo, MESES_ES, type PeriodoStats } from '../hooks/useAnalytics'
@@ -20,6 +20,7 @@ import {
   TendenciaNetoChart, TendenciaAcumuladaChart, ComposicionCard, GananciaDiaCard, MiniDonut, KpiGrid,
   ProyeccionCard, DeltaBadge, useCountUp,
 } from '../components/SalaryCharts'
+import { SlotMachineMoney, BilletesRain, nivelNeto } from '../components/SalaryFx'
 
 export function ProyeccionSalarialPage() {
   const { settings, loaded } = useSettings()
@@ -51,6 +52,10 @@ function Proyeccion() {
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const [tab, setTab] = useState<Tab>('resumen')
+  const [festejo, setFestejo] = useState(() => { try { return localStorage.getItem('planilla-salary-fx') === '1' } catch { return false } })
+  function toggleFestejo() {
+    setFestejo(f => { const n = !f; try { localStorage.setItem('planilla-salary-fx', n ? '1' : '0') } catch { /* ignore */ } return n })
+  }
   const { periodos, loading } = useAnalytics(mes, anio, 5, settings.lineaTrabajo)
 
   const actual = periodos[periodos.length - 1] as PeriodoStats | undefined
@@ -112,7 +117,7 @@ function Proyeccion() {
       ) : (
         <div className="px-4 py-4 space-y-4">
           {/* Hero del neto — siempre visible */}
-          <HeroNeto est={est!} settings={settings} mes={mes} anio={anio} hsActivas={actual!.total} />
+          <HeroNeto est={est!} settings={settings} mes={mes} anio={anio} hsActivas={actual!.total} festejo={festejo} onToggleFestejo={toggleFestejo} />
 
           {/* Pestañas */}
           <div className="sticky top-[52px] z-10 -mx-4 px-4 py-2 bg-slate-900/95 backdrop-blur">
@@ -133,18 +138,31 @@ function Proyeccion() {
 }
 
 // ─── Hero ─────────────────────────────────────────────────────────────────────────
-function HeroNeto({ est, settings, mes, anio, hsActivas }: { est: SalaryEstimate; settings: any; mes: number; anio: number; hsActivas: number }) {
+function HeroNeto({ est, settings, mes, anio, hsActivas, festejo, onToggleFestejo }: {
+  est: SalaryEstimate; settings: any; mes: number; anio: number; hsActivas: number; festejo: boolean; onToggleFestejo: () => void
+}) {
   const netoAnim = useCountUp(est.netoEstimado)
   const vhProm = valorHoraEstable(est, settings, mes, anio, hsActivas)
+  const [billetes, setBilletes] = useState(false)
+  const nivel = nivelNeto(est.netoEstimado, settings.sueldoBasico)
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-emerald-900/50 to-slate-800/60 border border-emerald-800/40 p-5">
+    <div className="relative rounded-2xl bg-gradient-to-br from-emerald-900/50 to-slate-800/60 border border-emerald-800/40 p-5">
+      <button onClick={onToggleFestejo} aria-label="Festejo del neto" title="Festejo"
+        className={`absolute top-3 right-3 p-1.5 rounded-lg transition-colors ${festejo ? 'text-amber-300 bg-amber-400/10' : 'text-slate-500 active:text-slate-300'}`}>
+        <PartyPopper size={16} />
+      </button>
       <div className="text-xs text-emerald-300/80 tracking-wide">NETO ESTIMADO · {MESES_ES[mes]} {anio}</div>
-      <div className="text-4xl font-bold text-white leading-none mt-1 tabular-nums">{fmtPesos(Math.round(netoAnim))}</div>
+      <div className="text-4xl font-bold text-white leading-none mt-1 tabular-nums">
+        {festejo
+          ? <SlotMachineMoney value={est.netoEstimado} onSettled={() => setBilletes(true)} />
+          : fmtPesos(Math.round(netoAnim))}
+      </div>
       <div className="grid grid-cols-3 gap-2 mt-4">
         <Mini label="Bruto" value={fmtPesos(est.bruto)} />
         <Mini label="Valor hora" value={fmtPesos(vhProm)} />
         <Mini label="Hs activas" value={`${hsActivas.toFixed(1)}`} />
       </div>
+      {festejo && billetes && <BilletesRain key={est.netoEstimado} nivel={nivel} onDone={() => setBilletes(false)} />}
     </div>
   )
 }
@@ -157,7 +175,7 @@ function TabResumen({ est, actual, settings, mes, anio }: {
   const totalDiasOp = est.diasBase + est.diasCampo
   const campoPct = totalDiasOp > 0 ? (est.diasCampo / totalDiasOp) * 100 : 0
   const extraPct = actual.total > 0 ? (actual.extra / actual.total) * 100 : 0
-  const ingresoDia = est.diasTrabajados > 0 ? est.netoEstimado / est.diasTrabajados : 0
+  const ingresoDia = ingresoDiaEstable(est, settings, mes, anio)
   const variablesCampo = est.diasTrabajados > 0 ? est.subtotalVariables * (est.diasCampo / est.diasTrabajados) : 0
 
   return (
@@ -321,6 +339,14 @@ function valorHoraEstable(est: SalaryEstimate, settings: any, mes: number, anio:
   const proy = calcularProyeccion(est, settings, mes, anio)
   if (proy && hsActivas > 0) return proy.proyectado / (hsActivas * proy.factor)
   return hsActivas > 0 ? est.netoEstimado / hsActivas : 0
+}
+
+/** Ingreso por día trabajado ESTABLE (mismo criterio que valorHoraEstable): proyección / días del mes. */
+function ingresoDiaEstable(est: SalaryEstimate, settings: any, mes: number, anio: number): number {
+  if (est.diasTrabajados <= 0) return 0
+  const proy = calcularProyeccion(est, settings, mes, anio)
+  if (proy) return proy.proyectado / (est.diasTrabajados * proy.factor)
+  return est.netoEstimado / est.diasTrabajados
 }
 
 // ─── Subcomponentes ─────────────────────────────────────────────────────────────
