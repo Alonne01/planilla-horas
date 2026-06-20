@@ -1,17 +1,26 @@
 import { useState, useMemo } from 'react'
 import {
-  BarChart3, Activity, TrendingUp, TrendingDown, Minus,
+  BarChart3, TrendingUp, TrendingDown, Minus,
   Briefcase, Clock, Plane, Truck, BedDouble, Sun, Banknote, Gauge,
 } from 'lucide-react'
 import { useAnalytics, shiftPeriodo, MESES_ES } from '../hooks/useAnalytics'
 import type { PeriodoStats } from '../hooks/useAnalytics'
-import { StackedBars, TrendLines } from '../components/AnalyticsCharts'
+import { EvolucionChart } from '../components/AnalyticsCharts'
 import { defaultPeriodoMes, defaultPeriodoAnio } from '../lib/diagrama'
 import { useSettings } from '../hooks/useSettings'
 import { calcularSueldo, configFromSettings, isSalaryUser, fmtPesos, type SalaryEstimate } from '../lib/calculo-salarial'
 
 function fmt(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
+
+// ─── Paleta de acentos por tarjeta/KPI ────────────────────────────────────────────
+type Accent = 'sky' | 'emerald' | 'amber' | 'violet'
+const ACCENT: Record<Accent, { chip: string; icon: string; text: string }> = {
+  sky:     { chip: 'bg-sky-500/10',     icon: 'text-sky-400',     text: 'text-sky-300' },
+  emerald: { chip: 'bg-emerald-500/10', icon: 'text-emerald-400', text: 'text-emerald-300' },
+  amber:   { chip: 'bg-amber-500/10',   icon: 'text-amber-400',   text: 'text-amber-300' },
+  violet:  { chip: 'bg-violet-500/10',  icon: 'text-violet-400',  text: 'text-violet-300' },
 }
 
 export function AnalyticsPage() {
@@ -64,21 +73,23 @@ export function AnalyticsPage() {
         </div>
       ) : (
         <div className="px-4 py-4 space-y-4">
-          {/* ─── KPIs ─── */}
+          {/* ─── Hero + KPIs ─── */}
           <Section delay={0}>
-            <div className="rounded-2xl bg-gradient-to-br from-sky-900/40 to-slate-800/60 border border-sky-800/40 p-4">
+            <div className="rounded-2xl bg-gradient-to-br from-sky-900/50 to-slate-800/60 border border-sky-800/40 p-4">
               <div className="flex items-end justify-between">
                 <div>
                   <div className="text-xs text-sky-300/80">Horas trabajadas · {actual.rango}</div>
-                  <div className="text-4xl font-bold text-white leading-none mt-1">{fmt(actual.total)}<span className="text-lg font-medium text-slate-400 ml-1">hs</span></div>
+                  <div className="text-4xl font-bold text-white leading-none mt-1 tabular-nums">
+                    {fmt(actual.total)}<span className="text-lg font-medium text-slate-400 ml-1">hs</span>
+                  </div>
                 </div>
                 <DeltaBadge cur={actual.total} prev={anterior?.total ?? 0} />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2 mt-2">
-              <Kpi icon={<Briefcase size={15} />} label="Días trab." value={String(actual.diasTrabajados)} />
-              <Kpi icon={<Clock size={15} />} label="Hs extra" value={fmt(actual.extra)} accent="text-amber-300" />
-              <Kpi icon={<Plane size={15} />} label="Hs viaje" value={fmt(actual.viaje)} />
+              <Kpi icon={<Briefcase size={16} />} label="Días trab." value={String(actual.diasTrabajados)} accent="sky" />
+              <Kpi icon={<Clock size={16} />} label="Hs extra" value={fmt(actual.extra)} accent="amber" />
+              <Kpi icon={<Plane size={16} />} label="Hs viaje" value={fmt(actual.viaje)} accent="violet" />
             </div>
           </Section>
 
@@ -89,47 +100,37 @@ export function AnalyticsPage() {
             </Section>
           )}
 
-          {/* ─── Gráfico de barras ─── */}
+          {/* ─── Evolución (barras apiladas + línea de total) ─── */}
           <Section delay={80}>
-            <Card title="Horas por período" icon={<BarChart3 size={15} className="text-sky-400" />}>
-              <StackedBars periodos={periodos} />
+            <Card title="Evolución" icon={<BarChart3 size={16} />} accent="sky">
+              <EvolucionChart periodos={periodos} />
               <Legend items={[
                 { c: '#38bdf8', t: 'Normales' },
                 { c: '#fbbf24', t: 'Al 50%' },
                 { c: '#fb923c', t: 'Al 100%' },
-              ]} />
-            </Card>
-          </Section>
-
-          {/* ─── Gráfico de líneas ─── */}
-          <Section delay={160}>
-            <Card title="Tendencia" icon={<Activity size={15} className="text-sky-400" />}>
-              <TrendLines periodos={periodos} />
-              <Legend items={[
-                { c: '#38bdf8', t: 'Trabajadas' },
-                { c: '#fbbf24', t: 'Extra (50/100%)', dashed: true },
+                { c: '#e2e8f0', t: 'Total', line: true },
               ]} />
             </Card>
           </Section>
 
           {/* ─── Distribución del período actual ─── */}
-          <Section delay={240}>
-            <Card title="Distribución del período" icon={<Gauge size={15} className="text-sky-400" />}>
+          <Section delay={160}>
+            <Card title="Distribución del período" icon={<Gauge size={16} />} accent="emerald">
               <SplitBar campo={actual.diasCampo} base={actual.diasBase} franco={actual.diasFranco} />
               <div className="grid grid-cols-2 gap-2 mt-3">
-                <MiniStat icon={<Gauge size={14} />} label="Promedio / día" value={`${fmt(actual.promedioPorDia)} hs`} />
-                <MiniStat icon={<BedDouble size={14} />} label="Pernoctes" value={String(actual.pernoctes)} />
-                <MiniStat icon={<Truck size={14} />} label="Días manejó" value={String(actual.diasManejo)} />
-                <MiniStat icon={<Banknote size={14} />} label="Francos trab." value={String(actual.francosTrabajados)} />
+                <MiniStat icon={<Gauge size={15} />} label="Promedio / día" value={`${fmt(actual.promedioPorDia)} hs`} />
+                <MiniStat icon={<BedDouble size={15} />} label="Pernoctes" value={String(actual.pernoctes)} />
+                <MiniStat icon={<Truck size={15} />} label="Días manejó" value={String(actual.diasManejo)} />
+                <MiniStat icon={<Banknote size={15} />} label="Francos trab." value={String(actual.francosTrabajados)} />
                 {actual.feriadosTrabajados > 0 &&
-                  <MiniStat icon={<Sun size={14} />} label="Feriados trab." value={String(actual.feriadosTrabajados)} />}
+                  <MiniStat icon={<Sun size={15} />} label="Feriados trab." value={String(actual.feriadosTrabajados)} />}
               </div>
             </Card>
           </Section>
 
           {/* ─── Comparativa numérica ─── */}
-          <Section delay={320}>
-            <Card title="Comparativa" icon={<TrendingUp size={15} className="text-sky-400" />}>
+          <Section delay={240}>
+            <Card title="Comparativa" icon={<TrendingUp size={16} />} accent="violet">
               <CompareTable periodos={periodos} />
             </Card>
           </Section>
@@ -149,11 +150,14 @@ function Section({ delay, children }: { delay: number; children: React.ReactNode
   )
 }
 
-function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function Card({ title, icon, accent = 'sky', children }: {
+  title: string; icon: React.ReactNode; accent?: Accent; children: React.ReactNode
+}) {
+  const a = ACCENT[accent]
   return (
     <div className="rounded-2xl bg-slate-800/60 border border-slate-700/50 p-4">
-      <div className="flex items-center gap-1.5 mb-3">
-        {icon}
+      <div className="flex items-center gap-2 mb-3">
+        <span className={`inline-flex items-center justify-center rounded-lg p-1.5 ${a.chip} ${a.icon}`}>{icon}</span>
         <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
       </div>
       {children}
@@ -163,33 +167,45 @@ function Card({ title, icon, children }: { title: string; icon: React.ReactNode;
 
 function DeltaBadge({ cur, prev }: { cur: number; prev: number }) {
   const d = cur - prev
-  const pct = prev > 0 ? (d / prev) * 100 : (cur > 0 ? 100 : 0)
   const rounded = Math.round(d * 10) / 10
-  if (Math.abs(rounded) < 0.05) {
+
+  // Sin base de comparación (el período previo no tiene horas): evita el "+2575%" engañoso.
+  if (prev <= 0) {
+    if (cur <= 0) return <div className="text-slate-500 text-xs font-medium">sin comparación</div>
     return (
-      <div className="flex items-center gap-1 text-slate-400 text-sm font-medium">
-        <Minus size={15} /> Igual
+      <div className="flex flex-col items-end text-sky-300">
+        <div className="flex items-center gap-1 text-sm font-bold"><TrendingUp size={16} />+{fmt(rounded)} hs</div>
+        <div className="text-[11px] opacity-80">nuevo · 1er período</div>
       </div>
     )
   }
+  if (Math.abs(rounded) < 0.05) {
+    return <div className="flex items-center gap-1 text-slate-400 text-sm font-medium"><Minus size={15} /> Igual</div>
+  }
   const up = d > 0
+  const pct = (d / prev) * 100
   const color = up ? 'text-sky-300' : 'text-amber-400'
+  // Saltos enormes: mostrar multiplicador ×N en vez de un porcentaje de tres cifras.
+  const sub = Math.abs(pct) >= 300
+    ? `×${(cur / prev).toFixed(1).replace('.', ',')} vs anterior`
+    : `${up ? '+' : ''}${pct.toFixed(0)}% vs anterior`
   return (
     <div className={`flex flex-col items-end ${color}`}>
       <div className="flex items-center gap-1 text-sm font-bold">
         {up ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
         {up ? '+' : ''}{fmt(rounded)} hs
       </div>
-      <div className="text-[11px] opacity-80">{up ? '+' : ''}{pct.toFixed(0)}% vs anterior</div>
+      <div className="text-[11px] opacity-80">{sub}</div>
     </div>
   )
 }
 
-function Kpi({ icon, label, value, accent = 'text-white' }: { icon: React.ReactNode; label: string; value: string; accent?: string }) {
+function Kpi({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: string; accent: Accent }) {
+  const a = ACCENT[accent]
   return (
     <div className="rounded-xl bg-slate-800/80 border border-slate-700/50 p-3">
-      <div className="flex items-center gap-1 text-slate-500">{icon}</div>
-      <div className={`text-xl font-bold mt-1 ${accent}`}>{value}</div>
+      <span className={`inline-flex items-center justify-center rounded-lg p-1.5 ${a.chip} ${a.icon}`}>{icon}</span>
+      <div className={`text-xl font-bold mt-2 tabular-nums ${a.text}`}>{value}</div>
       <div className="text-[11px] text-slate-400">{label}</div>
     </div>
   )
@@ -198,12 +214,14 @@ function Kpi({ icon, label, value, accent = 'text-white' }: { icon: React.ReactN
 function SalaryCard({ est }: { est: SalaryEstimate }) {
   return (
     <div className="rounded-2xl bg-gradient-to-br from-emerald-900/40 to-slate-800/60 border border-emerald-800/40 p-4">
-      <div className="flex items-center gap-1.5 mb-1">
-        <Banknote size={15} className="text-emerald-400" />
+      <div className="flex items-center gap-2 mb-1">
+        <span className="inline-flex items-center justify-center rounded-lg p-1.5 bg-emerald-500/10 text-emerald-400">
+          <Banknote size={16} />
+        </span>
         <h3 className="text-sm font-semibold text-slate-200">Estimación salarial</h3>
       </div>
-      <div className="text-xs text-emerald-300/80">Neto estimado</div>
-      <div className="text-3xl font-bold text-white leading-none mt-0.5">{fmtPesos(est.netoEstimado)}</div>
+      <div className="text-xs text-emerald-300/80 mt-1">Neto estimado</div>
+      <div className="text-3xl font-bold text-white leading-none mt-0.5 tabular-nums">{fmtPesos(est.netoEstimado)}</div>
       <div className="grid grid-cols-3 gap-2 mt-3">
         <SalMini label="Bruto" value={fmtPesos(est.bruto)} />
         <SalMini label="Retenciones" value={`-${fmtPesos(est.retenciones)}`} accent="text-red-300" />
@@ -217,7 +235,7 @@ function SalaryCard({ est }: { est: SalaryEstimate }) {
 function SalMini({ label, value, accent = 'text-white' }: { label: string; value: string; accent?: string }) {
   return (
     <div className="rounded-xl bg-slate-800/80 border border-slate-700/50 px-2.5 py-2">
-      <div className={`text-sm font-bold ${accent}`}>{value}</div>
+      <div className={`text-sm font-bold tabular-nums ${accent}`}>{value}</div>
       <div className="text-[10px] text-slate-400">{label}</div>
     </div>
   )
@@ -225,27 +243,26 @@ function SalMini({ label, value, accent = 'text-white' }: { label: string; value
 
 function MiniStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-xl bg-slate-800/50 border border-slate-700/40 px-3 py-2">
-      <span className="text-slate-500 shrink-0">{icon}</span>
+    <div className="flex items-center gap-2.5 rounded-xl bg-slate-800/50 border border-slate-700/40 px-3 py-2.5">
+      <span className="inline-flex items-center justify-center rounded-lg p-1.5 bg-emerald-500/10 text-emerald-400 shrink-0">{icon}</span>
       <div className="min-w-0">
-        <div className="text-sm font-bold text-white leading-tight">{value}</div>
+        <div className="text-sm font-bold text-white leading-tight tabular-nums">{value}</div>
         <div className="text-[10px] text-slate-400 truncate">{label}</div>
       </div>
     </div>
   )
 }
 
-function Legend({ items }: { items: { c: string; t: string; dashed?: boolean }[] }) {
+function Legend({ items }: { items: { c: string; t: string; dashed?: boolean; line?: boolean }[] }) {
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center mt-1">
+    <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center mt-2">
       {items.map((it, i) => (
         <div key={i} className="flex items-center gap-1.5 text-[11px] text-slate-400">
-          <span className="inline-block rounded-full" style={{
-            width: 10, height: it.dashed ? 0 : 10, borderRadius: 9999,
-            ...(it.dashed
-              ? { borderTop: `2px dashed ${it.c}`, width: 12 }
-              : { background: it.c }),
-          }} />
+          <span className="inline-block" style={
+            it.dashed ? { width: 12, height: 0, borderTop: `2px dashed ${it.c}` }
+            : it.line ? { width: 12, height: 0, borderTop: `2px solid ${it.c}` }
+            : { width: 10, height: 10, borderRadius: 9999, background: it.c }
+          } />
           {it.t}
         </div>
       ))}
@@ -296,7 +313,7 @@ function CompareTable({ periodos }: { periodos: PeriodoStats[] }) {
           <tr className="bg-slate-800/80 text-slate-400">
             <th className="text-left font-medium px-3 py-2 text-xs"></th>
             {periodos.map((p, i) => (
-              <th key={i} className={`text-right font-semibold px-3 py-2 text-xs ${i === lastIdx ? 'text-sky-300' : ''}`}>
+              <th key={i} className={`text-right font-semibold px-3 py-2 text-xs ${i === lastIdx ? 'text-sky-300 bg-sky-500/5' : ''}`}>
                 {p.label}
               </th>
             ))}
@@ -307,7 +324,7 @@ function CompareTable({ periodos }: { periodos: PeriodoStats[] }) {
             <tr key={ri} className="border-t border-slate-700/40">
               <td className="text-left text-slate-400 px-3 py-2 text-xs">{r.label}</td>
               {periodos.map((p, i) => (
-                <td key={i} className={`text-right px-3 py-2 tabular-nums ${i === lastIdx ? 'text-white font-semibold' : 'text-slate-300'}`}>
+                <td key={i} className={`text-right px-3 py-2 tabular-nums ${i === lastIdx ? 'text-white font-semibold bg-sky-500/5' : 'text-slate-300'}`}>
                   {r.get(p)}
                 </td>
               ))}
