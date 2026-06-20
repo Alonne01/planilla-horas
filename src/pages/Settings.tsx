@@ -5,7 +5,7 @@ import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { db, exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros, msSinceCloudBackup, markCloudBackupDone } from '../db/database'
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
-import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
+import { CONVENIOS, isSalaryUser, salarioDesbloqueadoNube, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
 import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube } from '../lib/cloud-backup'
 import { activarRecordatorios, desactivarRecordatorios, notificacionesConcedidas, notificacionesSoportadas, recordatorioHabilitado, setRecordatorioHabilitado, actualizarAgenda, registrarSyncPeriodico } from '../lib/recordatorio'
@@ -629,8 +629,9 @@ export function SettingsPage() {
           )}
         </CollapsibleCard>
 
-        {/* Salario y convenio — visible sólo para el usuario de prueba (easter egg) */}
-        {isSalaryUser(nombre) && (
+        {/* Salario y convenio — visible para el tester (whitelist) o para quien el admin habilitó la
+            proyección desde la nube. Así el usuario habilitado puede cargar/cambiar SU básico. */}
+        {(isSalaryUser(nombre) || salarioDesbloqueadoNube()) && (
           <CollapsibleCard title="Salario y convenio" defaultOpen={false}>
             <Field label="Convenio">
               <div className="space-y-2">

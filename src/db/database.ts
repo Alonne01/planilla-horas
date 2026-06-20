@@ -91,7 +91,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   diagramaInicioMs: 0,
   lineaTrabajo: 'SURFACE_WELL_TESTING',
   proyectosFrecuentes: [],
-  sueldoBasico: 2057223.77,
+  // 0 = sin configurar (cada usuario carga el suyo). Antes era el básico de un empleado puntual, lo que
+  // hacía que un usuario nuevo viera la proyección con un básico ajeno.
+  sueldoBasico: 0,
   sueldoBasicoVigenciaMs: 0,
   convenio: 'CCT_637_11',
   fechaIngresoMs: 0,

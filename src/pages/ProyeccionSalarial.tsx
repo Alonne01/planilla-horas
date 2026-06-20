@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  Construction, Banknote, Receipt, TrendingUp, Minus, Plus, Wallet, Info,
+  Construction, Banknote, TrendingUp, Minus, Plus, Wallet, Info,
   LayoutGrid, BarChart3, ListTree, CalendarRange,
 } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
@@ -11,8 +11,10 @@ import {
 import { calcularHorasDia } from '../lib/calculo-horas'
 import {
   calcularSueldo, configFromSettings, isSalaryUser, salarioDesbloqueadoNube, fmtPesos, convenioLabel, proyectarNeto,
-  type SalaryEstimate, type LineItem,
+  CONVENIOS, formatBasicoInput, parseBasicoInput,
+  type SalaryEstimate, type LineItem, type Convenio,
 } from '../lib/calculo-salarial'
+import type { AppSettings } from '../db/database'
 import { basicoProyectado } from '../lib/paritarias'
 import {
   TendenciaNetoChart, TendenciaAcumuladaChart, ComposicionCard, GananciaDiaCard, MiniDonut, KpiGrid,
@@ -45,7 +47,7 @@ function Oculta() {
 type Tab = 'resumen' | 'analisis' | 'desglose'
 
 function Proyeccion() {
-  const { settings } = useSettings()
+  const { settings, update } = useSettings()
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const [tab, setTab] = useState<Tab>('resumen')
@@ -100,7 +102,7 @@ function Proyeccion() {
           <div className="h-40 rounded-2xl bg-slate-800/60 animate-pulse" style={{ animationDelay: '120ms' }} />
         </div>
       ) : !settings.sueldoBasico ? (
-        <SinBasico />
+        <SinBasico convenioActual={settings.convenio} onGuardar={update} />
       ) : sinDatos ? (
         <div className="px-6 py-16 text-center text-slate-500">
           <Banknote size={40} className="mx-auto mb-3 opacity-40" />
@@ -110,7 +112,7 @@ function Proyeccion() {
       ) : (
         <div className="px-4 py-4 space-y-4">
           {/* Hero del neto — siempre visible */}
-          <HeroNeto est={est!} mes={mes} anio={anio} hsActivas={actual!.total} />
+          <HeroNeto est={est!} settings={settings} mes={mes} anio={anio} hsActivas={actual!.total} />
 
           {/* Pestañas */}
           <div className="sticky top-[52px] z-10 -mx-4 px-4 py-2 bg-slate-900/95 backdrop-blur">
@@ -131,9 +133,9 @@ function Proyeccion() {
 }
 
 // ─── Hero ─────────────────────────────────────────────────────────────────────────
-function HeroNeto({ est, mes, anio, hsActivas }: { est: SalaryEstimate; mes: number; anio: number; hsActivas: number }) {
+function HeroNeto({ est, settings, mes, anio, hsActivas }: { est: SalaryEstimate; settings: any; mes: number; anio: number; hsActivas: number }) {
   const netoAnim = useCountUp(est.netoEstimado)
-  const vhProm = hsActivas > 0 ? est.netoEstimado / hsActivas : 0
+  const vhProm = valorHoraEstable(est, settings, mes, anio, hsActivas)
   return (
     <div className="rounded-2xl bg-gradient-to-br from-emerald-900/50 to-slate-800/60 border border-emerald-800/40 p-5">
       <div className="text-xs text-emerald-300/80 tracking-wide">NETO ESTIMADO · {MESES_ES[mes]} {anio}</div>
@@ -165,7 +167,7 @@ function TabResumen({ est, actual, settings, mes, anio }: {
       )}
 
       <KpiGrid items={[
-        { label: '$/Hora prom.', value: fmtPesos(actual.total > 0 ? est.netoEstimado / actual.total : 0) },
+        { label: '$/Hora prom.', value: fmtPesos(valorHoraEstable(est, settings, mes, anio, actual.total)) },
         { label: '$/Día trabajado', value: fmtPesos(ingresoDia) },
         { label: '% Horas extras', value: `${extraPct.toFixed(0)}%`, accent: 'text-amber-300' },
         { label: 'Variables campo', value: fmtPesos(variablesCampo), accent: 'text-emerald-300' },
@@ -301,12 +303,24 @@ function calcularProyeccion(est: SalaryEstimate, settings: any, mes: number, ani
   const diag = DIAGRAMAS.find(d => d.key === settings.diagrama) ?? DIAGRAMAS[0]
   const ratioTrabajo = diag.diasTrabajo / (diag.diasTrabajo + diag.diasFranco)
   const diasTrabRestantes = Math.round(restantes * ratioTrabajo)
-  const proyectado = proyectarNeto(est, est.diasTrabajados + diasTrabRestantes)
+  const diasTotales = est.diasTrabajados + diasTrabRestantes
+  const proyectado = proyectarNeto(est, diasTotales)
   return {
     pct: transcurridos / totalDias,
     diasTxt: `${transcurridos} de ${totalDias} días · ~${diasTrabRestantes} de trabajo restantes`,
     proyectado,
+    // factor de proyección de días/horas: para estabilizar el "valor hora" (que si no, arranca enorme
+    // al inicio del período porque divide los conceptos fijos mensuales por pocas horas).
+    factor: est.diasTrabajados > 0 ? diasTotales / est.diasTrabajados : 1,
   }
+}
+
+/** Valor hora promedio ESTABLE: usa la proyección (neto del mes completo / horas del mes completo) en el
+ *  período actual; en períodos cerrados, el neto/horas real. Así no arranca gigante al empezar el mes. */
+function valorHoraEstable(est: SalaryEstimate, settings: any, mes: number, anio: number, hsActivas: number): number {
+  const proy = calcularProyeccion(est, settings, mes, anio)
+  if (proy && hsActivas > 0) return proy.proyectado / (hsActivas * proy.factor)
+  return hsActivas > 0 ? est.netoEstimado / hsActivas : 0
 }
 
 // ─── Subcomponentes ─────────────────────────────────────────────────────────────
@@ -332,12 +346,53 @@ function Card({ title, icon, action, children }: { title: string; icon: React.Re
   )
 }
 
-function SinBasico() {
+function SinBasico({ convenioActual, onGuardar }: {
+  convenioActual: Convenio
+  onGuardar: (p: Partial<AppSettings>) => Promise<void>
+}) {
+  const [conv, setConv] = useState<Convenio>(convenioActual || 'CCT_637_11')
+  const [bas, setBas] = useState('')
+  const [busy, setBusy] = useState(false)
+  const valido = parseBasicoInput(bas) > 0
+
+  async function guardar() {
+    if (!valido) return
+    setBusy(true)
+    try { await onGuardar({ convenio: conv, sueldoBasico: parseBasicoInput(bas), sueldoBasicoVigenciaMs: Date.now() }) }
+    finally { setBusy(false) }
+  }
+
   return (
-    <div className="px-6 py-16 text-center text-slate-500">
-      <Receipt size={40} className="mx-auto mb-3 opacity-40" />
-      <p className="text-sm">Falta configurar el sueldo básico.</p>
-      <p className="text-xs text-slate-600 mt-1">Cargá tu convenio y básico en Configuración → Salario.</p>
+    <div className="px-4 py-8">
+      <div className="rounded-2xl bg-gradient-to-br from-emerald-900/40 to-slate-800/60 border border-emerald-800/40 p-5 space-y-4">
+        <div className="text-center">
+          <Banknote size={36} className="mx-auto mb-2 text-emerald-400" />
+          <h2 className="text-base font-bold text-white">Cargá tu sueldo básico</h2>
+          <p className="text-xs text-slate-400 mt-1">Es el básico de tu recibo. Con eso calculamos tu proyección. Lo podés cambiar después en Configuración → Salario.</p>
+        </div>
+        <div>
+          <label className="text-xs text-slate-400 mb-1 block">Convenio</label>
+          <div className="space-y-2">
+            {CONVENIOS.map(c => (
+              <button key={c.key} onClick={() => setConv(c.key)}
+                className={`w-full py-2.5 px-3 rounded-xl text-sm font-medium text-left transition-colors ${conv === c.key ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="text-xs text-slate-400 mb-1 block">Sueldo básico ($)</label>
+          <input type="text" inputMode="decimal" value={bas}
+            onChange={e => setBas(formatBasicoInput(e.target.value))}
+            placeholder="Ej: 2.057.223,77"
+            className="w-full bg-slate-700 text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+        <button onClick={() => void guardar()} disabled={!valido || busy}
+          className="w-full py-3 rounded-xl bg-emerald-600 text-white text-sm font-bold active:bg-emerald-700 disabled:opacity-40">
+          {busy ? 'Guardando…' : 'Guardar y ver mi proyección'}
+        </button>
+      </div>
     </div>
   )
 }
