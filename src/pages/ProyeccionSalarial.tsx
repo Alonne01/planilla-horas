@@ -157,7 +157,7 @@ function HeroNeto({ est, settings, mes, anio, hsActivas, festejo, onToggleFestej
       <div className="text-4xl font-bold text-white leading-none mt-1 tabular-nums"
         style={festejando ? { animation: 'neto-glow 1.2s ease-in-out 2' } : undefined}>
         {festejo
-          ? <SlotMachineMoney value={est.netoEstimado} onSettled={() => setBilletes(true)} />
+          ? <SlotMachineMoney value={est.netoEstimado} nivel={nivel} onSettled={() => setBilletes(true)} />
           : fmtPesos(Math.round(netoAnim))}
       </div>
       <div className="grid grid-cols-3 gap-2 mt-4">

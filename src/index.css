@@ -285,9 +285,27 @@ html.vt-back ::view-transition-new(root) { animation: 190ms ease both vt-slide-l
   60% { transform: translateX(5px); }
   78% { transform: translateX(-3px); }
 }
+@keyframes chispa {
+  0%   { opacity: 0; transform: scale(0.3); }
+  30%  { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0; transform: scale(0.2) translateY(-9px); }
+}
+@keyframes spark-burst {
+  0%   { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--sx, 0), var(--sy, 0)) scale(0.3); }
+}
+@keyframes jackpot-ring {
+  0%   { opacity: 0.9; transform: translate(-50%, -50%) scale(0.3); }
+  100% { opacity: 0;   transform: translate(-50%, -50%) scale(8); }
+}
+@keyframes sparkle-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); }
+  50%      { opacity: 1; transform: scale(1) rotate(45deg); }
+}
 @media (prefers-reduced-motion: reduce) {
   [style*="bill-fall"], [style*="bill-sway"], [style*="coin-spin"], [style*="rays-spin"],
   [style*="festejo-flash"], [style*="festejo-fade"], [style*="jackpot-zoom"],
-  [style*="neto-glow"], [style*="hero-shake"] { animation: none !important; }
+  [style*="neto-glow"], [style*="hero-shake"], [style*="chispa"], [style*="spark-burst"],
+  [style*="jackpot-ring"], [style*="sparkle-twinkle"] { animation: none !important; }
 }
 
