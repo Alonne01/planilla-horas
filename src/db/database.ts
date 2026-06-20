@@ -82,6 +82,9 @@ export interface AppSettings {
   // podaron por antigüedad (>6 meses). Sin esto, podar los meses viejos perdería los francos
   // ganados y no usados. El contador real = este saldo + (ganados − usados en los registros vivos).
   francosCompSaldoBase: number
+  // Al cerrar la carga de un día con cambios sin guardar: si está activo, guarda siempre sin
+  // preguntar; si no, muestra el diálogo "Guardar / Descartar" (con la opción de activarlo).
+  guardarSiempreAlSalir: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -108,6 +111,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   backupCodigo: '',
   backupBloqueado: false,
   francosCompSaldoBase: 0,
+  guardarSiempreAlSalir: false,
 }
 
 class PlanillaDB extends Dexie {

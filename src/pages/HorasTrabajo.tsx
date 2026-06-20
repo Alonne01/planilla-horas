@@ -78,7 +78,7 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const { registros, loading, upsert, remove, reload } = useHoras(mes, anio)
-  const { settings } = useSettings()
+  const { settings, update } = useSettings()
   // El beggar decide su aparición por usuario+código (no por dispositivo). idKeyRef = siempre fresco.
   const idKey = useMemo(() => beggarIdKey(settings.nombreUsuario, settings.backupCodigo), [settings.nombreUsuario, settings.backupCodigo])
   const idKeyRef = useRef(idKey)
@@ -637,6 +637,8 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
           diagramaInicioMs={settings.diagramaInicioMs}
           francosDisponibles={francosDisponibles}
           origin={dialogOrigin}
+          guardarSiempreAlSalir={settings.guardarSiempreAlSalir}
+          onSetGuardarSiempre={(v) => update({ guardarSiempreAlSalir: v })}
           onSave={async (reg) => { await upsert(reg); setSelectedDate(null) }}
           onDelete={async (id) => { await remove(id); setSelectedDate(null) }}
           onClose={() => setSelectedDate(null)}

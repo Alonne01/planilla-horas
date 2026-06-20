@@ -26,6 +26,10 @@ interface Props {
   ocultarCierre?: boolean
   /** Centro (viewport) de la celda tocada → el diálogo CRECE desde ahí ("container transform"). */
   origin?: { x: number; y: number } | null
+  /** Preferencia: al salir con cambios sin guardar, guardar siempre sin preguntar. */
+  guardarSiempreAlSalir?: boolean
+  /** Persiste la preferencia "guardar siempre al salir" (efecto inmediato). */
+  onSetGuardarSiempre?: (v: boolean) => void
 }
 
 function timeToMs(base: Date, hhmm: string): number | null {
@@ -100,7 +104,7 @@ function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
   return null
 }
 
-export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose, onTourReady, ocultarCierre, origin }: Props) {
+export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose, onTourReady, ocultarCierre, origin, guardarSiempreAlSalir, onSetGuardarSiempre }: Props) {
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
   const esFeriadoHoy = esFeriadoNacional(fecha.getTime())
   const nombreFeriadoHoy = nombreFeriado(fecha.getTime())
@@ -288,6 +292,21 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
     setTimeout(onClose, grow ? 220 : 230)
   }
 
+  // ── Cambios sin guardar ──────────────────────────────────────────────────────
+  // Snapshot de los campos editables en el 1er render; si el estado actual difiere, hay cambios.
+  const camposActuales = JSON.stringify({ lugar, e1, s1, pernocte, viajeActivo, viajeModo, kmManual, horasManual, maneja, proyectoObs, subFranco })
+  const snapshotInicial = useRef(camposActuales)
+  const hayCambios = snapshotInicial.current !== camposActuales
+  const [showConfirmExit, setShowConfirmExit] = useState(false)
+
+  // Punto único de salida (backdrop, X, Cancelar). Sin cambios → cierra. Con cambios → según la
+  // preferencia: "guardar siempre" guarda directo (si es válido); si no, abre el diálogo.
+  function requestClose() {
+    if (!hayCambios) { handleClose(); return }
+    if (guardarSiempreAlSalir && !isPartialEntry) { handleSave(); return }
+    setShowConfirmExit(true)
+  }
+
   const labelDia = fecha.toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long' })
   // Fechas cortas para el ejemplo del aviso de turno noche (salida 00:00)
   const hoyCorto = fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
@@ -297,7 +316,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   return (
     <div
       className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 ${isClosing ? 'animate-[backdrop-fade-out_230ms_ease_both]' : 'animate-[backdrop-fade-in_200ms_ease_both]'}`}
-      onClick={handleClose}
+      onClick={requestClose}
     >
       <div
         ref={panelRef}
@@ -323,7 +342,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               </span>
             )}
           </div>
-          {!ocultarCierre && <button onClick={handleClose} className="text-slate-400 hover:text-white p-2"><X size={20} /></button>}
+          {!ocultarCierre && <button onClick={requestClose} className="text-slate-400 hover:text-white p-2"><X size={20} /></button>}
         </div>
 
         {/* ── Recordatorio: el día anterior fue turno noche (se auto-oculta a los 5 s) ── */}
@@ -624,13 +643,56 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               Eliminar
             </button>
           )}
-          {!ocultarCierre && <button onClick={handleClose} className="flex-1 py-3 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium transition-transform active:scale-95">Cancelar</button>}
+          {!ocultarCierre && <button onClick={requestClose} className="flex-1 py-3 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium transition-transform active:scale-95">Cancelar</button>}
           <button data-tour="dlg-guardar" onClick={handleSave} disabled={isPartialEntry}
             className={`flex-1 py-3 rounded-xl text-sm font-bold transition-[transform,background-color,color] active:scale-95 disabled:active:scale-100 ${isPartialEntry ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
             Guardar
           </button>
         </div>
       </div>
+
+      {/* ── Confirmar salida con cambios sin guardar ── */}
+      {showConfirmExit && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-5 animate-[backdrop-fade-in_150ms_ease_both]"
+          onClick={e => { e.stopPropagation(); setShowConfirmExit(false) }}
+        >
+          <div
+            className="w-full max-w-xs bg-slate-800 rounded-2xl p-5 shadow-2xl ring-1 ring-white/10 animate-[dialog-slide-in_180ms_ease_both]"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-white">¿Guardar los cambios?</h3>
+            <p className="text-xs text-slate-400 mt-1">Hiciste cambios en este día y todavía no los guardaste.</p>
+            <label className="flex items-center gap-2.5 mt-4 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={!!guardarSiempreAlSalir}
+                onChange={e => onSetGuardarSiempre?.(e.target.checked)}
+                className="w-4 h-4 rounded accent-blue-600 shrink-0"
+              />
+              <span className="text-xs text-slate-300">Guardar siempre al salir (no volver a preguntar)</span>
+            </label>
+            {isPartialEntry && (
+              <p className="text-[11px] text-red-400 mt-3">Para guardar este día ingresá entrada y salida; si no, sólo podés descartar.</p>
+            )}
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => { setShowConfirmExit(false); handleClose() }}
+                className="flex-1 py-2.5 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium transition-transform active:scale-95"
+              >
+                Descartar
+              </button>
+              <button
+                onClick={() => { setShowConfirmExit(false); handleSave() }}
+                disabled={isPartialEntry}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-transform active:scale-95 ${isPartialEntry ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

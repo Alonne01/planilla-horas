@@ -36,6 +36,25 @@ function dateToExcelSerial(d: Date): number {
   return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000) + 25569
 }
 
+/**
+ * Antepone `prefijo` (p. ej. "franco trabajado") a la observación SIN duplicarlo: si el usuario ya
+ * escribió el rótulo a mano (texto heredado de la planilla vieja, "FRANCO TRABAJADO - PAD3"), se
+ * queda con el resto ("PAD3") y reusa el prefijo canónico. Insensible a mayúsculas; tolera
+ * separadores -, –, —, : tras el rótulo.
+ */
+function conPrefijoSinDuplicar(prefijo: string, obs: string): string {
+  const t = (obs ?? '').trim()
+  // Sólo se considera "rótulo redundante" si el prefijo está seguido por un separador o el fin del
+  // texto (límite de palabra): así "franco trabajado - PAD3" se deduplica pero "francote …" o
+  // "feriado nacional movido" NO se recortan por error.
+  const tieneRotulo = t.toLowerCase().startsWith(prefijo.toLowerCase()) &&
+    (t.length === prefijo.length || ' \t-–—:'.includes(t[prefijo.length]))
+  const resto = tieneRotulo
+    ? t.slice(prefijo.length).replace(/^[\s\-–—:]+/, '').trim()
+    : t
+  return resto ? `${prefijo} - ${resto}` : prefijo
+}
+
 function msToDecimalHours(ms: number | null | undefined): number | null {
   if (!ms) return null
   const d = new Date(ms)
@@ -196,8 +215,8 @@ function buildRowParts(
            cEmpty(`E${n}`, s.E),                     cEmpty(`F${n}`, s.F)]
       const obsBase = reg.observaciones ?? ''
       const obs = isFrancoTrab
-        ? `franco trabajado${obsBase ? ' - ' + obsBase : ''}`
-        : (obsBase ? `feriado trabajado - ${obsBase}` : 'feriado trabajado')
+        ? conPrefijoSinDuplicar('franco trabajado', obsBase)
+        : conPrefijoSinDuplicar('feriado trabajado', obsBase)
       return [
         [cellA, cellB, cC, cD, cE, cF].join(''),
         [cStr(`H${n}`, s.H, fmtViaje(reg.horasViaje)), cEmpty(`I${n}`, s.I),
@@ -216,7 +235,7 @@ function buildRowParts(
       [cellA, cellB, cStr(`C${n}`, s.C, '-'), cEmpty(`D${n}`, s.D), cEmpty(`E${n}`, s.E), cStr(`F${n}`, s.F, '-')].join(''),
       [cStr(`H${n}`, s.H, '-'), cEmpty(`I${n}`, s.I),
         cStr(`J${n}`, s.J, '-'), cStr(`K${n}`, s.K, '-'), cStr(`L${n}`, s.L, '-'), cStr(`M${n}`, s.M, '-'),
-        cStr(`N${n}`, s.N, etiqueta + (reg.observaciones ? ` - ${reg.observaciones}` : ''))].join(''),
+        cStr(`N${n}`, s.N, conPrefijoSinDuplicar(etiqueta, reg.observaciones ?? ''))].join(''),
     ]
   }
 
@@ -237,8 +256,8 @@ function buildRowParts(
     : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
        cEmpty(`E${n}`, s.E),                     cEmpty(`F${n}`, s.F)]
   let obs = reg.observaciones ?? ''
-  if (reg.esFrancoTrabajado) obs = `franco trabajado${obs ? ' - ' + obs : ''}`
-  else if (reg.esFeriadoTrabajado) obs = `feriado trabajado${obs ? ' - ' + obs : ''}`
+  if (reg.esFrancoTrabajado) obs = conPrefijoSinDuplicar('franco trabajado', obs)
+  else if (reg.esFeriadoTrabajado) obs = conPrefijoSinDuplicar('feriado trabajado', obs)
   // Día de CAMPO: el turno trabajado (TD/TN) va al final de la observación. En Base no
   // (siempre es día); las ausencias / francos no trabajados no llegan a esta rama.
   const sufTurno = sufijoTurnoCampo(reg)
