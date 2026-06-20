@@ -1,16 +1,15 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, lazy, Suspense } from "react"
 import { Clock, Settings2, Banknote, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X, Database, Cloud, Users } from "lucide-react"
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
-import { ProyeccionSalarialPage } from "./pages/ProyeccionSalarial"
 import { AdminPage } from "./pages/Admin"
-import { isSalaryUser, esAdminNube, esAdminCodigo2Ok } from "./lib/calculo-salarial"
+import { isSalaryUser, esAdminNube, salarioDesbloqueadoNube, marcarSalarioDesbloqueadoNube } from "./lib/calculo-salarial"
 import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
-import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, marcarAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, type AppConfig } from "./lib/cloud-backup"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, loginAdmin, asegurarAuthAdmin, deviceIdLocal, reclamarSalaryDevice, revocarSalaryConflicto, miDocIdNube, type AppConfig } from "./lib/cloud-backup"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 import { setupHecho, marcarSetupHecho, tutorialVisto, marcarTutorialVisto, diagramaConfirmado, marcarDiagramaConfirmado, sectorConfirmado, marcarSectorConfirmado } from "./onboarding/tutorial"
@@ -23,6 +22,10 @@ import { RecordatorioToast } from "./components/RecordatorioToast"
 import { actualizarAgenda, enVentana, recordatorioDescartado, descartarRecordatorio, notificacionesConcedidas, registrarSyncPeriodico, recordatorioHabilitado } from "./lib/recordatorio"
 import { BroadcastToast } from "./components/BroadcastToast"
 import { Caracol } from "./components/Caracol"
+
+// Lazy: la proyección salarial (y su dependencia pesada recharts) sólo se descarga al abrir la
+// pestaña Sueldo, así no infla el bundle inicial del resto de los usuarios.
+const ProyeccionSalarialPage = lazy(() => import("./pages/ProyeccionSalarial").then(m => ({ default: m.ProyeccionSalarialPage })))
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches ||
@@ -74,10 +77,11 @@ function AppContent() {
   // (15 toques) si el nombre es la palabra clave, y queda desbloqueada (persistida). Ya NO se
   // re-chequea en cada cambio de pestaña: ese getSettings() async hacía parpadear el nav inferior.
   const [showSalary, setShowSalary] = useState(() => {
-    try { return localStorage.getItem(SALARY_UNLOCK_KEY) === "1" } catch { return false }
+    try { return localStorage.getItem(SALARY_UNLOCK_KEY) === "1" || salarioDesbloqueadoNube() } catch { return false }
   })
   // Pantalla de admin (padrón) desbloqueada: persistida, independiente del salario.
   const [showAdmin, setShowAdmin] = useState(esAdminDispositivo)
+  const [showAdminLogin, setShowAdminLogin] = useState(false)
   const [recovered, setRecovered] = useState(false)
   const [persistDenied, setPersistDenied] = useState(false)
   const [autoBackupDue, setAutoBackupDue] = useState(false)
@@ -196,6 +200,23 @@ function AppContent() {
         const msg = await leerMensajeIndividual(s.nombreUsuario, s.backupCodigo)
         if (!msg) return
         if (msg.beggar) setBeggarUser(true) // donador activado para este usuario por el admin
+        // Proyección salarial — device-binding (TOFU): el ALTA la da el admin (salaryUnlock); ESTE
+        // dispositivo la reclama una vez. Un 2º dispositivo (otro deviceId) o un conflicto marcado la
+        // revocan para todos; cambiar el código ⇒ docId nuevo sin permiso ⇒ revocado solo.
+        const habilitarSalario = (on: boolean) => {
+          marcarSalarioDesbloqueadoNube(on)
+          if (on) setShowSalary(true)
+          else if (localStorage.getItem(SALARY_UNLOCK_KEY) !== "1") setShowSalary(false)
+        }
+        if (msg.salaryUnlock && !msg.salaryConflict) {
+          const myDev = deviceIdLocal()
+          const docId = await miDocIdNube(s.nombreUsuario, s.backupCodigo)
+          if (!msg.salaryDeviceId) { await reclamarSalaryDevice(docId, myDev); habilitarSalario(true) }      // 1er device
+          else if (msg.salaryDeviceId === myDev) habilitarSalario(true)                                      // device autorizado
+          else { await revocarSalaryConflicto(docId); habilitarSalario(false) }                              // 2º device → revoca a ambos
+        } else {
+          habilitarSalario(false)
+        }
         if (msg.titulo || msg.cuerpo) {
           let visto = ''
           try { visto = localStorage.getItem(MSG_IND_VISTO_KEY) ?? '' } catch { /* ignore */ }
@@ -381,10 +402,11 @@ function AppContent() {
   async function desbloquearAdminSecreto() {
     try {
       const s = await getSettings()
-      if (esAdminNube(s.nombreUsuario, s.backupCodigo) && await esAdminCodigo2Ok()) {
-        marcarAdminDispositivo()
-        setShowAdmin(true)
-      }
+      // Pre-gate de identidad: el login admin sólo aparece para Nicolas Vazquez + 000000. La autoridad
+      // real la da el login Firebase Auth + las reglas (request.auth.uid).
+      if (!esAdminNube(s.nombreUsuario, s.backupCodigo)) return
+      if (esAdminDispositivo() && await asegurarAuthAdmin()) setShowAdmin(true) // sesión ya activa
+      else setShowAdminLogin(true)                                              // pedir login
     } catch { /* ignore */ }
   }
 
@@ -552,7 +574,11 @@ function AppContent() {
         {tab === "horas" && <HorasTrabajoPage beggarActivo={config.beggarActivo || beggarUser} onAbrirTutorial={() => setShowTutorial(true)} />}
         {tab === "analytics" && <AnalyticsPage />}
         {tab === "settings" && <SettingsPage />}
-        {tab === "salary" && showSalary && <ProyeccionSalarialPage />}
+        {tab === "salary" && showSalary && (
+          <Suspense fallback={<div className="px-4 py-16 text-center text-slate-500 text-sm">Cargando…</div>}>
+            <ProyeccionSalarialPage />
+          </Suspense>
+        )}
         {tab === "admin" && showAdmin && <AdminPage />}
       </div>
 
@@ -606,6 +632,55 @@ function AppContent() {
       {showDiagrama && !showWelcome && !showSector && <DiagramaSetup onDone={diagramaDone} />}
       {showSector && !showWelcome && <SectorSetup onDone={sectorDone} />}
       {showWelcome && <WelcomeSetup onDone={welcomeDone} />}
+
+      {showAdminLogin && (
+        <AdminLoginModal
+          onClose={() => setShowAdminLogin(false)}
+          onSuccess={() => { setShowAdminLogin(false); setShowAdmin(true) }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Login del admin (Firebase Auth email/password). Solo se llega acá tras el gesto del caracol con la
+ *  identidad correcta (Nicolas Vazquez + 000000). El acceso real lo dan las reglas con el UID. */
+function AdminLoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [email, setEmail] = useState("")
+  const [pass, setPass] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(false)
+
+  async function entrar() {
+    if (!email.trim() || !pass) return
+    setBusy(true); setErr(false)
+    const ok = await loginAdmin(email, pass)
+    setBusy(false)
+    if (ok) onSuccess()
+    else setErr(true)
+  }
+
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/60" onClick={busy ? undefined : onClose}>
+      <div className="w-full max-w-xs rounded-2xl border border-slate-700 bg-slate-800 p-4 space-y-3" onClick={e => e.stopPropagation()}>
+        <p className="text-sm font-bold text-white">Acceso de administrador</p>
+        <input
+          type="email" inputMode="email" autoComplete="username" value={email}
+          onChange={e => setEmail(e.target.value)} placeholder="Email"
+          className="w-full bg-slate-700 text-white rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <input
+          type="password" autoComplete="current-password" value={pass}
+          onChange={e => setPass(e.target.value)} placeholder="Contraseña"
+          onKeyDown={e => { if (e.key === "Enter") void entrar() }}
+          className="w-full bg-slate-700 text-white rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        {err && <p className="text-[11px] text-red-300">Credenciales incorrectas o sin conexión.</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} disabled={busy} className="px-3 py-1.5 text-xs font-medium text-slate-300 rounded-lg bg-slate-700 active:bg-slate-600 disabled:opacity-50">Cancelar</button>
+          <button onClick={() => void entrar()} disabled={busy || !email.trim() || !pass} className="px-3 py-1.5 text-xs font-bold text-white rounded-lg bg-blue-600 active:bg-blue-700 disabled:opacity-50">{busy ? "Entrando…" : "Entrar"}</button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -9,6 +9,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // El ADMIN se autentica con Firebase Auth (email/password).
+    // PEGAR ACA el UID de la cuenta admin (Firebase -> Authentication -> Users -> copiar UID).
+    // Las escrituras de control (config / difusion / campos admin de mensajes) exigen este UID.
+    function esAdmin() {
+      return request.auth != null
+        && request.auth.uid == 'comWF8BlxMXEYPoEbzy27LkM2fp1';
+    }
+
     // Respaldos CIFRADOS (AES-GCM; id = SHA-256("usuario:codigo")).
     // get si, list no; delete si (para migrar un respaldo cuando el usuario corrige su nombre;
     // el id requiere nombre+codigo, no es enumerable). create/update exige los campos + tope ~900 KB.
@@ -44,7 +52,8 @@ service cloud.firestore {
       allow read: if true;
       allow delete: if false;
       allow create, update: if
-        request.resource.data.keys().hasOnly([
+        esAdmin()
+        && request.resource.data.keys().hasOnly([
           'beggarActivo', 'difusionId', 'difusionTitulo',
           'difusionCuerpo', 'difusionCreatedAt', 'updatedAt'
         ])
@@ -69,7 +78,8 @@ service cloud.firestore {
       allow read: if true;
       allow update, delete: if false;
       allow create: if
-        request.resource.data.keys().hasOnly(['titulo', 'cuerpo', 'createdAt'])
+        esAdmin()
+        && request.resource.data.keys().hasOnly(['titulo', 'cuerpo', 'createdAt'])
         && request.resource.data.titulo is string
         && request.resource.data.titulo.size() < 300
         && request.resource.data.cuerpo is string
@@ -77,25 +87,57 @@ service cloud.firestore {
     }
 
     // Doc por-usuario (admin <-> un usuario). id = hash(usuario:codigo) del destinatario.
-    // Lleva el mensaje individual (titulo/cuerpo/recibidoAt) Y el flag `beggar` (donador por-usuario).
+    // Lleva el mensaje individual (titulo/cuerpo/recibidoAt), el flag `beggar` (donador por-usuario) y
+    // `salaryUnlock` (proyección salarial habilitada por el admin).
     // get si (el usuario lee el suyo / el admin lo lee por el id del padron). list no.
     match /mensajes/{id} {
+      // Validacion de shape/tamano (sobre el doc resultante del merge).
+      function tiposOk() {
+        return request.resource.data.keys().hasOnly([
+            'id', 'titulo', 'cuerpo', 'createdAt', 'recibidoAt',
+            'beggar', 'salaryUnlock', 'salaryDeviceId', 'salaryConflict'
+          ])
+          && (!('titulo' in request.resource.data)
+            || (request.resource.data.titulo is string && request.resource.data.titulo.size() < 300))
+          && (!('cuerpo' in request.resource.data)
+            || (request.resource.data.cuerpo is string && request.resource.data.cuerpo.size() < 4000))
+          && (!('beggar' in request.resource.data)
+            || request.resource.data.beggar is bool)
+          && (!('salaryUnlock' in request.resource.data)
+            || request.resource.data.salaryUnlock is bool)
+          && (!('salaryDeviceId' in request.resource.data)
+            || (request.resource.data.salaryDeviceId is string && request.resource.data.salaryDeviceId.size() < 200))
+          && (!('salaryConflict' in request.resource.data)
+            || request.resource.data.salaryConflict is bool);
+      }
+
       allow get: if true;
       allow list, delete: if false;
-      allow create, update: if
-        request.resource.data.keys().hasOnly(['id', 'titulo', 'cuerpo', 'createdAt', 'recibidoAt', 'beggar'])
-        && (
-          !('titulo' in request.resource.data)
-          || (request.resource.data.titulo is string && request.resource.data.titulo.size() < 300)
+
+      // UPDATE: el admin puede tocar todo; el usuario solo recibidoAt / salaryDeviceId / salaryConflict
+      // (y salaryUnlock solo puede quedar igual o ir a false = revocar; nunca prenderlo).
+      allow update: if tiposOk() && (
+        esAdmin()
+        || (
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['recibidoAt', 'salaryDeviceId', 'salaryConflict', 'salaryUnlock'])
+          && (
+            !('salaryUnlock' in request.resource.data)
+            || request.resource.data.salaryUnlock == false
+            || request.resource.data.salaryUnlock == resource.data.salaryUnlock
+          )
         )
-        && (
-          !('cuerpo' in request.resource.data)
-          || (request.resource.data.cuerpo is string && request.resource.data.cuerpo.size() < 4000)
+      );
+
+      // CREATE: el admin crea el mensaje/alta; el usuario solo puede crear con sus campos, sin nacer con
+      // salaryUnlock ni beggar prendidos.
+      allow create: if tiposOk() && (
+        esAdmin()
+        || (
+          (!('salaryUnlock' in request.resource.data) || request.resource.data.salaryUnlock == false)
+          && (!('beggar' in request.resource.data) || request.resource.data.beggar == false)
         )
-        && (
-          !('beggar' in request.resource.data)
-          || request.resource.data.beggar is bool
-        );
+      );
     }
 
     // Sugerencias (usuario -> admin). id = timestamp. Texto libre EN CLARO.

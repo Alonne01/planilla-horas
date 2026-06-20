@@ -130,13 +130,56 @@ function registrarOperacionNube(): void {
   try { localStorage.setItem(OPS_KEY, `${hoyKey()}|${opsHoy() + 1}`) } catch { /* ignore */ }
 }
 
+let _app: FirebaseApp | null = null
+function getApp(): FirebaseApp {
+  if (!_app) _app = initializeApp(firebaseConfig)
+  return _app
+}
 let _db: Firestore | null = null
 function getDb(): Firestore {
-  if (!_db) {
-    const app: FirebaseApp = initializeApp(firebaseConfig)
-    _db = getFirestore(app)
-  }
+  if (!_db) _db = getFirestore(getApp())
   return _db
+}
+
+// ── Auth del ADMIN (Firebase Auth email/password) ───────────────────────────────
+// El acceso de admin se autentica de verdad (no solo candado client-side): las reglas de Firestore
+// exigen el UID del admin para escribir config/difusión y los campos de control de `mensajes`
+// (beggar/salaryUnlock). `firebase/auth` se carga con import DINÁMICO → no infla el bundle de los
+// usuarios comunes (solo lo baja el dispositivo que abre el login admin). El flag UI sincrónico es el
+// mismo ADMIN_KEY (esAdminDispositivo): se setea al loguear y se limpia al desloguear; la AUTORIDAD real
+// la da el token en cada escritura (si la sesión Auth expiró, la escritura falla → re-login).
+let _auth: import('firebase/auth').Auth | null = null
+async function getAuthLazy(): Promise<import('firebase/auth').Auth> {
+  if (!_auth) {
+    const { getAuth } = await import('firebase/auth')
+    _auth = getAuth(getApp())
+  }
+  return _auth
+}
+/** Inicia sesión admin. Devuelve true si las credenciales son válidas. */
+export async function loginAdmin(email: string, password: string): Promise<boolean> {
+  try {
+    const { signInWithEmailAndPassword } = await import('firebase/auth')
+    await signInWithEmailAndPassword(await getAuthLazy(), email.trim(), password)
+    marcarAdminDispositivo()
+    return true
+  } catch { return false }
+}
+/** Cierra la sesión admin (limpia el token y el flag UI). */
+export async function logoutAdmin(): Promise<void> {
+  try { const { signOut } = await import('firebase/auth'); await signOut(await getAuthLazy()) } catch { /* ignore */ }
+  try { localStorage.removeItem(ADMIN_KEY) } catch { /* ignore */ }
+}
+/** Precalienta el auth y espera a que se restaure la sesión persistida. true si hay admin logueado. */
+export async function asegurarAuthAdmin(): Promise<boolean> {
+  try {
+    const auth = await getAuthLazy()
+    if (auth.currentUser) return true
+    const { onAuthStateChanged } = await import('firebase/auth')
+    return await new Promise<boolean>(resolve => {
+      const unsub = onAuthStateChanged(auth, u => { unsub(); resolve(!!u) })
+    })
+  } catch { return false }
 }
 
 /** Usuario no vacío + código de exactamente 6 dígitos. */
@@ -597,6 +640,12 @@ export interface MensajeIndividual {
   recibidoAt: number
   /** Donador (beggar) activado para ESTE usuario por el admin (aunque esté apagado para todos). */
   beggar?: boolean
+  /** Proyección salarial habilitada para ESTE usuario por el admin (override de la whitelist). */
+  salaryUnlock?: boolean
+  /** Device que reclamó el permiso salarial (TOFU). '' = sin reclamar. Lo escribe el USUARIO. */
+  salaryDeviceId?: string
+  /** Se detectó un 2º dispositivo con estas credenciales → revocado hasta el re-alta del admin. */
+  salaryConflict?: boolean
 }
 
 function parseMensaje(id: string, x: Record<string, unknown>): MensajeIndividual {
@@ -607,6 +656,9 @@ function parseMensaje(id: string, x: Record<string, unknown>): MensajeIndividual
     createdAt: typeof x.createdAt === 'number' ? x.createdAt : 0,
     recibidoAt: typeof x.recibidoAt === 'number' ? x.recibidoAt : 0,
     beggar: x.beggar === true,
+    salaryUnlock: x.salaryUnlock === true,
+    salaryDeviceId: typeof x.salaryDeviceId === 'string' ? x.salaryDeviceId : '',
+    salaryConflict: x.salaryConflict === true,
   }
 }
 
@@ -627,6 +679,47 @@ export async function setBeggarUsuario(docId: string, activo: boolean): Promise<
   await setDoc(doc(getDb(), MENSAJES, docId), { beggar: activo }, { merge: true })
   registrarOperacionNube()
   contarUso(0, 1)
+}
+
+/** [admin] Habilita/deshabilita la PROYECCIÓN SALARIAL para un usuario puntual (override de la
+ *  whitelist `isSalaryUser`). Al ACTIVAR (re-alta) limpia el binding de dispositivo y el conflicto, para
+ *  permitir que el dispositivo correcto reclame de nuevo. Requiere admin autenticado (reglas). */
+export async function setSalaryUnlockUsuario(docId: string, activo: boolean): Promise<void> {
+  const data: Record<string, unknown> = { salaryUnlock: activo }
+  if (activo) { data.salaryDeviceId = ''; data.salaryConflict = false }
+  await setDoc(doc(getDb(), MENSAJES, docId), data, { merge: true })
+  registrarOperacionNube()
+  contarUso(0, 1)
+}
+
+// ── Device-binding del salary calc (atado a UN dispositivo, sin login del usuario) ───────────────
+const DEVICE_ID_KEY = 'planilla-device-id'
+/** UUID estable del dispositivo, en localStorage. NO se exporta en el backup: restaurar en otro
+ *  teléfono produce otro id → dispara el conflicto que revoca el permiso salarial. */
+export function deviceIdLocal(): string {
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY)
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem(DEVICE_ID_KEY, id) }
+    return id
+  } catch { return 'no-storage' }
+}
+
+/** docId del mensaje propio (= hash(usuario:código)). Para que la app lea/escriba su binding. */
+export async function miDocIdNube(usuario: string, codigo: string): Promise<string> {
+  return computeDocId(usuario, codigo)
+}
+
+/** [usuario] Reclama el binding del salary calc para este dispositivo (TOFU; solo si estaba sin reclamar). */
+export async function reclamarSalaryDevice(docId: string, deviceId: string): Promise<void> {
+  try { await setDoc(doc(getDb(), MENSAJES, docId), { salaryDeviceId: deviceId }, { merge: true }); contarUso(0, 1) }
+  catch { /* best-effort */ }
+}
+
+/** [usuario] Revoca el permiso salarial al detectar un 2º dispositivo (apaga para todos; el original se
+ *  entera en su próxima apertura). Solo PONE salaryUnlock=false (las reglas no dejan al usuario prenderlo). */
+export async function revocarSalaryConflicto(docId: string): Promise<void> {
+  try { await setDoc(doc(getDb(), MENSAJES, docId), { salaryUnlock: false, salaryConflict: true }, { merge: true }); contarUso(0, 1) }
+  catch { /* best-effort */ }
 }
 
 /** [admin] Lee el mensaje individual + su acuse para un docId (para mostrar "Recibido hace X"). */

@@ -14,8 +14,27 @@ import { calcularHorasDia, esDiaNoTrabajado, horasViajeSeparadas, type LineaTrab
 export type Convenio = 'CCT_637_11' | 'CCT_644_12'
 export type TipoTurno = 'NINGUNO' | 'TURNO_A' | 'TURNO_B' | 'TURNO_S'
 
-/** Tope previsional ANSES (abril 2026). Escala ~mensual: actualizar cuando cambie. */
-const TOPE_ANSES = 4_162_912.55
+/** Tope previsional ANSES por mes (movilidad mensual). Verificado: jubilación del recibo ÷ 0,11.
+ *  Meses sin entrada → último valor conocido (proyección plana); default abril 2026 (preserva el
+ *  comportamiento histórico del 644, verificado al centavo). Recalibrar al cambiar la movilidad. */
+function topeAnses(periodoYm: number): number {
+  if (periodoYm >= 2026 * 12 + 4) return 4_303_619      // may-2026 en adelante
+  if (periodoYm === 2026 * 12 + 3) return 4_162_912.55  // abr-2026
+  if (periodoYm === 2026 * 12 + 2) return 4_045_590.45  // mar-2026
+  return 4_162_912.55                                    // default
+}
+
+/** Impuesto a las Ganancias (4ª cat.) — recta efectiva calibrada a los recibos 04-05/2026.
+ *  Ganancias nominal = MARGINAL × max(0, baseImponible − UMBRAL), base = remunerativo − aportes de ley.
+ *  El recibo reintegra exacto la MITAD como no-remunerativo "Vianda complementaria IG" (cód 42100), por
+ *  lo que el impacto neto sobre el cobro es −Ganancias/2. NO modela devoluciones/ajustes anuales ni SAC.
+ *  Recalibrar (2 puntos → recta) cuando haya nuevos recibos. */
+const GANANCIAS_MARGINAL = 0.27632
+const GANANCIAS_UMBRAL = 6_258_045
+
+/** Conteo de viandas por día (calibrado recibos 04-05/2026; conteo operativo, aproximado). */
+const VIANDA_ADIC_FACTOR = 1.85  // viandas adicionales por día de campo
+const DESAYUNO_FACTOR = 1.5      // desayunos/meriendas por día trabajado
 
 // CCT 644/12 — escenario fijo de WENLEN (servicios especiales en Vaca Muerta).
 // Verificado contra 13 recibos (mar-2025 → abr-2026): el operario SIEMPRE cobra
@@ -70,6 +89,20 @@ export function isSalaryUser(nombre: string | undefined | null): boolean {
   return SALARY_WHITELIST.includes(normalizar(nombre))
 }
 
+// El admin puede habilitar la proyección salarial a un usuario puntual desde la nube (campo
+// `salaryUnlock` en su mensaje individual). App.tsx lo lee al abrir y lo persiste localmente acá; el
+// gate de la pantalla lo respeta. Es obfuscación del cliente (igual que el resto), no auth real.
+const SALARY_ADMIN_KEY = 'planilla-salary-admin'
+export function salarioDesbloqueadoNube(): boolean {
+  try { return localStorage.getItem(SALARY_ADMIN_KEY) === '1' } catch { return false }
+}
+export function marcarSalarioDesbloqueadoNube(activo: boolean): void {
+  try {
+    if (activo) localStorage.setItem(SALARY_ADMIN_KEY, '1')
+    else localStorage.removeItem(SALARY_ADMIN_KEY)
+  } catch { /* ignore */ }
+}
+
 // ─── Gate de la pantalla de admin (padrón) ───────────────────────────────────
 // Identidad sentinela para desbloquear SÓLO la pantalla de admin (no el salario): nombre
 // "Nicolas Vazquez" + código "000000". Combinado con el gesto de 3 toques al caracol.
@@ -79,34 +112,9 @@ export function esAdminNube(nombre: string | undefined | null, codigo: string | 
   return normalizar(nombre ?? '') === ADMIN_NOMBRE && (codigo ?? '').trim() === ADMIN_CODIGO
 }
 
-// SEGUNDO factor del admin: además de nombre "Nicolas Vazquez" + 000000 + 3 toques al caracol, hay que
-// escribir un código en el campo extra "Código" (aparece sólo al cumplir esAdminNube). El código NO
-// está en el bundle en texto plano: sólo guardamos su HASH PBKDF2-SHA256 (150k iteraciones, salt fijo);
-// al desbloquear se hashea lo tipeado y se compara. Así no es grep-eable ni reversible al instante.
-// OJO: sigue siendo obfuscación del CLIENTE, NO auth real — un técnico puede saltear el candado (estado
-// del cliente) o ir directo a Firestore. Para exclusividad real: Firebase Auth + reglas por UID.
-// Es estado de módulo (no se persiste): lo setea Settings al tipear y lo lee App al validar el gesto.
-const ADMIN_CODIGO_2_HASH = 'cgAL0G6dsPJGQS7BUi-wYcrh9DXIYkJKKhLLUe2PRBE'
-let _adminCodigo2 = ''
-export function setAdminCodigo2(c: string | undefined | null): void { _adminCodigo2 = (c ?? '').trim() }
-
-async function hashCodigoAdmin(codigo: string): Promise<string> {
-  const enc = new TextEncoder()
-  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(codigo), 'PBKDF2', false, ['deriveBits'])
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: enc.encode('planilla-admin-2:v1'), iterations: 150_000, hash: 'SHA-256' },
-    keyMaterial, 256,
-  )
-  const bytes = new Uint8Array(bits)
-  let bin = ''
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-export async function esAdminCodigo2Ok(): Promise<boolean> {
-  if (!/^\d{4,8}$/.test(_adminCodigo2)) return false
-  try { return (await hashCodigoAdmin(_adminCodigo2)) === ADMIN_CODIGO_2_HASH } catch { return false }
-}
+// SEGUNDO factor del admin = LOGIN REAL con Firebase Auth (ver cloud-backup.loginAdmin). El gesto del
+// caracol (3 toques) sólo abre el formulario de login cuando se cumple esAdminNube (Nicolas + 000000);
+// la autoridad la dan las reglas de Firestore (request.auth.uid). Se retiró el código hasheado anterior.
 
 // ─── Gate de donación (MercadoPago) ──────────────────────────────────────────
 // Mismo mecanismo de nombre que el gate salarial: el botón de donar aparece SÓLO
@@ -292,11 +300,11 @@ function fmtHs(h: number): string {
 // ══════════════════════════════════════════════════════════════════════════════
 export function calcularSueldo(registros: RegistroHoras[], config: SalaryConfig): SalaryEstimate {
   const agg = agregar(registros, config.lineaTrabajo)
-  if (config.convenio === 'CCT_644_12') return calcular644(config, agg)
-  // Mes de cierre del período (día más tardío cargado ≈ el 20/18/15) → define el tramo de actas vigente.
+  // Mes de cierre del período (día más tardío cargado ≈ el 20/18/15) → tramo de actas + tope ANSES vigentes.
   const maxMs = registros.reduce((m, r) => Math.max(m, r.fechaMs), 0)
   const d = new Date(maxMs)
   const periodoYm = maxMs > 0 ? d.getFullYear() * 12 + d.getMonth() : 0
+  if (config.convenio === 'CCT_644_12') return calcular644(config, agg, periodoYm)
   return calcular637(config, agg, periodoYm)
 }
 
@@ -344,7 +352,7 @@ function calcular637(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryE
   const subtotalVariables = variableItems.reduce((s, i) => s + i.monto, 0)
 
   const biRaw = subtotalFijos + subtotalVariables
-  const biCapped = Math.min(biRaw, TOPE_ANSES)
+  const biCapped = Math.min(biRaw, topeAnses(periodoYm))
   const biSindical = subtotalFijos + varViaje + varExtra50 + varExtra100
 
   const retencionItems: LineItem[] = [
@@ -354,16 +362,32 @@ function calcular637(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryE
     { codigo: '20130', concepto: 'Cuota Sindical 2,73%', monto: biSindical * 0.0273 },
     { codigo: '20131', concepto: 'Mutual PJ 4,09%', monto: biSindical * 0.0409 },
   ]
+  // Ganancias estimada (recta calibrada): base = remunerativo − aportes de ley. El recibo reintegra la
+  // mitad como "Vianda complementaria IG" (cód 42100, abajo), así que el impacto neto es −ganancia/2.
+  const aportesLey = retencionItems.reduce((s, i) => s + i.monto, 0)
+  const ganancia = GANANCIAS_MARGINAL * Math.max(0, biRaw - aportesLey - GANANCIAS_UMBRAL)
+  if (ganancia > 0) retencionItems.push({ codigo: '90000', concepto: 'Ret. Imp. Ganancias (estimada)', monto: ganancia })
   const retenciones = retencionItems.reduce((s, i) => s + i.monto, 0)
 
+  // Conteos calibrados a recibos 04-05/2026: ~1,85 viandas adicionales por día de campo y ~1,5
+  // desayunos por día trabajado (la app contaba 1/día → subestimaba). Aproximado (conteo operativo).
+  const viandasAdic = Math.round(a.diasCampo * VIANDA_ADIC_FACTOR)
+  const desayunos = Math.round(a.diasTrabajados * DESAYUNO_FACTOR)
   const noRemItems: LineItem[] = [
     { codigo: '40310', concepto: `Viandas art.34 (${a.diasTrabajados} días)`, monto: a.diasTrabajados * 35849 },
-    { codigo: '40316', concepto: `Desayuno y Merienda (${a.diasTrabajados} días)`, monto: a.diasTrabajados * 5262 },
+    { codigo: '40316', concepto: `Desayuno y Merienda (${desayunos})`, monto: desayunos * 5262 },
   ]
-  if (a.diasCampo > 0) noRemItems.push({ codigo: '40312', concepto: `Viandas Adicionales (${a.diasCampo} días)`, monto: a.diasCampo * 18699 })
+  if (viandasAdic > 0) noRemItems.push({ codigo: '40312', concepto: `Viandas Adicionales (${viandasAdic})`, monto: viandasAdic * 18699 })
+  // "SNR 3% Ac. Abril 2025" se pagó sólo hasta marzo 2026; desde abril 2026 ya no figura en el recibo.
+  if (periodoYm > 0 && periodoYm <= 2026 * 12 + 2) {
+    noRemItems.push(
+      { codigo: '40497', concepto: 'SNR 3% s/remunerativo', monto: biRaw * 0.03 },
+      { codigo: '40498', concepto: 'SNR 3% s/no remunerativo', monto: 3 * 14787 },
+    )
+  }
+  // Reintegro de Ganancias (mitad de la retención), no remunerativo (cód 42100).
+  if (ganancia > 0) noRemItems.push({ codigo: '42100', concepto: 'Vianda complementaria IG (estimada)', monto: ganancia / 2 })
   noRemItems.push(
-    { codigo: '40497', concepto: 'SNR 3% s/remunerativo', monto: biRaw * 0.03 },
-    { codigo: '40498', concepto: 'SNR 3% s/no remunerativo', monto: 3 * 14787 },
     { codigo: '42220', concepto: 'Asig. Vaca Muerta', monto: 380000 },
     { codigo: '42210', concepto: 'Asig. Vianda Fija', monto: 546197 },
   )
@@ -383,7 +407,7 @@ function calcular637(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryE
 }
 
 // ── CCT 644/12 — Privados (verificado al centavo contra 13 recibos) ──
-function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
+function calcular644(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryEstimate {
   const B = config.sueldoBasico
 
   // Paso 1: conformado. Valor unitario = B × 0,99108% (= antigüedad/año = hora de viaje).
@@ -436,7 +460,7 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
   const subtotalVariables = variableItems.reduce((s, i) => s + i.monto, 0)
 
   const biRaw = subtotalFijos + subtotalVariables
-  const biCapped = Math.min(biRaw, TOPE_ANSES)
+  const biCapped = Math.min(biRaw, topeAnses(periodoYm))
 
   const retencionItems: LineItem[] = [
     { codigo: '20000', concepto: 'Jubilación 11%', monto: biCapped * 0.11 },
@@ -469,6 +493,30 @@ function calcular644(config: SalaryConfig, a: Agregados): SalaryEstimate {
     retencionItems, retenciones,
     bruto, netoEstimado: bruto - retenciones,
   }
+}
+
+/**
+ * Proyección del neto al fin del período. Los conceptos FIJOS (básico, antigüedad, presentismo,
+ * bonos, actas) son mensuales y NO escalan con días; las VARIABLES (extras, viaje, desarraigo) y los
+ * no-remunerativos per-día escalan linealmente con los días trabajados; las retenciones escalan con
+ * la base imponible proyectada. Espeja la lógica de EquipTrack (HorasAnalyticsScreen).
+ */
+export function proyectarNeto(est: SalaryEstimate, diasTrabajadosTotales: number): number {
+  if (est.diasTrabajados <= 0) return est.netoEstimado
+  const diasTot = Math.max(est.diasTrabajados, diasTrabajadosTotales)
+  const factor = diasTot / est.diasTrabajados
+  const variablesProy = est.subtotalVariables * factor
+  // 403xx = códigos per-día CCT 637/11; 400xx = CCT 644/12 (viandas/desayuno/vianda extra).
+  const perDiaCodes = new Set(['40310', '40316', '40312', '40010', '40016', '40012'])
+  const noRemPerDia = est.noRemItems.filter(i => perDiaCodes.has(i.codigo)).reduce((s, i) => s + i.monto, 0)
+  const noRemBiLinked = est.noRemItems.find(i => i.codigo === '40497')?.monto ?? 0  // SNR 3% s/rem (≤ mar-2026)
+  const noRemFija = est.subtotalNoRemunerativo - noRemPerDia - noRemBiLinked
+  const brutoProy = est.subtotalFijos + variablesProy
+  const biRawActual = est.baseImponibleRaw > 0 ? est.baseImponibleRaw : (est.subtotalFijos + est.subtotalVariables)
+  const biLinkedRate = biRawActual > 0 ? noRemBiLinked / biRawActual : 0
+  const noRemProy = noRemPerDia * factor + noRemFija + brutoProy * biLinkedRate
+  const retencionesProy = biRawActual > 0 ? est.retenciones * (brutoProy / biRawActual) : est.retenciones
+  return brutoProy - retencionesProy + noRemProy
 }
 
 /** Formatea pesos argentinos sin decimales. */

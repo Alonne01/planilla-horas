@@ -5,7 +5,7 @@ import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { db, exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros, msSinceCloudBackup, markCloudBackupDone } from '../db/database'
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
-import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, esAdminNube, setAdminCodigo2, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
+import { CONVENIOS, isSalaryUser, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
 import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube } from '../lib/cloud-backup'
 import { activarRecordatorios, desactivarRecordatorios, notificacionesConcedidas, notificacionesSoportadas, recordatorioHabilitado, setRecordatorioHabilitado, actualizarAgenda, registrarSyncPeriodico } from '../lib/recordatorio'
@@ -83,8 +83,6 @@ export function SettingsPage() {
   const [bkCodigo, setBkCodigo] = useState('')
   const [bkBloqueado, setBkBloqueado] = useState(false)
   const [cloudBusy, setCloudBusy] = useState(false)
-  // Segundo código del admin (campo extra que aparece sólo con nombre "Nicolas Vazquez" + 000000).
-  const [adminCod2, setAdminCod2] = useState('')
   // Restauración: el código SÓLO se tipea a mano acá, para RECUPERAR un respaldo de otro dispositivo.
   // (La identidad propia se crea siempre con "Generar", que garantiza unicidad.)
   const [restoreMode, setRestoreMode] = useState(false)
@@ -510,20 +508,6 @@ export function SettingsPage() {
               </p>
             </div>
           </div>
-
-          {/* Campo "Código" del admin: aparece SÓLO con nombre "Nicolas Vazquez" + código 000000.
-              Es el segundo factor del desbloqueo de la pantalla de admin (junto con los 3 toques al caracol). */}
-          {esAdminNube(nombre, bkCodigo) && (
-            <div>
-              <label className="text-xs text-slate-400 mb-1 block">Código</label>
-              <input
-                type="text" inputMode="numeric" value={adminCod2}
-                onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setAdminCod2(v); setAdminCodigo2(v) }}
-                placeholder="••••••"
-                className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono tracking-[0.3em] placeholder:tracking-normal placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          )}
 
           <div className="flex gap-2">
             <button onClick={handleRespaldarNube} disabled={cloudBusy || !nombre.trim() || !bkCodigo}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye, LayoutDashboard, Lightbulb, Copy, Check } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, listarSugerencias, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry } from '../lib/cloud-backup'
+import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye, LayoutDashboard, Lightbulb, Copy, Check, Banknote } from 'lucide-react'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry } from '../lib/cloud-backup'
 import { APP_VERSION } from '../version'
 
 const ACTIVO_MS = 7 * 24 * 60 * 60 * 1000 // "activo" = respaldó en los últimos 7 días
@@ -393,6 +393,8 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
   const [confirmar, setConfirmar] = useState(false)
   const [enviado, setEnviado] = useState(false)
   const [beggarBusy, setBeggarBusy] = useState(false)
+  const [salaryBusy, setSalaryBusy] = useState(false)
+  const [confirmSalary, setConfirmSalary] = useState(false)
 
   useEffect(() => {
     void (async () => {
@@ -427,6 +429,22 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
       alert('No se pudo cambiar. ¿Publicaste las reglas de Firestore para "mensajes"?')
     } finally {
       setBeggarBusy(false)
+    }
+  }
+
+  // Habilita/deshabilita la proyección salarial SÓLO para este usuario. Activar pide doble confirmación
+  // (es info sensible); desactivar es directo.
+  async function aplicarSalary(nuevo: boolean) {
+    if (!user.id || actual === undefined) return
+    setSalaryBusy(true)
+    try {
+      await setSalaryUnlockUsuario(user.id, nuevo)
+      setActual(a => ({ ...(a ?? { id: user.id!, titulo: '', cuerpo: '', createdAt: 0, recibidoAt: 0 }), salaryUnlock: nuevo }))
+      setConfirmSalary(false)
+    } catch {
+      alert('No se pudo cambiar. ¿Publicaste las reglas de Firestore para "mensajes"?')
+    } finally {
+      setSalaryBusy(false)
     }
   }
 
@@ -469,6 +487,27 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
           </button>
         </div>
 
+        {/* Proyección salarial para ESTE usuario (activar pide doble confirmación) */}
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-600/60 bg-slate-700/30 px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-white flex items-center gap-1.5"><Banknote size={13} className="shrink-0" /> Proyección salarial para este usuario</p>
+            <p className={`text-[11px] ${actual?.salaryConflict ? 'text-amber-300' : 'text-slate-500'}`}>
+              {actual === undefined ? 'Cargando…'
+                : actual?.salaryConflict ? '⚠ Revocada: se usó en otro teléfono. Reactivá para dar el alta de nuevo.'
+                : actual?.salaryUnlock ? (actual?.salaryDeviceId ? 'Habilitada y vinculada a un dispositivo.' : 'Habilitada: esperando que el dispositivo la reclame.')
+                : 'Deshabilitada para este usuario.'}
+            </p>
+          </div>
+          <button
+            onClick={() => { if (actual?.salaryUnlock) void aplicarSalary(false); else setConfirmSalary(true) }}
+            disabled={!user.id || salaryBusy || actual === undefined}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${actual?.salaryUnlock ? 'bg-emerald-500' : 'bg-slate-600'}`}
+            aria-label="Habilitar o deshabilitar la proyección salarial para este usuario"
+          >
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${actual?.salaryUnlock ? 'left-[22px]' : 'left-0.5'}`} />
+          </button>
+        </div>
+
         {enviado && <p className="text-[11px] text-emerald-300">Mensaje enviado. Le va a aparecer la próxima vez que abra la app; acá vas a ver el acuse cuando lo reciba.</p>}
 
         <input
@@ -501,6 +540,17 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
           </div>
         )}
       </div>
+
+      {confirmSalary && (
+        <ConfirmDoble
+          titulo={`Habilitar proyección salarial para ${user.nombre || '(sin nombre)'}`}
+          detalle={'Este usuario verá la pestaña "Sueldo" con la estimación salarial (cálculo del convenio). Confirmá que corresponde a esta persona antes de habilitarlo.'}
+          etiquetaConfirmar="Habilitar"
+          enviando={salaryBusy}
+          onCancel={() => setConfirmSalary(false)}
+          onConfirm={() => void aplicarSalary(true)}
+        />
+      )}
     </div>
   )
 }
