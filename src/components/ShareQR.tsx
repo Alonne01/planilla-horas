@@ -9,7 +9,7 @@ import { QrCode, Share2, X, Copy, Check } from 'lucide-react'
 const SHARE_URL = window.location.origin + import.meta.env.BASE_URL
 const LOGO = `${import.meta.env.BASE_URL}icons/icon-192.png`
 const TITULO = 'Planilla de Horas'
-const TEXTO = 'Registrá tus horas y tu sueldo con esta app.'
+const TEXTO = 'Registrá tus horas trabajadas con esta app.'
 
 export function ShareQR({ hidden = false }: { hidden?: boolean }) {
   const [open, setOpen] = useState(false)
