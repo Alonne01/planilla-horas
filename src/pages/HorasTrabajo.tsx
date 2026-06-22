@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb, MoreVertical, Trash2, CalendarX2, Download } from 'lucide-react'
+import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb, MoreVertical, Trash2, CalendarX2, Download, ChevronDown } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
 import { RegistroDialog } from '../components/RegistroDialog'
@@ -15,6 +15,7 @@ import { exportarExcelCompleto } from '../lib/excel-export-full'
 import { registrarExportacion } from '../lib/metricas'
 import { DonadorDonacion, DonadorGracias } from '../components/DonadorDonacion'
 import { ShareQR } from '../components/ShareQR'
+import { MonthPeriodPicker } from '../components/MonthPeriodPicker'
 import { esBeggarUnlock } from '../lib/calculo-salarial'
 import { db, shadowBackup, type RegistroHoras } from '../db/database'
 
@@ -90,6 +91,7 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
   const [dialogOrigin, setDialogOrigin] = useState<{ x: number; y: number } | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [showMonthPicker, setShowMonthPicker] = useState(false)
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar')
   const [showCopyTip, setShowCopyTip] = useState(() => {
     try { return localStorage.getItem('planilla-tip-copiar') !== 'dismissed' } catch { return true }
@@ -254,6 +256,14 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
     const dir = delta > 0 ? 'fwd' : 'bwd'
     setCalAnimKey(`${m}-${a}-${dir}`)
     setCalAnimClass(dir === 'fwd' ? 'animate-[cal-slide-right_220ms_ease_both]' : 'animate-[cal-slide-left_220ms_ease_both]')
+  }
+
+  /** Salto directo de período desde el selector de meses (alternativa a las flechas). */
+  function seleccionarPeriodo(m: number, a: number) {
+    if (m === mes && a === anio) return
+    setMes(m); setAnio(a)
+    setCalAnimKey(`pick-${m}-${a}-${Date.now()}`)
+    setCalAnimClass('animate-[view-fade-in_200ms_ease_both]')
   }
 
   function pulse(key: string) {
@@ -464,10 +474,12 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
       <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={() => cambiarMes(-1)} className="p-2 text-slate-400 active:text-white">‹</button>
-          <div className="text-center">
-            <div className="text-base font-bold text-white">{MESES_ES[mes]} {anio}</div>
+          <button onClick={() => setShowMonthPicker(true)} className="text-center active:opacity-70 transition-opacity" title="Elegir período">
+            <div className="text-base font-bold text-white flex items-center justify-center gap-1">
+              {MESES_ES[mes]} {anio} <ChevronDown size={14} className="text-slate-500" />
+            </div>
             <div className="text-xs text-slate-500">{periodoStartStr} – {periodoEndStr} · cobro: {cobroStr}</div>
-          </div>
+          </button>
           <div className="flex items-center gap-1">
             <button
               data-tour="hrs-menu"
@@ -633,6 +645,16 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
         const beggarMostrandose = beggarUnlocked && (graciasVisible || (!yaAgradecioHoy && beggarVisible))
         return <ShareQR hidden={beggarMostrandose || !!applySource || deleteMode} />
       })()}
+
+      {/* Selector de período (calendario de meses) — alternativa a las flechas ‹ › */}
+      {showMonthPicker && (
+        <MonthPeriodPicker
+          mes={mes}
+          anio={anio}
+          onSelect={seleccionarPeriodo}
+          onClose={() => setShowMonthPicker(false)}
+        />
+      )}
 
       {/* Registro dialog */}
       {selectedDate && (

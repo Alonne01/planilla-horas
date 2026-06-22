@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react'
 import {
   BarChart3, TrendingUp, TrendingDown, Minus,
-  Briefcase, Clock, Plane, Truck, BedDouble, Sun, Banknote, Gauge,
+  Briefcase, Clock, Plane, Truck, BedDouble, Sun, Banknote, Gauge, ChevronDown,
 } from 'lucide-react'
 import { useAnalytics, shiftPeriodo, MESES_ES } from '../hooks/useAnalytics'
 import type { PeriodoStats } from '../hooks/useAnalytics'
 import { EvolucionChart } from '../components/AnalyticsCharts'
+import { MonthPeriodPicker } from '../components/MonthPeriodPicker'
 import { defaultPeriodoMes, defaultPeriodoAnio } from '../lib/diagrama'
 import { useSettings } from '../hooks/useSettings'
 import { calcularSueldo, configFromSettings, isSalaryUser, fmtPesos, type SalaryEstimate } from '../lib/calculo-salarial'
@@ -26,6 +27,7 @@ const ACCENT: Record<Accent, { chip: string; icon: string; text: string }> = {
 export function AnalyticsPage() {
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
+  const [showMonthPicker, setShowMonthPicker] = useState(false)
   const { settings } = useSettings()
   const { periodos, loading } = useAnalytics(mes, anio, 2, settings.lineaTrabajo)
 
@@ -50,15 +52,19 @@ export function AnalyticsPage() {
       <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={() => cambiarMes(-1)} className="p-2 text-slate-400 active:text-white">‹</button>
-          <div className="text-center">
+          <button onClick={() => setShowMonthPicker(true)} className="text-center active:opacity-70 transition-opacity" title="Elegir período">
             <div className="text-base font-bold text-white flex items-center gap-1.5 justify-center">
               <BarChart3 size={16} className="text-sky-400" /> Análisis
             </div>
-            <div className="text-xs text-slate-500">{MESES_ES[mes]} {anio} y 2 períodos previos</div>
-          </div>
+            <div className="text-xs text-slate-500 flex items-center justify-center gap-1">{MESES_ES[mes]} {anio} y 2 períodos previos <ChevronDown size={12} /></div>
+          </button>
           <button onClick={() => cambiarMes(1)} className="p-2 text-slate-400 active:text-white">›</button>
         </div>
       </div>
+
+      {showMonthPicker && (
+        <MonthPeriodPicker mes={mes} anio={anio} onSelect={(m, a) => { setMes(m); setAnio(a) }} onClose={() => setShowMonthPicker(false)} />
+      )}
 
       {loading ? (
         <div className="px-4 space-y-4 py-2">

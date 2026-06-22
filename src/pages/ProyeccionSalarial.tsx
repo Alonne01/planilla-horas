@@ -21,6 +21,8 @@ import {
   ProyeccionCard, DeltaBadge, useCountUp,
 } from '../components/SalaryCharts'
 import { SlotMachineMoney, BilletesRain, nivelNeto } from '../components/SalaryFx'
+import { MonthPeriodPicker } from '../components/MonthPeriodPicker'
+import { ChevronDown } from 'lucide-react'
 
 export function ProyeccionSalarialPage() {
   const { settings, loaded } = useSettings()
@@ -51,6 +53,7 @@ function Proyeccion() {
   const { settings, update } = useSettings()
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
+  const [showMonthPicker, setShowMonthPicker] = useState(false)
   const [tab, setTab] = useState<Tab>('resumen')
   const [festejo, setFestejo] = useState(() => { try { return localStorage.getItem('planilla-salary-fx') === '1' } catch { return false } })
   function toggleFestejo() {
@@ -91,15 +94,19 @@ function Proyeccion() {
       <div className="sticky top-0 z-20 bg-slate-900/95 backdrop-blur border-b border-slate-800">
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={() => cambiarMes(-1)} className="p-2 text-slate-400 active:text-white">‹</button>
-          <div className="text-center">
+          <button onClick={() => setShowMonthPicker(true)} className="text-center active:opacity-70 transition-opacity" title="Elegir período">
             <div className="text-base font-bold text-white flex items-center gap-1.5 justify-center">
               <Banknote size={16} className="text-emerald-400" /> Proyección Salarial
             </div>
-            <div className="text-xs text-slate-500">{MESES_ES[mes]} {anio} · {convenioLabel(settings.convenio)}</div>
-          </div>
+            <div className="text-xs text-slate-500 flex items-center justify-center gap-1">{MESES_ES[mes]} {anio} · {convenioLabel(settings.convenio)} <ChevronDown size={12} /></div>
+          </button>
           <button onClick={() => cambiarMes(1)} className="p-2 text-slate-400 active:text-white">›</button>
         </div>
       </div>
+
+      {showMonthPicker && (
+        <MonthPeriodPicker mes={mes} anio={anio} onSelect={(m, a) => { setMes(m); setAnio(a) }} onClose={() => setShowMonthPicker(false)} />
+      )}
 
       {loading ? (
         <div className="px-4 space-y-4 py-4">
