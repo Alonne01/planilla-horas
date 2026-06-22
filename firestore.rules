@@ -46,6 +46,20 @@ service cloud.firestore {
         && request.resource.data.linea.size() < 200;
     }
 
+    // Netos estimados por usuario (dato sensible): lectura SOLO del admin; el usuario sube el suyo.
+    // id = mismo hash(usuario:codigo) del backup/padron. create/update valida shape + tipos.
+    match /netos/{id} {
+      allow read: if esAdmin();
+      allow delete: if true;
+      allow create, update: if
+        request.resource.data.keys().hasOnly(['nombre', 'neto', 'proyectado', 'updatedAt'])
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() < 200
+        && request.resource.data.neto is number
+        && request.resource.data.proyectado is number
+        && request.resource.data.updatedAt is number;
+    }
+
     // Config GLOBAL (un unico doc `global`): donador on/off + difusion actual.
     // La leen todos al abrir; la escribe el admin (merge: campos parciales).
     match /config/{id} {

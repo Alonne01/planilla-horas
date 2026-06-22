@@ -14,6 +14,7 @@ import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
 import { registrarExportacion } from '../lib/metricas'
 import { DonadorDonacion, DonadorGracias } from '../components/DonadorDonacion'
+import { ShareQR } from '../components/ShareQR'
 import { esBeggarUnlock } from '../lib/calculo-salarial'
 import { db, shadowBackup, type RegistroHoras } from '../db/database'
 
@@ -624,6 +625,14 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
       {(beggarActivo || esBeggarUnlock(settings.nombreUsuario)) && (graciasVisible
         ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
         : (!yaAgradecioHoy && beggarVisible && <DonadorDonacion key={beggarKey} idKey={idKey} />))}
+
+      {/* Botón QR para compartir la app (espejo del FAB). Se OCULTA cuando el beggar está en pantalla
+          o cuando se está aplicando/borrando días (igual que el FAB). */}
+      {(() => {
+        const beggarUnlocked = beggarActivo || esBeggarUnlock(settings.nombreUsuario)
+        const beggarMostrandose = beggarUnlocked && (graciasVisible || (!yaAgradecioHoy && beggarVisible))
+        return <ShareQR hidden={beggarMostrandose || !!applySource || deleteMode} />
+      })()}
 
       {/* Registro dialog */}
       {selectedDate && (

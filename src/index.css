@@ -160,6 +160,12 @@ html.vt-back ::view-transition-new(root) { animation: 190ms ease both vt-slide-l
 }
 @keyframes fab-pop { 0% { transform: scale(1); } 50% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
+/* ─── Compartir QR (botón flotante + tarjeta del código) ─── */
+@keyframes qr-card-in  { from { opacity: 0; transform: translateY(18px) scale(0.9); } to { opacity: 1; transform: none; } }
+@keyframes qr-card-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(18px) scale(0.9); } }
+@keyframes qr-btn-in   { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes qr-reveal   { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+
 /* Candado (bloquear/desbloquear): pop elástico con giro al cambiar de estado (key → remonta el
    ícono y re-dispara). Mismo keyframe para TODOS los candados de la app. */
 @keyframes lock-pop {

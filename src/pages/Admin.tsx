@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye, LayoutDashboard, Lightbulb, Copy, Check, Banknote } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry } from '../lib/cloud-backup'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, listarNetosNube, asegurarAuthAdmin, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry, type NetoEntry } from '../lib/cloud-backup'
+import { fmtPesos } from '../lib/calculo-salarial'
 import { APP_VERSION } from '../version'
 
 const ACTIVO_MS = 7 * 24 * 60 * 60 * 1000 // "activo" = respaldó en los últimos 7 días
@@ -37,6 +38,13 @@ function fmtReset(ms: number): string {
   const h = Math.floor(ms / 3_600_000)
   const m = Math.floor((ms % 3_600_000) / 60_000)
   return h > 0 ? `${h} h ${m} min` : `${m} min`
+}
+
+/** Pesos en formato compacto para chips angostos: $2,1M / $850k / $999. */
+function fmtPesosCompact(n: number): string {
+  if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(1).replace('.', ',') + 'M'
+  if (n >= 1_000) return '$' + Math.round(n / 1000) + 'k'
+  return '$' + Math.round(n)
 }
 
 /** Agrupa por una clave y devuelve [clave, cantidad] de mayor a menor. */
@@ -77,6 +85,8 @@ export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>('resumen')
   const [sugerencias, setSugerencias] = useState<SugerenciaEntry[]>([])
   const [sugVistas, setSugVistas] = useState(leerSugVistas)
+  // Netos estimados por usuario (privado, sólo-admin). Mapa docId → neto para cruzar con el padrón.
+  const [netos, setNetos] = useState<NetoEntry[]>([])
 
   async function cargar() {
     setBusy(true); setErr(null)
@@ -94,6 +104,9 @@ export function AdminPage() {
     try { setConfig(await leerConfigNube()) } catch { /* ignore */ }
     try { setDifusiones(await listarDifusiones()) } catch { /* ignore */ }
     try { setSugerencias(await listarSugerencias()) } catch { /* ignore */ }
+    // Netos: lectura SÓLO-admin → primero aseguramos la sesión Firebase Auth (puede no estar restaurada
+    // al montar), si no la lectura iría sin token y las reglas la rechazarían.
+    try { await asegurarAuthAdmin(); setNetos(await listarNetosNube()) } catch { /* reglas de "netos" sin publicar o sin sesión admin */ }
   }
   useEffect(() => { void cargar() }, [])
 
@@ -178,6 +191,17 @@ export function AdminPage() {
   const porLinea = useMemo(() => agrupar(filtrado, lineaDe), [filtrado])
   const porVersion = useMemo(() => agrupar(filtrado, versionDe), [filtrado])
 
+  // Netos: mapa docId → neto + lista cruzada con el padrón filtrado (sólo usuarios que subieron neto).
+  const netosById = useMemo(() => new Map(netos.map(n => [n.id, n])), [netos])
+  const netosFiltrados = useMemo(
+    () => filtrado
+      .map(e => (e.id ? netosById.get(e.id) : undefined))
+      .filter((n): n is NetoEntry => !!n)
+      .sort((a, b) => b.neto - a.neto),
+    [filtrado, netosById],
+  )
+  const totalNeto = netosFiltrados.reduce((s, n) => s + n.neto, 0)
+
   const hayFiltro = !!q.trim() || lineasSel.size > 0 || versionesSel.size > 0 || soloActivos
   function limpiar() { setQ(''); setLineasSel(new Set()); setVersionesSel(new Set()); setSoloActivos(false) }
 
@@ -242,6 +266,8 @@ export function AdminPage() {
               <Stat icon={<Sparkles size={15} />} valor={totalGra} label='veces "gracias"' color="text-amber-300" />
               <Stat icon={<Eye size={15} />} valor={vieronDifusion} label="vieron difusión" sub={difusionActivaId ? `de ${filtrado.length}` : 'sin difusión activa'} color="text-sky-300" />
             </div>
+
+            {netosFiltrados.length > 0 && <NetosCard netos={netosFiltrados} total={totalNeto} />}
 
             {filtrado.length > 0 && (
               <>
@@ -308,6 +334,7 @@ export function AdminPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0 text-[11px] tabular-nums">
+                          {e.id && netosById.get(e.id) && <span className="flex items-center gap-0.5 text-teal-300 font-semibold" title={`Neto estimado: ${fmtPesos(netosById.get(e.id)!.neto)} · proyectado: ${fmtPesos(netosById.get(e.id)!.proyectado)}`}><Banknote size={11} /> {fmtPesosCompact(netosById.get(e.id)!.neto)}</span>}
                           {difusionActivaId !== '' && e.difusionVista === difusionActivaId && <span className="flex items-center text-sky-300" title="Vio la última difusión"><Eye size={11} /></span>}
                           {(e.exportaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-emerald-300"><FileSpreadsheet size={11} /> {e.exportaciones}</span>}
                           {(e.donaciones ?? 0) > 0 && <span className="flex items-center gap-0.5 text-pink-300"><Heart size={11} /> {e.donaciones}</span>}
@@ -706,6 +733,39 @@ function UsoBar({ label, usado, tope }: { label: string; usado: number; tope: nu
       <div className="h-2.5 rounded-full bg-slate-700 overflow-hidden">
         <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${pct}%`, background: color }} />
       </div>
+    </div>
+  )
+}
+
+/** Tarjeta de netos estimados por usuario (privado, sólo-admin). Lista ordenada desc + total. */
+function NetosCard({ netos, total }: { netos: NetoEntry[]; total: number }) {
+  return (
+    <div className="rounded-2xl border border-teal-700/40 bg-teal-950/20 p-4">
+      <div className="flex items-center justify-between mb-2.5">
+        <p className="text-sm font-semibold text-white flex items-center gap-1.5"><Banknote size={15} className="text-teal-300" /> Netos estimados</p>
+        <span className="text-[11px] text-slate-400">{netos.length} {netos.length === 1 ? 'usuario' : 'usuarios'}</span>
+      </div>
+      <div className="space-y-1">
+        {netos.map(n => (
+          <div key={n.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-800/50 px-3 py-1.5">
+            <span className="text-sm text-slate-200 truncate">{n.nombre || '(sin nombre)'}</span>
+            <span className="shrink-0 text-right">
+              <span className="text-sm font-bold text-teal-300 tabular-nums">{fmtPesos(n.neto)}</span>
+              {n.proyectado > 0 && n.proyectado !== n.neto && (
+                <span className="block text-[10px] text-slate-500 tabular-nums">proy. {fmtPesos(n.proyectado)}</span>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2.5 flex items-center justify-between border-t border-teal-700/30 pt-2">
+        <span className="text-xs font-medium text-slate-300">Total</span>
+        <span className="text-sm font-bold text-teal-200 tabular-nums">{fmtPesos(total)}</span>
+      </div>
+      <p className="mt-2 text-[10px] text-slate-500 leading-relaxed">
+        Neto del período actual con lo cargado hasta ahora (proy. = estimado a fin de período). Sólo
+        aparecen los usuarios que cargaron su sueldo básico. Privado: nadie más que vos lo ve.
+      </p>
     </div>
   )
 }

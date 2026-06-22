@@ -9,6 +9,7 @@ import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, incr
 import { exportBackupJSON, importBackupJSON, saveSettings } from '../db/database'
 import { APP_VERSION } from '../version'
 import { leerMetricas } from './metricas'
+import { calcularNetoActualParaAdmin } from './neto-admin'
 
 // Config web PÚBLICA (no es secreta: viaja en el bundle; la seguridad la dan las reglas Firestore).
 const firebaseConfig = {
@@ -24,6 +25,9 @@ const COLLECTION = 'backups'
 // Padrón EN CLARO (sólo nombre + línea + última actividad, SIN datos sensibles ni cifrados): permite
 // al admin contar usuarios y líneas. Va aparte de `backups` para no exponer los blobs cifrados al listar.
 const PADRON = 'padron'
+// Netos estimados por usuario (privado: lectura SÓLO-admin por reglas). El usuario sube su neto del
+// período; el admin lo lee para su panel. Va aparte del padrón (que es público) por ser dato sensible.
+const NETOS = 'netos'
 const PBKDF2_ITERATIONS = 100_000
 
 // ── Tope diario de operaciones de nube POR DISPOSITIVO ──────────────────────────
@@ -346,6 +350,15 @@ export async function subirBackupNube(
     }
     await setDoc(doc(getDb(), PADRON, docId), entry)
   } catch { /* el padrón es secundario: si falla, el respaldo igual quedó subido */ }
+  // Neto estimado (privado, sólo el admin lo lee): para el panel de admin. Best-effort: si el usuario
+  // no configuró su básico o no tiene días, no sube nada; si fallan las reglas, no rompe el respaldo.
+  try {
+    const n = await calcularNetoActualParaAdmin()
+    if (n) {
+      await setDoc(doc(getDb(), NETOS, docId), { nombre: usuario.trim(), neto: n.neto, proyectado: n.proyectado, updatedAt: Date.now() })
+      contarUso(0, 1)
+    }
+  } catch { /* el neto es secundario: no debe romper el respaldo */ }
   setUltimoUsuarioNube(usuario.trim()) // recordar bajo qué nombre quedó el respaldo (para migrar si lo corrige)
   void asegurarCodigoReservado(codigo)  // segundo candado: reserva el código si se generó offline (best-effort)
   registrarOperacionNube()
@@ -390,6 +403,35 @@ export async function listarPadronNube(): Promise<PadronEntry[]> {
       gracias: typeof x.gracias === 'number' ? x.gracias : 0,
       exportaciones: typeof x.exportaciones === 'number' ? x.exportaciones : 0,
       difusionVista: typeof x.difusionVista === 'string' ? x.difusionVista : '',
+    }
+  })
+}
+
+/** Neto estimado de un usuario (privado, sólo-admin). id = mismo docId que su backup/padrón. */
+export interface NetoEntry {
+  id: string
+  nombre: string
+  neto: number
+  proyectado: number
+  updatedAt: number
+}
+
+/**
+ * [admin] Lista los netos estimados subidos por los usuarios (lectura SÓLO-admin por reglas Firestore).
+ * Requiere admin autenticado. Lanza ante error de red/permisos. Cuenta como operaciones de nube.
+ */
+export async function listarNetosNube(): Promise<NetoEntry[]> {
+  const snap = await getDocs(collection(getDb(), NETOS))
+  registrarOperacionNube()
+  contarUso(Math.max(1, snap.docs.length), 0)
+  return snap.docs.map(d => {
+    const x = d.data() as Partial<NetoEntry>
+    return {
+      id: d.id,
+      nombre: String(x.nombre ?? '').trim(),
+      neto: typeof x.neto === 'number' ? x.neto : 0,
+      proyectado: typeof x.proyectado === 'number' ? x.proyectado : 0,
+      updatedAt: typeof x.updatedAt === 'number' ? x.updatedAt : 0,
     }
   })
 }
