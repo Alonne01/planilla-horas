@@ -679,7 +679,7 @@ export function SettingsPage() {
 
             <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
               <Banknote size={13} className="text-slate-600 shrink-0 mt-0.5" />
-              Las horas, viaje y nocturnas salen de la planilla. El detalle se ve en la pestaña Sueldo y el resumen en Análisis.
+              Las horas, viaje y nocturnas salen de la planilla. El detalle se ve en la pestaña Proyección y el resumen en Análisis.
             </p>
           </CollapsibleCard>
         )}

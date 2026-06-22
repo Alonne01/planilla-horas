@@ -233,7 +233,7 @@ function SalaryCard({ est }: { est: SalaryEstimate }) {
         <SalMini label="Retenciones" value={`-${fmtPesos(est.retenciones)}`} accent="text-red-300" />
         <SalMini label="Valor hora" value={fmtPesos(est.horaBase)} />
       </div>
-      <p className="text-[11px] text-slate-500 mt-2">Detalle completo en la pestaña Sueldo.</p>
+      <p className="text-[11px] text-slate-500 mt-2">Detalle completo en la pestaña Proyección.</p>
     </div>
   )
 }

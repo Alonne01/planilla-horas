@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react"
-import { Clock, Settings2, Banknote, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X, Database, Cloud, Users } from "lucide-react"
+import { Clock, Settings2, TrendingUp, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X, Database, Cloud, Users } from "lucide-react"
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
@@ -604,7 +604,7 @@ function AppContent() {
           <NavTab icon={<BarChart3 size={22} />} label="Análisis" active={tab === "analytics"} onClick={() => goToTab("analytics", tab, setTab)} />
           <NavTab icon={<Settings2 size={22} />} label="Config" active={tab === "settings"} onClick={() => goToTab("settings", tab, setTab)} />
           {showSalary && (
-            <NavTab icon={<Banknote size={22} />} label="Sueldo" active={tab === "salary"} onClick={() => goToTab("salary", tab, setTab)} />
+            <NavTab icon={<TrendingUp size={22} />} label="Proyección" active={tab === "salary"} onClick={() => goToTab("salary", tab, setTab)} />
           )}
           {showAdmin && (
             <NavTab icon={<Users size={22} />} label="Admin" active={tab === "admin"} onClick={() => goToTab("admin", tab, setTab)} />

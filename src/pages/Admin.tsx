@@ -571,7 +571,7 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
       {confirmSalary && (
         <ConfirmDoble
           titulo={`Habilitar proyección salarial para ${user.nombre || '(sin nombre)'}`}
-          detalle={'Este usuario verá la pestaña "Sueldo" con la estimación salarial (cálculo del convenio). Confirmá que corresponde a esta persona antes de habilitarlo.'}
+          detalle={'Este usuario verá la pestaña "Proyección" con la estimación salarial (cálculo del convenio). Confirmá que corresponde a esta persona antes de habilitarlo.'}
           etiquetaConfirmar="Habilitar"
           enviando={salaryBusy}
           onCancel={() => setConfirmSalary(false)}
