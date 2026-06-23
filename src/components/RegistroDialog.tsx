@@ -173,7 +173,8 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   function handleSetViajeModo(m: ViajeModo) {
     setViajeModo(m)
     try { navigator.vibrate?.(8) } catch { /* sin vibración */ }
-    if (m === 'NO') { setManeja(false); setKmManual(''); setHorasManual('') }
+    // En mantenimiento la guardia (maneja) es independiente del viaje → no se resetea acá.
+    if (m === 'NO') { if (linea !== 'MANTENIMIENTO') setManeja(false); setKmManual(''); setHorasManual('') }
   }
 
   // Normaliza las horas manuales (opción "Otro") al salir del campo: [0, 24] redondeado a 0,25.
@@ -191,7 +192,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
     setViajeModo('NO')
     setKmManual('')
     setHorasManual('')
-    setManeja(false)
+    if (linea !== 'MANTENIMIENTO') setManeja(false)  // en mantenimiento la guardia no depende del lugar
     setTipoDia(null)  // el tipo de día on-call sólo aplica a Campo (SBDP); se re-elige al volver
   }
   const [proyectoObs, setProyectoObs] = useState(
@@ -276,7 +277,12 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       salidaFinMs: existing?.salidaFinMs ?? null,
       lugarTrabajo: (isDayOff ? 'Franco' : lugar) as LugarTrabajo,
       pernocte: (isDayOff || lugar === 'Base') ? 'NO' : pernocte,
-      maneja: (isDayOff || lugar === 'Base') ? false : (viajeModo !== 'NO' ? maneja : false),
+      // Mantenimiento: "maneja" se reusa como Guardia → independiente del viaje y del lugar (Base o Campo).
+      // Resto de líneas: "manejó" sólo aplica a Campo con viaje cargado.
+      maneja: isDayOff ? false
+        : linea === 'MANTENIMIENTO' ? maneja
+        : lugar === 'Base' ? false
+        : (viajeModo !== 'NO' ? maneja : false),
       horasViaje: horasViajeFinal,
       kmViaje: kmViajeFinal,
       observaciones: proyectoObs,
@@ -575,6 +581,13 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
           </div>
         </div>
 
+        {/* ── Guardia (sólo Mantenimiento) — independiente del viaje/lugar, en cualquier día trabajado ── */}
+        {linea === 'MANTENIMIENTO' && !isDayOff && (
+          <div className="mb-4 rounded-xl bg-slate-700/40 px-3 py-2.5 animate-[apply-bar-in_240ms_ease_both]">
+            <Toggle label="Guardia" value={maneja} onChange={setManeja} />
+          </div>
+        )}
+
         {/* ── Tipo de ausencia — only when no times entered AND not a scheduled franco day ── */}
         {isDayOff && !esFrancoHoy && (
           <div className="bg-slate-700/40 rounded-xl p-3 mb-4 animate-[apply-bar-in_240ms_ease_both]" data-tour="dlg-ausencia">
@@ -683,9 +696,11 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
                     Horas de viaje: <span className="font-semibold text-slate-200">{viajeModo === 'M300' ? '3 h' : '4 h'}</span>
                   </p>
                 )}
-                <div data-tour="dlg-maneja">
-                  <Toggle label={linea === 'MANTENIMIENTO' ? 'Guardia' : 'Manejó este día'} value={maneja} onChange={setManeja} />
-                </div>
+                {linea !== 'MANTENIMIENTO' && (
+                  <div data-tour="dlg-maneja">
+                    <Toggle label="Manejó este día" value={maneja} onChange={setManeja} />
+                  </div>
+                )}
               </div>
             )}
           </div>
