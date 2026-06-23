@@ -70,9 +70,17 @@ function DrumColumn({ items, value, onChange }: DrumColumnProps) {
     if (raf.current != null) { cancelAnimationFrame(raf.current); raf.current = null }
   }, [])
 
-  // Anima scroll → target con ease-out exponencial; emite al asentar.
+  // Anima scroll → target con ease-out exponencial. Compromete el valor destino DE INMEDIATO
+  // (no recién al asentar): la animación es sólo visual, el índice final ya se conoce al soltar.
+  // Así, si el usuario toca "Guardar" mientras el barril todavía gira, igual se guarda la hora
+  // elegida en vez de la anterior.
   const animateTo = useCallback((target: number, tau = 110) => {
     stop()
+    const targetIdx = clamp(Math.round(target))
+    if (targetIdx !== lastEmitted.current) {
+      lastEmitted.current = targetIdx
+      onChange(items[targetIdx])
+    }
     let prev = performance.now()
     const tick = (now: number) => {
       const dt = Math.min(40, now - prev); prev = now
@@ -87,7 +95,7 @@ function DrumColumn({ items, value, onChange }: DrumColumnProps) {
       raf.current = requestAnimationFrame(tick)
     }
     raf.current = requestAnimationFrame(tick)
-  }, [apply, emit, stop])
+  }, [apply, emit, stop, clamp, items, onChange])
 
   // Sincroniza con cambios externos del valor (reset, etc.) cuando está inactivo.
   useEffect(() => {
