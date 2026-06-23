@@ -79,8 +79,23 @@ function minutesBetweenMs(a: number | null | undefined, b: number | null | undef
   return diff / 60_000
 }
 
+/**
+ * Día "on call" (SBDP) cargado como GUARDIA COMPLETA de 24 h: un solo turno cuya entrada y
+ * salida coinciden (típicamente 00:00→00:00). `minutesBetweenMs` daría 0, pero en la planilla
+ * se escribe como 00:00→24:00 (D = entrada + 24). Detectarlo para escribir D=24 y para que el
+ * valor cacheado de la col G coincida con la fórmula.
+ */
+function esOnCallDiaCompleto(reg: RegistroHoras): boolean {
+  if (!reg.esOnCall) return false
+  const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
+  if (hasTurno2 || reg.entradaInicioMs == null || reg.salidaInicioMs == null) return false
+  return msToDecimalHours(reg.salidaInicioMs) === msToDecimalHours(reg.entradaInicioMs)
+}
+
 /** Horas crudas (suma de ambos turnos) = (D-C)+(F-E) según se escriben las celdas. */
 function rawTurnos(reg: RegistroHoras): number {
+  // Guardia on-call completa (00:00→00:00): se escribe 00:00→24:00, así que su total crudo es 24 h.
+  if (esOnCallDiaCompleto(reg)) return 24 - (msToDecimalHours(reg.entradaInicioMs) ?? 0) + (msToDecimalHours(reg.salidaInicioMs) ?? 0)
   return (
     minutesBetweenMs(reg.entradaInicioMs, reg.salidaInicioMs) +
     minutesBetweenMs(reg.entradaFinMs, reg.salidaFinMs)
@@ -244,9 +259,12 @@ function buildRowParts(
   // Overnight single-turno: split into [entrada→24] + [0→salida] so cells
   // read as "20 | 24" and "0 | 08". Template formula (D-C)+(F-E) still gives
   // correct total: (24-20)+(8-0)=12 for a 20:00→08:00 shift.
+  // Cruza medianoche cuando la salida cae antes que la entrada (turno noche) o cuando es una
+  // guardia on-call completa (entrada == salida → 24 h). En ambos casos se parte en 00:00:
+  // [entrada→24] + [0→salida], y la fórmula (D-C)+(F-E) da el total correcto.
   const isOvernight = !hasTurno2 &&
     reg.entradaInicioMs != null && reg.salidaInicioMs != null &&
-    msToDecimalHours(reg.salidaInicioMs)! < msToDecimalHours(reg.entradaInicioMs)!
+    (msToDecimalHours(reg.salidaInicioMs)! < msToDecimalHours(reg.entradaInicioMs)! || esOnCallDiaCompleto(reg))
   const [cC, cD, cE, cF] = hasTurno2
     ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
        cTime(`E${n}`, s.E, reg.entradaFinMs),    cSalida(`F${n}`, s.F, reg.entradaFinMs, reg.salidaFinMs)]

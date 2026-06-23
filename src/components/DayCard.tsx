@@ -156,6 +156,11 @@ export function DayCard({ fecha, registro, diagrama, diagramaInicioMs, onClick, 
                   {registro!.lugarTrabajo}
                 </span>
               )}
+              {registro!.esOnCall && (
+                <span className="text-xs px-2 py-0.5 rounded-full border bg-amber-500/20 text-amber-300 border-amber-500/30">
+                  On call
+                </span>
+              )}
             </div>
             <div className="text-xs text-slate-400 mt-0.5 flex gap-2 flex-wrap">
               {!esDiaNoTrabajado(registro!) && registro!.entradaInicioMs && (

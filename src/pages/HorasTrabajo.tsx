@@ -664,6 +664,7 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
           prevDayRegistro={prevDayRegistro}
           lastWorkedRegistro={lastWorkedRegistro}
           proyectosFrecuentes={settings.proyectosFrecuentes}
+          linea={settings.lineaTrabajo}
           diagrama={settings.diagrama}
           diagramaInicioMs={settings.diagramaInicioMs}
           francosDisponibles={francosDisponibles}

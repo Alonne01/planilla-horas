@@ -587,10 +587,12 @@ export function SettingsPage() {
               {linea === 'SBDP' && (
                 <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-2.5">
                   <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                    <strong className="text-amber-300">Arreglo SBDP:</strong> cada día marcado como{' '}
+                    <strong className="text-amber-300">Arreglo SBDP (on call):</strong> cada día marcado como{' '}
                     <strong>Campo</strong> (con o sin pernocte) cuenta <strong>12 h al 50%</strong> fijas y{' '}
                     <strong>ninguna hora normal</strong>, sin importar cuántas se hayan cargado (6, 8, 12 o 16 hs).
-                    No afecta días Base, francos ni feriados; tampoco la planilla oficial (que muestra los horarios reales).
+                    En los días de guardia, activá <strong>“On call”</strong> al cargar el día: la planilla refleja
+                    el horario on-call (entró→00:00, 00:00→00:00 de 24 h, o 00:00→llegada).
+                    No afecta días Base, francos ni feriados.
                   </p>
                 </div>
               )}

@@ -51,6 +51,11 @@ export interface RegistroHoras {
   esAusenciaJustificada: boolean
   esFaltaInjustificada: boolean  // inasistencia injustificada → descuenta básico proporcional + presentismo
   esVacaciones?: boolean  // licencia por vacaciones (paga, no se trabaja; no descuenta ni pierde presentismo)
+  // Día de CAMPO "on call" (guardia 24 h) de la línea SBDP. Se carga como entró→00:00, 00:00→00:00
+  // (24 h) o 00:00→llegada según el día. Marca el día como guardia: cuenta SIEMPRE 12 h al 50%
+  // (incluso el día completo 00:00→00:00, cuya duración da 0) y la exportación lo escribe como
+  // 00:00→24:00. Sólo aplica a Campo en SBDP. Ver calcularHorasDia / excel-export.
+  esOnCall?: boolean
   fechaCreacion: number
 }
 

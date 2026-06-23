@@ -20,7 +20,9 @@ const MAX_HORAS_DIA = 16
  *  - Surface Well Testing / Fractura: conteo estándar (hasta 8 h normales, el resto al 50%).
  *  - SBDP: arreglo especial — cada día de CAMPO (con o sin pernocte) cuenta SIEMPRE 12 h
  *    al 50%, SIN horas normales, sin importar cuántas horas se trabajaron (6, 8, 12 o
- *    16 hs → siempre 12 h al 50%).
+ *    16 hs → siempre 12 h al 50%). Trabajan "on call": los días de guardia se cargan
+ *    como entró→00:00, 00:00→00:00 (24 h) o 00:00→llegada (ver el flag esOnCall del
+ *    registro), pero igual liquidan 12 h al 50%.
  */
 export type LineaTrabajo =
   | 'SURFACE_WELL_TESTING' | 'SBDP' | 'FRACTURA'
@@ -28,7 +30,7 @@ export type LineaTrabajo =
 
 export const LINEAS_TRABAJO: { key: LineaTrabajo; label: string; desc: string }[] = [
   { key: 'SURFACE_WELL_TESTING', label: 'Surface Well Testing', desc: 'Conteo estándar de horas.' },
-  { key: 'SBDP', label: 'SBDP', desc: 'En Campo cuenta siempre 12 h al 50% (sin horas normales).' },
+  { key: 'SBDP', label: 'SBDP', desc: 'On call: en Campo cuenta siempre 12 h al 50% (sin horas normales).' },
   { key: 'FRACTURA', label: 'Fractura', desc: 'Conteo estándar de horas.' },
   { key: 'MANTENIMIENTO', label: 'Mantenimiento', desc: 'Conteo estándar de horas.' },
   { key: 'BASE', label: 'Base', desc: 'Conteo estándar de horas.' },
@@ -178,7 +180,9 @@ export function calcularHorasDia(
 
   // Arreglo SBDP: en CAMPO (con o sin pernocte) se cuentan SIEMPRE 12 h al 50% y NINGUNA
   // hora normal, sin importar cuántas horas se trabajaron (6, 8, 12 o 16 → siempre 12).
-  if (linea === 'SBDP' && reg.lugarTrabajo === 'Campo' && total > 0) {
+  // El día "on call" completo se carga 00:00→00:00 (duración 0): el flag esOnCall lo marca
+  // como guardia para que igual liquide 12 h al 50%.
+  if (linea === 'SBDP' && reg.lugarTrabajo === 'Campo' && (total > 0 || reg.esOnCall)) {
     return {
       horasTrabajadas: SBDP_CAMPO_HORAS_50,
       horasNormales: 0,

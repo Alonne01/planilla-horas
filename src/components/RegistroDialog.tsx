@@ -5,7 +5,7 @@ import { TimeDrumPicker } from './TimeDrumPicker'
 import type { RegistroHoras } from '../db/database'
 import { esFeriadoNacional, nombreFeriado } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
-import { turnoCruzaMedianoche } from '../lib/calculo-horas'
+import { turnoCruzaMedianoche, type LineaTrabajo } from '../lib/calculo-horas'
 
 interface Props {
   fecha: Date
@@ -13,6 +13,8 @@ interface Props {
   prevDayRegistro?: RegistroHoras
   lastWorkedRegistro?: RegistroHoras
   proyectosFrecuentes: string[]
+  /** Línea de trabajo: habilita el toggle "On call" (guardia 24 h) en días de Campo de SBDP. */
+  linea: LineaTrabajo
   diagrama: DiagramaPatternKey
   diagramaInicioMs: number
   /** Francos compensatorios disponibles ANTES de guardar este registro */
@@ -104,7 +106,7 @@ function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
   return null
 }
 
-export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose, onTourReady, ocultarCierre, origin, guardarSiempreAlSalir, onSetGuardarSiempre }: Props) {
+export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, linea, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose, onTourReady, ocultarCierre, origin, guardarSiempreAlSalir, onSetGuardarSiempre }: Props) {
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
   const esFeriadoHoy = esFeriadoNacional(fecha.getTime())
   const nombreFeriadoHoy = nombreFeriado(fecha.getTime())
@@ -128,6 +130,17 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   const [kmManual, setKmManual] = useState(initialViaje.km)       // km informativo (opción "Otro")
   const [horasManual, setHorasManual] = useState(initialViaje.horas) // horas que cuentan (opción "Otro")
   const [maneja, setManeja] = useState(existing?.maneja ?? false)
+  // SBDP "on call": día de guardia. Por defecto el día completo se carga 00:00→00:00 (24 h); el
+  // usuario ajusta la entrada (día de llegada al campo) o la salida (día de vuelta a base).
+  const [onCall, setOnCall] = useState(existing?.esOnCall ?? false)
+  const mostrarOnCall = linea === 'SBDP' && lugar === 'Campo'
+
+  function handleSetOnCall(v: boolean) {
+    setOnCall(v)
+    try { navigator.vibrate?.(8) } catch { /* sin vibración */ }
+    // Al activar la guardia, prellenar el día completo (00:00→00:00) si el turno está vacío.
+    if (v && !e1 && !s1) { setE1('00:00'); setS1('00:00') }
+  }
 
   // Tour: avisar una vez cuando se cargan entrada y salida.
   const tourReadyFired = useRef(false)
@@ -161,6 +174,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
     setKmManual('')
     setHorasManual('')
     setManeja(false)
+    if (l === 'Base') setOnCall(false)  // la guardia on-call sólo aplica a Campo
   }
   const [proyectoObs, setProyectoObs] = useState(
     existing?.proyecto && existing?.observaciones && existing.proyecto !== existing.observaciones
@@ -256,6 +270,8 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       esAusenciaJustificada: isDayOff && subFranco === 'AUSENCIA',
       esFaltaInjustificada: isDayOff && subFranco === 'FALTA',
       esVacaciones: isDayOff && subFranco === 'VACACIONES',
+      // Guardia on-call SBDP: sólo en días de Campo trabajados (no en ausencias).
+      esOnCall: !isDayOff && lugar === 'Campo' && onCall,
       fechaCreacion: existing?.fechaCreacion ?? Date.now(),
     }
     onSave(reg)
@@ -294,7 +310,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
   // ── Cambios sin guardar ──────────────────────────────────────────────────────
   // Snapshot de los campos editables en el 1er render; si el estado actual difiere, hay cambios.
-  const camposActuales = JSON.stringify({ lugar, e1, s1, pernocte, viajeActivo, viajeModo, kmManual, horasManual, maneja, proyectoObs, subFranco })
+  const camposActuales = JSON.stringify({ lugar, e1, s1, pernocte, viajeActivo, viajeModo, kmManual, horasManual, maneja, onCall, proyectoObs, subFranco })
   const snapshotInicial = useRef(camposActuales)
   const hayCambios = snapshotInicial.current !== camposActuales
   const [showConfirmExit, setShowConfirmExit] = useState(false)
@@ -401,8 +417,9 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               )}
             </div>
           )}
-          {/* ── Aviso: salida 00:00 → probablemente está partiendo un turno noche a mano ── */}
-          {!!e1 && s1 === '00:00' && (
+          {/* ── Aviso: salida 00:00 → probablemente está partiendo un turno noche a mano ──
+              (no aplica a guardias on-call de SBDP, donde 00:00 es el horario esperado) ── */}
+          {!onCall && !!e1 && s1 === '00:00' && (
             <div className="mt-3 rounded-2xl overflow-hidden border border-indigo-700/50 bg-gradient-to-b from-indigo-950/70 to-slate-900/60 animate-[apply-bar-in_220ms_ease_both]">
               {/* header */}
               <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-indigo-900/40 border-b border-indigo-700/40">
@@ -532,6 +549,23 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               <p className="text-[11px] text-rose-300/90 mt-2 leading-snug">
                 Se descuenta el día proporcional de básico y se pierde el presentismo del período.
               </p>
+            )}
+          </div>
+        )}
+
+        {/* ── On call (guardia 24 h) — sólo SBDP en Campo ── */}
+        {mostrarOnCall && !isDayOff && (
+          <div className="mb-4 rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-2.5 animate-[apply-bar-in_240ms_ease_both]">
+            <Toggle label="On call (guardia 24 h)" value={onCall} onChange={handleSetOnCall} />
+            {onCall && (
+              <div className="mt-2.5 text-[11px] leading-relaxed text-amber-200/90 space-y-1.5">
+                <p>Guardia SBDP — cuenta <span className="font-semibold">12 h al 50%</span> siempre. Cargá el horario según el día:</p>
+                <ul className="space-y-0.5 text-amber-100/80">
+                  <li>· Llegás al campo: <span className="font-mono text-amber-200">entrada → 00:00</span></li>
+                  <li>· Día completo (pernocte): <span className="font-mono text-amber-200">00:00 → 00:00</span></li>
+                  <li>· Volvés a base: <span className="font-mono text-amber-200">00:00 → llegada</span></li>
+                </ul>
+              </div>
             )}
           </div>
         )}
