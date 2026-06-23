@@ -106,6 +106,22 @@ function getInitialSubFranco(existing: RegistroHoras | undefined): SubFranco {
   return null
 }
 
+// Tipo de día de guardia on-call (SBDP, Campo): define el horario que va a la planilla.
+//  LLEGADA = entrada → 00:00 · COMPLETO = 00:00 → 00:00 (24 h) · VUELTA = 00:00 → llegada
+type TipoDiaSBDP = 'LLEGADA' | 'COMPLETO' | 'VUELTA' | null
+
+/** Infiere el tipo de día on-call de un registro SBDP de Campo según sus horarios. */
+function getInitialTipoDia(existing: RegistroHoras | undefined, linea: LineaTrabajo): TipoDiaSBDP {
+  if (linea !== 'SBDP' || existing?.lugarTrabajo !== 'Campo') return null
+  const e = msToTime(existing?.entradaInicioMs)
+  const s = msToTime(existing?.salidaInicioMs)
+  if (!e || !s) return null
+  if (e === s) return 'COMPLETO'        // 00:00 → 00:00 (día completo de 24 h)
+  if (s === '00:00') return 'LLEGADA'   // entrada → 00:00
+  if (e === '00:00') return 'VUELTA'    // 00:00 → llegada
+  return null                            // horario libre heredado: sin patrón
+}
+
 export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedRegistro, proyectosFrecuentes, linea, diagrama, diagramaInicioMs, francosDisponibles, onSave, onDelete, onClose, onTourReady, ocultarCierre, origin, guardarSiempreAlSalir, onSetGuardarSiempre }: Props) {
   const esFrancoHoy = esFrancoPorDiagrama(fecha.getTime(), diagrama, diagramaInicioMs)
   const esFeriadoHoy = esFeriadoNacional(fecha.getTime())
@@ -130,16 +146,18 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   const [kmManual, setKmManual] = useState(initialViaje.km)       // km informativo (opción "Otro")
   const [horasManual, setHorasManual] = useState(initialViaje.horas) // horas que cuentan (opción "Otro")
   const [maneja, setManeja] = useState(existing?.maneja ?? false)
-  // SBDP "on call": día de guardia. Por defecto el día completo se carga 00:00→00:00 (24 h); el
-  // usuario ajusta la entrada (día de llegada al campo) o la salida (día de vuelta a base).
-  const [onCall, setOnCall] = useState(existing?.esOnCall ?? false)
-  const mostrarOnCall = linea === 'SBDP' && lugar === 'Campo'
+  // SBDP trabaja "on call": en días de Campo el horario se carga según el TIPO de día (llegada al
+  // campo → entrada/00:00; día completo → 00:00/00:00 de 24 h; vuelta a base → 00:00/llegada). El
+  // tipo define entrada/salida; el sueldo siempre es 12 h al 50% (lo fija la línea SBDP).
+  const esSBDPCampo = linea === 'SBDP' && lugar === 'Campo'
+  const [tipoDia, setTipoDia] = useState<TipoDiaSBDP>(getInitialTipoDia(existing, linea))
 
-  function handleSetOnCall(v: boolean) {
-    setOnCall(v)
+  function handleSetTipoDia(t: TipoDiaSBDP) {
+    setTipoDia(t)
     try { navigator.vibrate?.(8) } catch { /* sin vibración */ }
-    // Al activar la guardia, prellenar el día completo (00:00→00:00) si el turno está vacío.
-    if (v && !e1 && !s1) { setE1('00:00'); setS1('00:00') }
+    if (t === 'COMPLETO') { setE1('00:00'); setS1('00:00') }
+    else if (t === 'LLEGADA') { setS1('00:00'); setE1(e1 && e1 !== '00:00' ? e1 : '') }
+    else if (t === 'VUELTA') { setE1('00:00'); setS1(s1 && s1 !== '00:00' ? s1 : '') }
   }
 
   // Tour: avisar una vez cuando se cargan entrada y salida.
@@ -174,7 +192,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
     setKmManual('')
     setHorasManual('')
     setManeja(false)
-    if (l === 'Base') setOnCall(false)  // la guardia on-call sólo aplica a Campo
+    setTipoDia(null)  // el tipo de día on-call sólo aplica a Campo (SBDP); se re-elige al volver
   }
   const [proyectoObs, setProyectoObs] = useState(
     existing?.proyecto && existing?.observaciones && existing.proyecto !== existing.observaciones
@@ -270,8 +288,8 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       esAusenciaJustificada: isDayOff && subFranco === 'AUSENCIA',
       esFaltaInjustificada: isDayOff && subFranco === 'FALTA',
       esVacaciones: isDayOff && subFranco === 'VACACIONES',
-      // Guardia on-call SBDP: sólo en días de Campo trabajados (no en ausencias).
-      esOnCall: !isDayOff && lugar === 'Campo' && onCall,
+      // Guardia on-call SBDP: día de Campo trabajado con un tipo de día elegido (no en ausencias).
+      esOnCall: !isDayOff && lugar === 'Campo' && linea === 'SBDP' && tipoDia != null,
       fechaCreacion: existing?.fechaCreacion ?? Date.now(),
     }
     onSave(reg)
@@ -310,7 +328,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
   // ── Cambios sin guardar ──────────────────────────────────────────────────────
   // Snapshot de los campos editables en el 1er render; si el estado actual difiere, hay cambios.
-  const camposActuales = JSON.stringify({ lugar, e1, s1, pernocte, viajeActivo, viajeModo, kmManual, horasManual, maneja, onCall, proyectoObs, subFranco })
+  const camposActuales = JSON.stringify({ lugar, e1, s1, pernocte, viajeActivo, viajeModo, kmManual, horasManual, maneja, tipoDia, proyectoObs, subFranco })
   const snapshotInicial = useRef(camposActuales)
   const hayCambios = snapshotInicial.current !== camposActuales
   const [showConfirmExit, setShowConfirmExit] = useState(false)
@@ -396,7 +414,50 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
         {/* ── Turno ── */}
         <div className="mb-5" data-tour="dlg-turno" data-completo={e1 && s1 ? '1' : '0'}>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Turno</p>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Turno{esSBDPCampo ? ' · on-call' : ''}</p>
+          {esSBDPCampo ? (
+            // SBDP on-call: el TIPO de día define el horario. El sueldo es 12 h al 50% siempre.
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  ['LLEGADA', 'Llegada', 'al campo'],
+                  ['COMPLETO', 'Día completo', '24 h'],
+                  ['VUELTA', 'Vuelta', 'a base'],
+                ] as [Exclude<TipoDiaSBDP, null>, string, string][]).map(([key, label, sub]) => (
+                  <button key={key} type="button" onClick={() => handleSetTipoDia(key)}
+                    className={`py-2.5 px-1 rounded-xl text-sm font-medium text-center leading-tight transition-[transform,background-color,color] active:scale-95 ${tipoDia === key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                    {label}
+                    <span className={`block text-[10px] ${tipoDia === key ? 'text-blue-100/80' : 'text-slate-400'}`}>{sub}</span>
+                  </button>
+                ))}
+              </div>
+              {tipoDia === 'COMPLETO' && (
+                <div className="rounded-xl bg-slate-700/40 px-3 py-3 text-center animate-[apply-bar-in_220ms_ease_both]">
+                  <p className="font-mono text-lg text-white">00:00 → 00:00</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Día completo de guardia (pernocte)</p>
+                </div>
+              )}
+              {tipoDia === 'LLEGADA' && (
+                <div className="animate-[apply-bar-in_220ms_ease_both]">
+                  <TimeInput label="Hora de entrada al campo" value={e1} onChange={setE1} />
+                  <p className="text-[11px] text-slate-400 mt-1.5">La salida queda en 00:00 (medianoche).</p>
+                </div>
+              )}
+              {tipoDia === 'VUELTA' && (
+                <div className="animate-[apply-bar-in_220ms_ease_both]">
+                  <TimeInput label="Hora de llegada a base" value={s1} onChange={setS1} />
+                  <p className="text-[11px] text-slate-400 mt-1.5">La entrada queda en 00:00 (medianoche).</p>
+                </div>
+              )}
+              {tipoDia === null && (
+                <p className="text-xs text-slate-400">
+                  Elegí el tipo de día de guardia.{(e1 && s1) ? ` Horario cargado: ${e1}–${s1}.` : ''}
+                </p>
+              )}
+              <p className="text-[11px] text-amber-300/90">SBDP on-call: este día cuenta 12 h al 50%.</p>
+            </div>
+          ) : (
+          <>
           <div className="grid grid-cols-2 gap-3">
             <TimeInput label="Entrada" value={e1} onChange={setE1} />
             <TimeInput label="Salida" value={s1} onChange={setS1} />
@@ -417,9 +478,8 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               )}
             </div>
           )}
-          {/* ── Aviso: salida 00:00 → probablemente está partiendo un turno noche a mano ──
-              (no aplica a guardias on-call de SBDP, donde 00:00 es el horario esperado) ── */}
-          {!onCall && !!e1 && s1 === '00:00' && (
+          {/* ── Aviso: salida 00:00 → probablemente está partiendo un turno noche a mano ── */}
+          {!!e1 && s1 === '00:00' && (
             <div className="mt-3 rounded-2xl overflow-hidden border border-indigo-700/50 bg-gradient-to-b from-indigo-950/70 to-slate-900/60 animate-[apply-bar-in_220ms_ease_both]">
               {/* header */}
               <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-indigo-900/40 border-b border-indigo-700/40">
@@ -473,10 +533,16 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               </div>
             </div>
           )}
+          </>
+          )}
           {/* Slot de altura fija: evita que el aviso "media carga" empuje el resto del diálogo. */}
           <div className="min-h-[1.15rem] mt-2">
             {isPartialEntry && (
-              <p className="text-xs text-red-400">Ingresá tanto la Entrada como la Salida</p>
+              <p className="text-xs text-red-400">
+                {esSBDPCampo
+                  ? (tipoDia === 'LLEGADA' ? 'Ingresá la hora de entrada al campo' : 'Ingresá la hora de llegada a base')
+                  : 'Ingresá tanto la Entrada como la Salida'}
+              </p>
             )}
           </div>
           {isFrancoWorked && (
@@ -549,23 +615,6 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               <p className="text-[11px] text-rose-300/90 mt-2 leading-snug">
                 Se descuenta el día proporcional de básico y se pierde el presentismo del período.
               </p>
-            )}
-          </div>
-        )}
-
-        {/* ── On call (guardia 24 h) — sólo SBDP en Campo ── */}
-        {mostrarOnCall && !isDayOff && (
-          <div className="mb-4 rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-2.5 animate-[apply-bar-in_240ms_ease_both]">
-            <Toggle label="On call (guardia 24 h)" value={onCall} onChange={handleSetOnCall} />
-            {onCall && (
-              <div className="mt-2.5 text-[11px] leading-relaxed text-amber-200/90 space-y-1.5">
-                <p>Guardia SBDP — cuenta <span className="font-semibold">12 h al 50%</span> siempre. Cargá el horario según el día:</p>
-                <ul className="space-y-0.5 text-amber-100/80">
-                  <li>· Llegás al campo: <span className="font-mono text-amber-200">entrada → 00:00</span></li>
-                  <li>· Día completo (pernocte): <span className="font-mono text-amber-200">00:00 → 00:00</span></li>
-                  <li>· Volvés a base: <span className="font-mono text-amber-200">00:00 → llegada</span></li>
-                </ul>
-              </div>
             )}
           </div>
         )}
