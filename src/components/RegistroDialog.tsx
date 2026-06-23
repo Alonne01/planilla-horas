@@ -684,7 +684,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
                   </p>
                 )}
                 <div data-tour="dlg-maneja">
-                  <Toggle label="Manejó este día" value={maneja} onChange={setManeja} />
+                  <Toggle label={linea === 'MANTENIMIENTO' ? 'Guardia' : 'Manejó este día'} value={maneja} onChange={setManeja} />
                 </div>
               </div>
             )}

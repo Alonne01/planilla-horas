@@ -12,7 +12,7 @@
 import { unzipSync, zipSync, strToU8 } from 'fflate'
 import type { RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd, MESES_ES, esFrancoPorDiagrama, type DiagramaPatternKey } from './diagrama'
-import { sufijoTurnoCampo } from './calculo-horas'
+import { sufijoTurnoCampo, type LineaTrabajo } from './calculo-horas'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -321,6 +321,7 @@ function writeSheetData(
   diagramaLabel: string,
   diagramaKey: DiagramaPatternKey,
   diagramaInicioMs: number,
+  linea: LineaTrabajo,
 ): string {
   const mesAnterior = MESES_ES[mes === 0 ? 11 : mes - 1]
   const mesActual = MESES_ES[mes]
@@ -330,6 +331,11 @@ function writeSheetData(
   sheetXml = replaceCellXml(sheetXml, 'C7', cStr('C7', 10, `${mesAnterior.toLowerCase()}-${mesActual.toLowerCase()} ${anio}`))
   if (diagramaLabel) {
     sheetXml = replaceCellXml(sheetXml, 'I7', cStr('I7', 8, `Diagrama:    ${diagramaLabel}`))
+  }
+  // Personal de mantenimiento: la columna "Maneja" (cabecera combinada M9:M11) se reusa como
+  // "Guardia". Sólo se reescribe el rótulo (la celda M de cada fila sigue marcando lo mismo).
+  if (linea === 'MANTENIMIENTO') {
+    sheetXml = replaceCellXml(sheetXml, 'M9', cStr('M9', 23, 'Guardia'))
   }
 
   // Build day lookup
@@ -432,6 +438,7 @@ export async function exportarExcelNormal(
   diagramaLabel: string,
   diagramaKey: DiagramaPatternKey,
   diagramaInicioMs: number,
+  linea: LineaTrabajo = 'SURFACE_WELL_TESTING',
 ): Promise<void> {
   const resp = await fetch(`${import.meta.env.BASE_URL}template_horas.xlsx`)
   if (!resp.ok) throw new Error(`No se pudo cargar el template: ${resp.status}`)
@@ -441,7 +448,7 @@ export async function exportarExcelNormal(
   const zip = unzipSync(templateBytes)
   const sheetKey = 'xl/worksheets/sheet1.xml'
   const originalXml = new TextDecoder().decode(zip[sheetKey])
-  const modifiedXml = writeSheetData(originalXml, mes, anio, registros, nombreUsuario, diagramaLabel, diagramaKey, diagramaInicioMs)
+  const modifiedXml = writeSheetData(originalXml, mes, anio, registros, nombreUsuario, diagramaLabel, diagramaKey, diagramaInicioMs, linea)
   zip[sheetKey] = strToU8(modifiedXml)
 
   // Drop the stale calculation chain — Excel regenerates it on open.

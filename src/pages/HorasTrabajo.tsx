@@ -598,7 +598,7 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
             <button
               data-tour="hrs-export-normal"
               onClick={() => runExport(() =>
-                exportarExcelNormal(mes, anio, registros, settings.nombreUsuario, diagramaLabel, settings.diagrama, settings.diagramaInicioMs)
+                exportarExcelNormal(mes, anio, registros, settings.nombreUsuario, diagramaLabel, settings.diagrama, settings.diagramaInicioMs, settings.lineaTrabajo)
               )}
               className="bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg whitespace-nowrap flex items-center gap-2 animate-[fab-item-in_180ms_ease_both]"
             >
