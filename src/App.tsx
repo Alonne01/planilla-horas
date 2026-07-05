@@ -140,14 +140,20 @@ function AppContent() {
         const count = await db.registros.count()
         if (!diagramaConfirmado() && (count > 0 || s.diagramaInicioMs > 0)) marcarDiagramaConfirmado()
         if (!sectorConfirmado() && count > 0) marcarSectorConfirmado()
-        // Setup obligatorio sólo a usuarios nuevos (sin nombre y sin haber pasado por el setup).
-        if (!s.nombreUsuario.trim() && !setupHecho()) setShowWelcome(true)
-        // Tiene nombre pero falta elegir sector / diagrama → prompts al abrir (sector primero).
-        else if (!sectorConfirmado()) setShowSector(true)
-        else if (!diagramaConfirmado()) setShowDiagrama(true)
+        // El onboarding (nombre/sector/diagrama) corre SÓLO en el teléfono, dueño de la cuenta. La PC es
+        // un compañero efímero: su cuenta y su config llegan del teléfono al vincular, así que nunca debe
+        // pedir "crear cuenta" ni elegir sector/diagrama.
+        if (esTelefono) {
+          // Setup obligatorio sólo a usuarios nuevos (sin nombre y sin haber pasado por el setup).
+          if (!s.nombreUsuario.trim() && !setupHecho()) setShowWelcome(true)
+          // Tiene nombre pero falta elegir sector / diagrama → prompts al abrir (sector primero).
+          else if (!sectorConfirmado()) setShowSector(true)
+          else if (!diagramaConfirmado()) setShowDiagrama(true)
+        }
       } catch { /* ignore */ }
     })()
-  }, [])
+    // esTelefono es estable (useMemo []); se incluye para el linter sin cambiar el "corre una vez".
+  }, [esTelefono])
 
   function welcomeDone() {
     marcarSetupHecho()
@@ -410,6 +416,15 @@ function AppContent() {
     setPcSesion(null)
   }, [])
 
+  // Al vincular: el PairGate ya restauró la sección shared y persistió la sesión. Recargamos para que
+  // los hooks (lectura única al montar) repueblen el calendario con los datos bajados; sin esto queda
+  // la DB vacía en memoria y salta "crear cuenta". Marcamos la sync para no re-bajar al primer botón.
+  const onVinculadaPC = useCallback((s: PCSession) => {
+    guardarSesion(s)
+    try { localStorage.setItem(PC_LAST_SYNC_KEY, String(Date.now())) } catch { /* ignore */ }
+    window.location.reload()
+  }, [])
+
   // Sincronización manual última-escritura-gana: si la nube es más nueva que la última bajada, baja
   // (y recarga para repoblar el calendario); si no, sube la sección shared. Nunca toca el sueldo.
   async function sincronizarPC() {
@@ -534,15 +549,17 @@ function AppContent() {
     }
   }
 
-  // Show install gate if not running as installed PWA — after all hooks
-  if (!isStandalone() && !gateSkipped) {
+  // Install gate SÓLO en el teléfono (dueño de la cuenta): lo nudgea a instalar la PWA para no perder
+  // datos. En la PC no aplica (es un compañero efímero y sus datos se borran al salir), así que va
+  // directo al gate de vinculación. — después de todos los hooks.
+  if (esTelefono && !isStandalone() && !gateSkipped) {
     return <InstallGate onSkip={() => setGateSkipped(true)} />
   }
 
   // Gate de vinculación de PC: en un dispositivo que NO es teléfono y sin sesión válida, se exige
   // vincular desde el teléfono (la PC no puede crear cuentas). El sueldo nunca vive/aparece en PC.
   if (!esTelefono && !pcSesion) {
-    return <PairGate onVinculada={setPcSesion} />
+    return <PairGate onVinculada={onVinculadaPC} />
   }
 
   return (
