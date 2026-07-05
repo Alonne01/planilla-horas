@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react"
-import { Clock, Settings2, TrendingUp, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X, Database, Cloud, Users } from "lucide-react"
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react"
+import { Clock, Settings2, TrendingUp, BarChart3, RefreshCw, AlertTriangle, Download, FolderOpen, X, Database, Cloud, Users, Monitor, LogOut } from "lucide-react"
 import { HorasTrabajoPage } from "./pages/HorasTrabajo"
 import { SettingsPage } from "./pages/Settings"
 import { AnalyticsPage } from "./pages/Analytics"
@@ -7,9 +7,12 @@ import { AdminPage } from "./pages/Admin"
 import { isSalaryUser, esAdminNube, salarioDesbloqueadoNube, marcarSalarioDesbloqueadoNube } from "./lib/calculo-salarial"
 import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
-import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings } from "./db/database"
+import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings, clearAllRegistros } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
-import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, loginAdmin, asegurarAuthAdmin, deviceIdLocal, reclamarSalaryDevice, revocarSalaryConflicto, miDocIdNube, type AppConfig } from "./lib/cloud-backup"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, loginAdmin, asegurarAuthAdmin, deviceIdLocal, reclamarSalaryDevice, revocarSalaryConflicto, miDocIdNube, restaurarSharedDoc, subirSharedDoc, leerUpdatedAtDoc, type AppConfig } from "./lib/cloud-backup"
+import { isMobilePhone } from "./lib/device"
+import { cargarSesion, esValida, guardarSesion, limpiarSesion, renovar, type PCSession } from "./lib/pc-session"
+import { PairGate } from "./components/PairGate"
 import { useSettings } from "./hooks/useSettings"
 import "./index.css"
 import { setupHecho, marcarSetupHecho, tutorialVisto, marcarTutorialVisto, diagramaConfirmado, marcarDiagramaConfirmado, sectorConfirmado, marcarSectorConfirmado } from "./onboarding/tutorial"
@@ -46,6 +49,9 @@ const MSG_IND_VISTO_KEY = "planilla-msg-ind-visto"
 // Easter egg: la pestaña "Sueldo" se desbloquea con 15 toques al caracol (si el nombre es la
 // palabra clave) y queda persistida acá — así no se re-chequea el nombre en cada cambio de pestaña.
 const SALARY_UNLOCK_KEY = "planilla-salary-unlocked"
+// Timestamp (updatedAt de la nube) de la última sincronización manual de la PC vinculada. Se usa para
+// decidir la dirección del sync última-escritura-gana (bajar si la nube es más nueva; subir si no).
+const PC_LAST_SYNC_KEY = "planilla-pc-last-sync"
 // La pantalla de ADMIN (padrón) se desbloquea con 3 toques al caracol + nombre "Nicolas Vazquez" +
 // código "000000". Su flag persistido vive en cloud-backup (esAdminDispositivo/marcarAdminDispositivo),
 // que además exime a ese dispositivo del tope diario de nube.
@@ -73,11 +79,23 @@ export default function App() {
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>("horas")
+  // ¿Este dispositivo es un teléfono? Se cachea una vez (la heurística toca APIs del navegador). El
+  // sueldo queda HARD-OFF si NO es teléfono: en PC ni se descifra ni se muestra su UI.
+  const esTelefono = useMemo(() => isMobilePhone(), [])
+  // Sesión de la PC vinculada (dispositivo compañero efímero, estilo WhatsApp Web). Sólo aplica en
+  // PC (no-teléfono). Sobrevive recargas; 1 día sliding; se limpia sola al expirar o con logout.
+  const [pcSesion, setPcSesion] = useState<PCSession | null>(() => {
+    const s = cargarSesion()
+    return esValida(s, Date.now()) ? s : (limpiarSesion(), null)
+  })
+  const [syncEstado, setSyncEstado] = useState<'idle' | 'busy' | 'ok' | 'err'>('idle')
+  const ultimaRenovacionRef = useRef(0) // throttle de la renovación de sesión de PC (1/min)
   // La proyección salarial queda OCULTA por defecto. Se revela sólo con el easter egg del caracol
   // (15 toques) si el nombre es la palabra clave, y queda desbloqueada (persistida). Ya NO se
   // re-chequea en cada cambio de pestaña: ese getSettings() async hacía parpadear el nav inferior.
+  // En PC (no-teléfono) queda SIEMPRE en false: el sueldo no existe ni se muestra fuera del teléfono.
   const [showSalary, setShowSalary] = useState(() => {
-    try { return localStorage.getItem(SALARY_UNLOCK_KEY) === "1" || salarioDesbloqueadoNube() } catch { return false }
+    try { return esTelefono && (localStorage.getItem(SALARY_UNLOCK_KEY) === "1" || salarioDesbloqueadoNube()) } catch { return false }
   })
   // Pantalla de admin (padrón) desbloqueada: persistida, independiente del salario.
   const [showAdmin, setShowAdmin] = useState(esAdminDispositivo)
@@ -383,6 +401,65 @@ function AppContent() {
     return () => { document.body.style.overflow = '' }
   }, [tab])
 
+  // ─── PC vinculada: logout, sincronización y expiración de sesión (1 día sliding) ───
+  // Logout de la PC: borra la sesión y TODOS los registros locales (la PC no deja rastro) y vuelve al
+  // gate de vinculación. `clearAllRegistros` es best-effort (no bloquea el logout).
+  const logoutPC = useCallback(() => {
+    limpiarSesion()
+    void clearAllRegistros()
+    setPcSesion(null)
+  }, [])
+
+  // Sincronización manual última-escritura-gana: si la nube es más nueva que la última bajada, baja
+  // (y recarga para repoblar el calendario); si no, sube la sección shared. Nunca toca el sueldo.
+  async function sincronizarPC() {
+    if (!pcSesion || syncEstado === 'busy') return
+    setSyncEstado('busy')
+    try {
+      const raw = Uint8Array.from(atob(pcSesion.kSharedB64), c => c.charCodeAt(0)) as Uint8Array<ArrayBuffer>
+      const cloudTs = await leerUpdatedAtDoc(pcSesion.docId)
+      const localTs = Number(localStorage.getItem(PC_LAST_SYNC_KEY) ?? 0)
+      if (cloudTs && cloudTs > localTs) {
+        await restaurarSharedDoc(pcSesion.docId, raw)
+        localStorage.setItem(PC_LAST_SYNC_KEY, String(cloudTs))
+        setSyncEstado('ok')
+        window.location.reload() // repuebla el calendario con los datos recién bajados
+      } else {
+        const ts = await subirSharedDoc(pcSesion.docId, raw)
+        localStorage.setItem(PC_LAST_SYNC_KEY, String(ts))
+        setSyncEstado('ok')
+        window.setTimeout(() => setSyncEstado('idle'), 2500)
+      }
+    } catch {
+      setSyncEstado('err')
+      window.setTimeout(() => setSyncEstado('idle'), 3000)
+    }
+  }
+
+  // Expiración deslizante: la actividad (toques/teclas) renueva la sesión (throttle 1/min) y un
+  // chequeo cada minuto cierra la sesión si venció. Sólo activo mientras hay sesión de PC.
+  useEffect(() => {
+    if (!pcSesion) return
+    const renovarActividad = () => {
+      const ahora = Date.now()
+      if (ahora - ultimaRenovacionRef.current < 60_000) return
+      ultimaRenovacionRef.current = ahora
+      const s = renovar(pcSesion, ahora)
+      guardarSesion(s)
+      setPcSesion(s)
+    }
+    window.addEventListener('pointerdown', renovarActividad)
+    window.addEventListener('keydown', renovarActividad)
+    const iv = window.setInterval(() => {
+      if (!esValida(pcSesion, Date.now())) logoutPC()
+    }, 60_000)
+    return () => {
+      window.removeEventListener('pointerdown', renovarActividad)
+      window.removeEventListener('keydown', renovarActividad)
+      window.clearInterval(iv)
+    }
+  }, [pcSesion, logoutPC])
+
   // Easter egg del caracol: 15 toques seguidos (sin feedback) revelan la pestaña Sueldo, pero SÓLO
   // si el nombre es la palabra clave (isSalaryUser). Queda desbloqueada (persistida) para no repetir
   // el gesto ni re-chequear el nombre en cada cambio de pestaña (lo que hacía parpadear el nav).
@@ -462,10 +539,45 @@ function AppContent() {
     return <InstallGate onSkip={() => setGateSkipped(true)} />
   }
 
+  // Gate de vinculación de PC: en un dispositivo que NO es teléfono y sin sesión válida, se exige
+  // vincular desde el teléfono (la PC no puede crear cuentas). El sueldo nunca vive/aparece en PC.
+  if (!esTelefono && !pcSesion) {
+    return <PairGate onVinculada={setPcSesion} />
+  }
+
   return (
     <div className="max-w-lg mx-auto min-h-screen relative">
       <div className="pb-16 vt-page-content">
         <Greeting />
+        {/* Barra de PC vinculada: sincronizar (última-escritura-gana) + cerrar sesión. Sólo en PC. */}
+        {pcSesion && (
+          <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-teal-500/30 bg-teal-500/10 p-2.5">
+            <Monitor size={16} className="shrink-0 text-teal-300" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-teal-200">PC vinculada</p>
+              <p className="text-[11px] text-teal-300/70 truncate">
+                {syncEstado === 'busy' ? 'Sincronizando…'
+                  : syncEstado === 'ok' ? 'Sincronizado ✓'
+                  : syncEstado === 'err' ? 'No se pudo sincronizar'
+                  : 'Sesión temporal · el sueldo queda en el teléfono'}
+              </p>
+            </div>
+            <button
+              onClick={sincronizarPC}
+              disabled={syncEstado === 'busy'}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-2.5 py-1.5 text-xs font-semibold text-white active:bg-teal-700 disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={syncEstado === 'busy' ? 'animate-spin' : ''} /> Sincronizar
+            </button>
+            <button
+              onClick={logoutPC}
+              aria-label="Cerrar sesión de la PC"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-700/80 px-2.5 py-1.5 text-xs font-medium text-slate-200 active:bg-slate-600"
+            >
+              <LogOut size={13} /> Salir
+            </button>
+          </div>
+        )}
         {/* Banners */}
         {recovered && (
           <div className="mx-4 mt-3 p-3 rounded-xl bg-blue-900/40 text-blue-300 text-sm flex items-start gap-2">
@@ -574,7 +686,7 @@ function AppContent() {
         {tab === "horas" && <HorasTrabajoPage beggarActivo={config.beggarActivo || beggarUser} onAbrirTutorial={() => setShowTutorial(true)} />}
         {tab === "analytics" && <AnalyticsPage />}
         {tab === "settings" && <SettingsPage />}
-        {tab === "salary" && showSalary && (
+        {esTelefono && tab === "salary" && showSalary && (
           <Suspense fallback={<div className="px-4 py-16 text-center text-slate-500 text-sm">Cargando…</div>}>
             <ProyeccionSalarialPage />
           </Suspense>
@@ -588,7 +700,7 @@ function AppContent() {
               pestaña activa según su índice entre las pestañas visibles (Sueldo/Admin son opcionales). */}
           {(() => {
             const order: Tab[] = ["horas", "analytics", "settings"]
-            if (showSalary) order.push("salary")
+            if (esTelefono && showSalary) order.push("salary")
             if (showAdmin) order.push("admin")
             const idx = Math.max(0, order.indexOf(tab))
             return (
@@ -603,7 +715,7 @@ function AppContent() {
           <NavTab icon={<Clock size={22} />} label="Horas" active={tab === "horas"} onClick={() => goToTab("horas", tab, setTab)} />
           <NavTab icon={<BarChart3 size={22} />} label="Análisis" active={tab === "analytics"} onClick={() => goToTab("analytics", tab, setTab)} />
           <NavTab icon={<Settings2 size={22} />} label="Config" active={tab === "settings"} onClick={() => goToTab("settings", tab, setTab)} />
-          {showSalary && (
+          {esTelefono && showSalary && (
             <NavTab icon={<TrendingUp size={22} />} label="Proyección" active={tab === "salary"} onClick={() => goToTab("salary", tab, setTab)} />
           )}
           {showAdmin && (

@@ -16,6 +16,7 @@ import {
 } from '../lib/calculo-salarial'
 import type { AppSettings } from '../db/database'
 import { basicoProyectado } from '../lib/paritarias'
+import { isMobilePhone } from '../lib/device'
 import {
   TendenciaNetoChart, TendenciaAcumuladaChart, ComposicionCard, GananciaDiaCard, MiniDonut, KpiGrid,
   ProyeccionCard, DeltaBadge, useCountUp,
@@ -27,8 +28,9 @@ import { ChevronDown } from 'lucide-react'
 export function ProyeccionSalarialPage() {
   const { settings, loaded } = useSettings()
   // Defensa en profundidad: aunque la pestaña esté oculta en la nav, sólo muestra contenido al tester
-  // (whitelist) o a quien el admin haya habilitado desde la nube (salarioDesbloqueadoNube).
-  if (loaded && !isSalaryUser(settings.nombreUsuario) && !salarioDesbloqueadoNube()) return <Oculta />
+  // (whitelist) o a quien el admin haya habilitado desde la nube (salarioDesbloqueadoNube). Además, el
+  // sueldo es HARD-OFF fuera del teléfono: en PC nunca se muestra, sin importar el usuario.
+  if (!isMobilePhone() || (loaded && !isSalaryUser(settings.nombreUsuario) && !salarioDesbloqueadoNube())) return <Oculta />
   return <Proyeccion />
 }
 
