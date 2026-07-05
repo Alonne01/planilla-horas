@@ -88,6 +88,15 @@ export function EscanearPCQR({ usuario, codigo, onClose }: { usuario: string; co
     return () => { cancelado = true; detener() }
   }, [credsOk])
 
+  // Al volver a 'escaneando' (p.ej. tras Cancelar), el <video> se remonta: hay que re-enganchar
+  // el stream (que sigue vivo) al nuevo elemento, o la vista queda negra y no reescanea.
+  useEffect(() => {
+    if (estado !== 'escaneando') return
+    const v = videoRef.current
+    const s = streamRef.current
+    if (v && s && v.srcObject !== s) { v.srcObject = s; v.play().catch(() => { /* autoplay */ }) }
+  }, [estado])
+
   function volverAEscanear() {
     payloadRef.current = null
     pausadoRef.current = false
