@@ -9,7 +9,7 @@ import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings, clearAllRegistros } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
-import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, loginAdmin, asegurarAuthAdmin, deviceIdLocal, reclamarSalaryDevice, revocarSalaryConflicto, miDocIdNube, restaurarSharedDoc, subirSharedDoc, leerUpdatedAtDoc, type AppConfig } from "./lib/cloud-backup"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, loginAdmin, asegurarAuthAdmin, deviceIdLocal, reclamarSalaryDevice, revocarSalaryConflicto, miDocIdNube, restaurarSharedDoc, subirSharedDoc, leerUpdatedAtDoc, autoBajarCambiosPC, type AppConfig } from "./lib/cloud-backup"
 import { isMobilePhone } from "./lib/device"
 import { cargarSesion, esValida, guardarSesion, limpiarSesion, renovar, type PCSession } from "./lib/pc-session"
 import { PairGate } from "./components/PairGate"
@@ -337,6 +337,18 @@ function AppContent() {
             }
           }
         } else if (count > 0) {
+          // TELÉFONO: bajar automáticamente lo que la PC vinculada dejó en la nube, SÓLO si el teléfono
+          // no tiene ediciones locales sin subir (así nunca se pisan cambios propios). Esto hace que
+          // "cambié en la PC → abro el teléfono → aparecen los cambios" funcione sin tocar botones. El
+          // sueldo local queda intacto (la PC nunca escribe la sección 'salary').
+          if (esTelefono && cloudOn && quedanOperacionesNube()) {
+            try {
+              if (await autoBajarCambiosPC(s.nombreUsuario, s.backupCodigo)) {
+                window.location.reload() // repuebla el calendario con lo bajado
+                return
+              }
+            } catch { /* sin conexión: se reintenta al próximo arranque */ }
+          }
           if (cloudOn && msSinceCloudBackup() > CLOUD_BACKUP_INTERVAL_MS && quedanOperacionesNube()) {
             // Respaldo automático y silencioso a la nube (cada >=3 días al abrir la app).
             // soloSiCambio: si nada cambió desde la última subida, no sube (ahorra datos móviles).
@@ -363,7 +375,8 @@ function AppContent() {
       }
     }
     init()
-  }, [])
+    // esTelefono es estable (useMemo []); se incluye para el linter sin cambiar el "corre una vez".
+  }, [esTelefono])
 
   // El aviso de backup se muestra 3 segundos y se oculta solo
   useEffect(() => {

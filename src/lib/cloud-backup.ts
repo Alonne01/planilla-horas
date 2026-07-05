@@ -368,6 +368,7 @@ export async function subirBackupNube(
     }
   } catch { /* el neto es secundario: no debe romper el respaldo */ }
   setUltimoUsuarioNube(usuario.trim()) // recordar bajo qué nombre quedó el respaldo (para migrar si lo corrige)
+  setPhoneLastSeen(payload.updatedAt)  // marca de sync: lo que acabamos de subir ES lo último visto (no re-bajar)
   void asegurarCodigoReservado(codigo)  // segundo candado: reserva el código si se generó offline (best-effort)
   registrarOperacionNube()
   contarUso(0, 2) // backup + padrón (escrituras)
@@ -692,6 +693,86 @@ export async function subirSharedDoc(docId: string, kSharedRaw: Uint8Array<Array
   await updateDoc(doc(getDb(), COLLECTION, docId), { shared, updatedAt }) // NO toca 'salary'
   contarUso(0, 1)
   return updatedAt
+}
+
+// ── Sincronización del TELÉFONO (dueño de la cuenta) con la sección shared ──
+// El teléfono tiene el código, así que puede bajar la sección shared que la PC vinculada modificó y,
+// a la vez, PRESERVAR su sueldo local (la PC nunca toca 'salary'). Complementa el auto-respaldo (push).
+
+/** ¿El estado local difiere del último respaldo subido? Sirve para elegir push vs pull sin pisar cambios. */
+export async function hayCambiosLocalesSinSubir(): Promise<boolean> {
+  try {
+    const json = await exportBackupJSON()
+    return (await huellaJSON(json)) !== ultimaHuella()
+  } catch { return false }
+}
+
+/**
+ * El TELÉFONO baja la sección shared (registros + settings SIN sueldo) que la PC pudo haber cambiado,
+ * conservando su sueldo LOCAL intacto. Devuelve el resultado (igual que la API de la PC).
+ */
+export async function bajarSharedTelefono(usuario: string, codigo: string): Promise<ResultadoShared> {
+  const docId = await computeDocId(usuario, codigo)
+  const snap = await getDoc(doc(getDb(), COLLECTION, docId)); contarUso(1, 0)
+  if (!snap.exists()) return 'no-existe'
+  const d = snap.data() as Record<string, unknown>
+  if (d.schema !== 2) return 'incompatible'
+  try {
+    const key = await importAesKey(await deriveSectionBits(usuario, codigo, 'shared'))
+    const sh = await descifrarSeccion<{ version: number; registros: unknown[]; settings: Record<string, unknown>[] }>(
+      key, (d as unknown as BackupDocV2).shared,
+    )
+    // Preservar el sueldo LOCAL del teléfono: sólo se reemplazan registros + settings compartidos.
+    const settingsArr = await db.settings.toArray()
+    const salaryLocal = settingsArr[0] ? partirSettings(settingsArr[0]).salary : {}
+    const settings = combinarSettings(sh.settings[0] ?? {}, salaryLocal)
+    await importBackupJSON(JSON.stringify({ version: 1, registros: sh.registros, settings: [settings] }))
+    // El estado local ahora refleja lo bajado: actualizamos la huella para no re-subir de gusto al sincronizar.
+    try { guardarHuella(await huellaJSON(await exportBackupJSON())) } catch { /* ignore */ }
+    return 'ok'
+  } catch { return 'clave-incorrecta' }
+}
+
+// Marca (updatedAt de la nube) que el TELÉFONO vio por última vez. Sirve para bajar sólo cuando la PC
+// dejó algo más nuevo. Se actualiza en cada subida (subirBackupNube) y en cada bajada/sync.
+const PHONE_LAST_SYNC_KEY = 'planilla-phone-last-sync'
+function phoneLastSeen(): number { try { return Number(localStorage.getItem(PHONE_LAST_SYNC_KEY) ?? 0) } catch { return 0 } }
+function setPhoneLastSeen(ts: number): void { try { localStorage.setItem(PHONE_LAST_SYNC_KEY, String(ts)) } catch { /* ignore */ } }
+
+/**
+ * Auto-pull del teléfono al abrir la app: baja los cambios de la PC vinculada SÓLO si la nube tiene algo
+ * más nuevo que lo último visto Y el teléfono no tiene ediciones locales sin subir (así nunca se pisan
+ * cambios propios). Devuelve true si bajó datos (el llamador debe recargar). El sueldo local queda intacto.
+ */
+export async function autoBajarCambiosPC(usuario: string, codigo: string): Promise<boolean> {
+  const docId = await computeDocId(usuario, codigo)
+  const cloudTs = await leerUpdatedAtDoc(docId)
+  if (cloudTs && cloudTs > phoneLastSeen() && !(await hayCambiosLocalesSinSubir())) {
+    if (await bajarSharedTelefono(usuario, codigo) === 'ok') { setPhoneLastSeen(cloudTs); return true }
+  } else if (cloudTs) {
+    setPhoneLastSeen(cloudTs) // ya al día (o hay cambios locales): recordamos la marca
+  }
+  return false
+}
+
+export type ResultadoSyncTel = 'bajado' | 'subido' | 'error'
+/**
+ * Sincronización MANUAL del teléfono (última-escritura-gana): si la PC dejó algo más nuevo y el teléfono
+ * no tiene cambios locales sin subir, BAJA (preservando el sueldo local); si no, SUBE el estado local
+ * completo (shared + salary). Devuelve qué hizo.
+ */
+export async function sincronizarTelefono(usuario: string, codigo: string, linea?: string): Promise<ResultadoSyncTel> {
+  const docId = await computeDocId(usuario, codigo)
+  const cloudTs = await leerUpdatedAtDoc(docId)
+  if (cloudTs && cloudTs > phoneLastSeen() && !(await hayCambiosLocalesSinSubir())) {
+    if (await bajarSharedTelefono(usuario, codigo) !== 'ok') return 'error'
+    setPhoneLastSeen(cloudTs)
+    return 'bajado'
+  }
+  try {
+    await subirBackupNube(usuario, codigo, linea)
+    return 'subido'
+  } catch { return 'error' }
 }
 
 export interface ResultadoMigracion {

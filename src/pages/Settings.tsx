@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronDown, ChevronRight, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Bell, BellRing, Monitor } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronDown, ChevronRight, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Bell, BellRing, Monitor, RefreshCw } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
@@ -7,7 +7,7 @@ import { db, exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDo
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 import { CONVENIOS, isSalaryUser, salarioDesbloqueadoNube, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
-import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube } from '../lib/cloud-backup'
+import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube, sincronizarTelefono } from '../lib/cloud-backup'
 import { activarRecordatorios, desactivarRecordatorios, notificacionesConcedidas, notificacionesSoportadas, recordatorioHabilitado, setRecordatorioHabilitado, actualizarAgenda, registrarSyncPeriodico } from '../lib/recordatorio'
 import { APP_VERSION } from '../version'
 import { BgBlobs } from '../components/BgBlobs'
@@ -322,6 +322,37 @@ export function SettingsPage() {
     }
   }
 
+  // Sincronizar (teléfono): última-escritura-gana con la PC vinculada. Baja los cambios de la PC si son
+  // más nuevos y no hay ediciones locales sin subir; si no, sube el estado local. El sueldo local queda.
+  async function handleSincronizarNube() {
+    if (!credencialesNubeValidas(nombre, bkCodigo)) {
+      flash('Configurá tu nombre y código de nube primero', 'err')
+      return
+    }
+    if (!quedanOperacionesNube()) {
+      setLimiteMsg('Por hoy no se pueden hacer más sincronizaciones. Intentá de nuevo mañana.')
+      return
+    }
+    setCloudBusy(true)
+    try {
+      const r = await sincronizarTelefono(nombre, bkCodigo, lineaLabel(linea))
+      if (r === 'bajado') {
+        markCloudBackupDone(); setCloudMs(0)
+        flash('Sincronizado: bajé los cambios de la PC ✓')
+        setTimeout(() => window.location.reload(), 800) // repuebla el calendario con lo bajado
+      } else if (r === 'subido') {
+        markCloudBackupDone(); setCloudMs(0)
+        flash('Sincronizado: subí tus cambios ✓')
+      } else {
+        flash('No se pudo sincronizar. Reintentá.', 'err')
+      }
+    } catch {
+      flash('No se pudo sincronizar. Revisá tu conexión.', 'err')
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
   // Restaurar de otro dispositivo: usa el código TIPEADO en el panel (restoreCodigo), no la identidad.
   // Si descifra un respaldo real, recién ahí ese código se ADOPTA como identidad (queda verificado).
   async function handleRestaurarNube() {
@@ -527,6 +558,17 @@ export function SettingsPage() {
               </button>
             )}
           </div>
+
+          {/* Sincronizar (teléfono ↔ PC vinculada): última-escritura-gana. Baja lo que la PC dejó si es
+              más nuevo y no hay cambios locales; si no, sube lo del teléfono. SÓLO teléfono. */}
+          {isMobilePhone() && (
+            <button
+              onClick={handleSincronizarNube}
+              disabled={cloudBusy || !nombre.trim() || !bkCodigo}
+              className="w-full py-3 rounded-xl bg-teal-600 text-white text-sm font-semibold flex items-center justify-center gap-2 active:bg-teal-700 disabled:opacity-50">
+              <RefreshCw size={16} className={cloudBusy ? 'animate-spin' : ''} /> Sincronizar con la PC
+            </button>
+          )}
 
           {/* Restauración: ÚNICO lugar donde se TIPEA un código, sólo para RECUPERAR un respaldo de otro
               dispositivo. Si descifra, ese código pasa a ser tu identidad. */}
