@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronDown, ChevronRight, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Bell, BellRing } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronDown, ChevronRight, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Bell, BellRing, Monitor } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
@@ -12,6 +12,8 @@ import { activarRecordatorios, desactivarRecordatorios, notificacionesConcedidas
 import { APP_VERSION } from '../version'
 import { BgBlobs } from '../components/BgBlobs'
 import { SugerenciaModal } from '../components/SugerenciaModal'
+import { EscanearPCQR } from '../components/EscanearPCQR'
+import { isMobilePhone } from '../lib/device'
 import { Lightbulb } from 'lucide-react'
 
 declare const __BUILD_TIME__: string
@@ -56,6 +58,7 @@ export function SettingsPage() {
   const [feriadosBusy, setFeriadosBusy] = useState(false)
   const [feriadosUpd, setFeriadosUpd] = useState(() => feriadosActualizadoMs())
   const [showSugerencia, setShowSugerencia] = useState(false)
+  const [showVincularPC, setShowVincularPC] = useState(false) // escáner de QR para vincular una PC (sólo teléfono)
   // Recordatorio de fin de período (activado por defecto; toggle para apagarlo + permiso de notificaciones)
   const [recordHabilitado, setRecordHabilitado] = useState(recordatorioHabilitado())
   const [recordOn, setRecordOn] = useState(notificacionesConcedidas())
@@ -514,12 +517,15 @@ export function SettingsPage() {
               className="flex-1 py-3 rounded-xl bg-blue-600 text-white text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50">
               <Cloud size={16} /> Respaldar ahora
             </button>
-            <button
-              onClick={() => setRestoreMode(v => !v)}
-              disabled={cloudBusy}
-              className={`flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 ${restoreMode ? 'bg-slate-600 text-white' : 'bg-slate-700 text-slate-200'}`}>
-              <Download size={16} /> Restaurar de la nube
-            </button>
+            {/* Restaurar de la nube: SÓLO teléfono. En PC (compañera) no existe: el sync es su vía. */}
+            {isMobilePhone() && (
+              <button
+                onClick={() => setRestoreMode(v => !v)}
+                disabled={cloudBusy}
+                className={`flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 ${restoreMode ? 'bg-slate-600 text-white' : 'bg-slate-700 text-slate-200'}`}>
+                <Download size={16} /> Restaurar de la nube
+              </button>
+            )}
           </div>
 
           {/* Restauración: ÚNICO lugar donde se TIPEA un código, sólo para RECUPERAR un respaldo de otro
@@ -547,6 +553,23 @@ export function SettingsPage() {
           )}
 
           <p className="text-xs text-slate-500 px-1">Último respaldo en la nube: {haceTexto(cloudMs)}.</p>
+
+          {/* Vincular una PC (estilo WhatsApp Web) — SÓLO teléfono. El teléfono es dueño de la cuenta;
+              escanea el QR de la PC y le concede una sesión temporal (sin el sueldo). */}
+          {isMobilePhone() && (
+            <div className="pt-1">
+              <button
+                onClick={() => setShowVincularPC(true)}
+                className="w-full py-2.5 rounded-xl bg-slate-700/70 text-slate-200 text-sm font-medium flex items-center justify-center gap-2 active:bg-slate-600"
+              >
+                <Monitor size={16} /> Vincular una PC
+              </button>
+              <p className="text-[11px] text-slate-500 mt-1.5 px-1 leading-snug">
+                Usá tu PC para ver y cargar horas. Escaneás el QR que muestra la PC y queda vinculada de
+                forma temporal. El sueldo nunca se muestra en la PC.
+              </p>
+            </div>
+          )}
         </SubSection>
         </div>
 
@@ -632,8 +655,9 @@ export function SettingsPage() {
         </CollapsibleCard>
 
         {/* Salario y convenio — visible para el tester (whitelist) o para quien el admin habilitó la
-            proyección desde la nube. Así el usuario habilitado puede cargar/cambiar SU básico. */}
-        {(isSalaryUser(nombre) || salarioDesbloqueadoNube()) && (
+            proyección desde la nube. Así el usuario habilitado puede cargar/cambiar SU básico. Además,
+            HARD-OFF fuera del teléfono: en PC (compañera) la sección de sueldo nunca aparece. */}
+        {isMobilePhone() && (isSalaryUser(nombre) || salarioDesbloqueadoNube()) && (
           <CollapsibleCard title="Salario y convenio" defaultOpen={false}>
             <Field label="Convenio">
               <div className="space-y-2">
@@ -929,6 +953,15 @@ export function SettingsPage() {
           nombre={settings.nombreUsuario}
           linea={lineaLabel(settings.lineaTrabajo)}
           onClose={() => setShowSugerencia(false)}
+        />
+      )}
+
+      {/* Escáner de QR para vincular una PC (sólo teléfono) */}
+      {showVincularPC && (
+        <EscanearPCQR
+          usuario={settings.nombreUsuario}
+          codigo={settings.backupCodigo}
+          onClose={() => setShowVincularPC(false)}
         />
       )}
     </div>

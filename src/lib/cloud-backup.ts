@@ -5,11 +5,13 @@
 // puede ni calcular el id ni descifrar el contenido. Espeja el enfoque PBKDF2 de EquipTrack
 // (util/BackupPinManager.kt). La privacidad la completan las reglas Firestore (get sí, list/delete no).
 import { initializeApp, type FirebaseApp } from 'firebase/app'
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, increment, type Firestore } from 'firebase/firestore/lite'
-import { exportBackupJSON, importBackupJSON, saveSettings } from '../db/database'
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc, increment, type Firestore } from 'firebase/firestore/lite'
+import { exportBackupJSON, importBackupJSON, saveSettings, db } from '../db/database'
 import { APP_VERSION } from '../version'
 import { leerMetricas } from './metricas'
 import { calcularNetoActualParaAdmin } from './neto-admin'
+import { partirSettings, combinarSettings } from './backup-split'
+import { deriveSectionBits, importAesKey, cifrarSeccion, descifrarSeccion, type Seccion } from './section-crypto'
 
 // Config web PÚBLICA (no es secreta: viaja en el bundle; la seguridad la dan las reglas Firestore).
 const firebaseConfig = {
@@ -213,13 +215,8 @@ function bufToB64Url(buf: ArrayBuffer): string {
 // y la bajada consumen muchos menos datos. Se comprime ANTES de cifrar porque el cifrado produce
 // alto-entropía que ya no comprimiría. CompressionStream existe en Chrome/Android (2020+) y Safari
 // 16.4+; si no está, se sube el JSON crudo (el doc queda sin el campo `comp`).
-function soportaCompresion(): boolean {
-  return typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined'
-}
-async function gzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
-  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))
-  return new Uint8Array(await new Response(stream).arrayBuffer())
-}
+// Compresión gzip: el respaldo v2 la maneja dentro de section-crypto. Acá solo queda
+// gunzip para descomprimir respaldos LEGADOS (schema 1) al restaurarlos.
 async function gunzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
@@ -278,6 +275,20 @@ interface BackupDoc {
   linea?: string
 }
 
+/**
+ * Respaldo v2: el contenido se parte en dos secciones cifradas con claves distintas.
+ * `shared` = { version, registros, settings SIN sueldo } (la PC vinculada recibe SOLO su clave).
+ * `salary` = { settings con SOLO sueldo + código de nube } (clave solo-teléfono; nunca llega a la PC).
+ */
+interface BackupDocV2 {
+  schema: 2
+  shared: Seccion
+  salary: Seccion
+  updatedAt: number
+  usuario?: string
+  linea?: string
+}
+
 /** Clave localStorage del último mensaje de difusión VISTO por este dispositivo (lo setea App al
  *  cerrar el cartel). Se sube en el padrón para que el admin sepa quién vio la última difusión. */
 export const DIFUSION_VISTA_KEY = 'planilla-difusion-vista'
@@ -317,28 +328,25 @@ export async function subirBackupNube(
   // Respaldo automático: si los datos no cambiaron desde la última subida, no subir (ahorra datos/cuota).
   if (opts?.soloSiCambio && huella === ultimaHuella()) return false
 
-  const salt = crypto.getRandomValues(new Uint8Array(16))
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const key = await deriveKey(usuario, codigo, salt)
-  // Comprimir el JSON ANTES de cifrar: baja muchísimo el tamaño que viaja por la red.
-  let plano: Uint8Array<ArrayBuffer> = new TextEncoder().encode(json)
-  let comp: 'gzip' | undefined
-  if (soportaCompresion()) {
-    try { plano = await gzip(plano); comp = 'gzip' } catch { /* sin compresión: subir el JSON crudo */ }
-  }
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plano)
+  // Respaldo v2: dos secciones cifradas con claves distintas (sueldo aparte, phone-only).
+  const [registros, settingsArr] = await Promise.all([db.registros.toArray(), db.settings.toArray()])
+  const settings0 = settingsArr[0]
+  const { shared: shSettings, salary: saSettings } = settings0
+    ? partirSettings(settings0) : { shared: {}, salary: {} }
+  const kShared = await importAesKey(await deriveSectionBits(usuario, codigo, 'shared'))
+  const kSalary = await importAesKey(await deriveSectionBits(usuario, codigo, 'salary'))
+  const shared = await cifrarSeccion(kShared, { version: 1, registros, settings: [shSettings] })
+  const salary = await cifrarSeccion(kSalary, { settings: [saSettings] })
   const lineaTxt = linea?.trim() ?? ''
   const docId = await computeDocId(usuario, codigo)
-  const payload: BackupDoc = {
-    iv: bufToB64(iv.buffer),
-    salt: bufToB64(salt.buffer),
-    data: bufToB64(ct),
+  const payload: BackupDocV2 = {
+    schema: 2,
+    shared,
+    salary,
     updatedAt: Date.now(),
-    schema: 1,
     usuario: usuario.trim(), // en claro, sólo para identificar el backup en la consola
   }
-  if (comp) payload.comp = comp     // Firestore no acepta undefined: sólo se incluye si hubo compresión
-  if (lineaTxt) payload.linea = lineaTxt // ídem: sólo se incluye si hay valor
+  if (lineaTxt) payload.linea = lineaTxt // Firestore no acepta undefined: sólo si hay valor
   await setDoc(doc(getDb(), COLLECTION, docId), payload)
   guardarHuella(huella) // recordar qué se subió, para saltear próximas subidas idénticas
   // Padrón: doc gemelo SIN datos sensibles para el conteo de admin (best-effort, no debe romper el backup).
@@ -572,11 +580,23 @@ export async function restaurarBackupNube(usuario: string, codigo: string): Prom
   registrarOperacionNube()
   contarUso(1, 0)
   if (!snap.exists()) return 'no-existe'
-  const d = snap.data() as BackupDoc
+  const d = snap.data() as Record<string, unknown>
   try {
-    const key = await deriveKey(usuario, codigo, b64ToBytes(d.salt))
-    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(d.iv) }, key, b64ToBytes(d.data))
-    const bytes = d.comp === 'gzip' ? await gunzip(new Uint8Array(pt)) : new Uint8Array(pt)
+    if (d.schema === 2) {
+      const dv = d as unknown as BackupDocV2
+      const kShared = await importAesKey(await deriveSectionBits(usuario, codigo, 'shared'))
+      const kSalary = await importAesKey(await deriveSectionBits(usuario, codigo, 'salary'))
+      const sh = await descifrarSeccion<{ version: number; registros: unknown[]; settings: Record<string, unknown>[] }>(kShared, dv.shared)
+      const sa = await descifrarSeccion<{ settings: Record<string, unknown>[] }>(kSalary, dv.salary)
+      const settings = combinarSettings(sh.settings[0] ?? {}, sa.settings[0] ?? {})
+      await importBackupJSON(JSON.stringify({ version: 1, registros: sh.registros, settings: [settings] }))
+      return 'ok'
+    }
+    // Legado schema 1: blob único con sueldo adentro.
+    const legacy = d as unknown as BackupDoc
+    const key = await deriveKey(usuario, codigo, b64ToBytes(legacy.salt))
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(legacy.iv) }, key, b64ToBytes(legacy.data))
+    const bytes = legacy.comp === 'gzip' ? await gunzip(new Uint8Array(pt)) : new Uint8Array(pt)
     await importBackupJSON(new TextDecoder().decode(bytes))
     return 'ok'
   } catch {
@@ -609,10 +629,17 @@ export async function verificarBackupNube(usuario: string, codigo: string): Prom
   const snap = await getDoc(doc(getDb(), COLLECTION, await computeDocId(usuario, codigo)))
   contarUso(1, 0)
   if (!snap.exists()) return 'no-existe'
-  const d = snap.data() as BackupDoc
+  const d = snap.data() as Record<string, unknown>
   try {
-    const key = await deriveKey(usuario, codigo, b64ToBytes(d.salt))
-    await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(d.iv) }, key, b64ToBytes(d.data))
+    if (d.schema === 2) {
+      const dv = d as unknown as BackupDocV2
+      const kShared = await importAesKey(await deriveSectionBits(usuario, codigo, 'shared'))
+      await descifrarSeccion(kShared, dv.shared)
+      return 'ok'
+    }
+    const legacy = d as unknown as BackupDoc
+    const key = await deriveKey(usuario, codigo, b64ToBytes(legacy.salt))
+    await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(legacy.iv) }, key, b64ToBytes(legacy.data))
     return 'ok'
   } catch {
     return 'clave-incorrecta'
@@ -625,6 +652,46 @@ export async function borrarBackupNube(usuario: string, codigo: string): Promise
   await deleteDoc(doc(getDb(), COLLECTION, docId))
   try { await deleteDoc(doc(getDb(), PADRON, docId)) } catch { /* el padrón es secundario */ }
   contarUso(0, 2)
+}
+
+// ── API para la PC vinculada: opera SOLO la sección 'shared' con K_shared (bytes crudos) ──
+// La PC nunca conoce el código ni la clave de la sección 'salary': solo puede leer/escribir
+// registros + config sin sueldo. El sueldo del teléfono queda intacto.
+
+/** updatedAt del doc (para decidir dirección de sync última-escritura-gana). */
+export async function leerUpdatedAtDoc(docId: string): Promise<number | null> {
+  const snap = await getDoc(doc(getDb(), COLLECTION, docId))
+  contarUso(1, 0)
+  return snap.exists() ? ((snap.data() as { updatedAt?: number }).updatedAt ?? null) : null
+}
+
+export type ResultadoShared = 'ok' | 'no-existe' | 'incompatible' | 'clave-incorrecta'
+
+/** La PC baja la sección shared y REEMPLAZA sus datos locales (sin sueldo). */
+export async function restaurarSharedDoc(docId: string, kSharedRaw: Uint8Array<ArrayBuffer>): Promise<ResultadoShared> {
+  const snap = await getDoc(doc(getDb(), COLLECTION, docId)); contarUso(1, 0)
+  if (!snap.exists()) return 'no-existe'
+  const d = snap.data() as Record<string, unknown>
+  if (d.schema !== 2) return 'incompatible' // el teléfono debe migrar (sincronizar) primero
+  try {
+    const key = await importAesKey(kSharedRaw)
+    const sh = await descifrarSeccion<{ version: number; registros: unknown[]; settings: Record<string, unknown>[] }>(key, (d as unknown as BackupDocV2).shared)
+    const settings = combinarSettings(sh.settings[0] ?? {}, {}) // sin salary → sueldo en defaults
+    await importBackupJSON(JSON.stringify({ version: 1, registros: sh.registros, settings: [settings] }))
+    return 'ok'
+  } catch { return 'clave-incorrecta' }
+}
+
+/** La PC sube SOLO la sección shared (updateDoc), sin tocar el blob 'salary'. Devuelve updatedAt. */
+export async function subirSharedDoc(docId: string, kSharedRaw: Uint8Array<ArrayBuffer>): Promise<number> {
+  const [registros, settingsArr] = await Promise.all([db.registros.toArray(), db.settings.toArray()])
+  const shSettings = settingsArr[0] ? partirSettings(settingsArr[0]).shared : {}
+  const key = await importAesKey(kSharedRaw)
+  const shared = await cifrarSeccion(key, { version: 1, registros, settings: [shSettings] })
+  const updatedAt = Date.now()
+  await updateDoc(doc(getDb(), COLLECTION, docId), { shared, updatedAt }) // NO toca 'salary'
+  contarUso(0, 1)
+  return updatedAt
 }
 
 export interface ResultadoMigracion {

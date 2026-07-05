@@ -24,10 +24,41 @@ service cloud.firestore {
       allow get: if true;
       allow list: if false;
       allow delete: if true;
+      // Acepta el respaldo LEGADO (schema 1: blob unico) y el v2 (dos secciones cifradas
+      // shared/salary). El update PARCIAL de la PC (solo 'shared'+'updatedAt') deja un doc
+      // v2 valido, asi que entra por la segunda rama. La PC no tiene la clave de 'salary'.
       allow create, update: if
-        request.resource.data.keys().hasAll(['iv', 'salt', 'data', 'updatedAt'])
+        (
+          request.resource.data.keys().hasAll(['iv', 'salt', 'data', 'updatedAt'])
+          && request.resource.data.data is string
+          && request.resource.data.data.size() < 900000
+        )
+        || (
+          request.resource.data.schema == 2
+          && request.resource.data.keys().hasOnly([
+            'schema', 'shared', 'salary', 'updatedAt', 'usuario', 'linea'
+          ])
+          && request.resource.data.shared.data is string
+          && request.resource.data.shared.data.size() < 900000
+          && request.resource.data.salary.data is string
+          && request.resource.data.salary.data.size() < 200000
+        );
+    }
+
+    // Emparejamiento EFIMERO PC <-> telefono (estilo WhatsApp Web). id = sid aleatorio.
+    // El "sobre" va cifrado E2E (ECDH hacia la clave publica de la PC): quien lea el doc sin
+    // la privada de la PC (solo en RAM) no obtiene nada. get si (la PC hace polling); list no;
+    // delete si (limpieza tras el handshake). create/update: shape + tope chico.
+    match /pairing/{sid} {
+      allow get: if true;
+      allow list: if false;
+      allow delete: if true;
+      allow create, update: if
+        request.resource.data.keys().hasOnly([
+          'pub', 'iv', 'data', 'expiresAt', 'createdAt'
+        ])
         && request.resource.data.data is string
-        && request.resource.data.data.size() < 900000;
+        && request.resource.data.data.size() < 20000;
     }
 
     // Padron EN CLARO (datos NO sensibles): nombre + linea + metricas + version.
