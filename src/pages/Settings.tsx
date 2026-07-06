@@ -608,7 +608,7 @@ export function SettingsPage() {
               </button>
               <p className="text-[11px] text-slate-500 mt-1.5 px-1 leading-snug">
                 Usá tu PC para ver y cargar horas. Escaneás el QR que muestra la PC y queda vinculada de
-                forma temporal. El sueldo nunca se muestra en la PC.
+                forma temporal. En la PC solo se ven las horas.
               </p>
             </div>
           )}
