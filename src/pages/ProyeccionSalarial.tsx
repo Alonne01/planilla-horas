@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Construction, Banknote, TrendingUp, Minus, Plus, Wallet, Info,
   LayoutGrid, BarChart3, ListTree, CalendarRange, PartyPopper,
+  FileSearch, Loader2, RefreshCw, AlertTriangle,
 } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { useAnalytics, shiftPeriodo, MESES_ES, type PeriodoStats } from '../hooks/useAnalytics'
@@ -14,7 +15,10 @@ import {
   CONVENIOS, formatBasicoInput, parseBasicoInput,
   type SalaryEstimate, type LineItem, type Convenio,
 } from '../lib/calculo-salarial'
-import type { AppSettings } from '../db/database'
+import { db, type AppSettings, type ReciboAnalisisRow } from '../db/database'
+import { extraerTextoPdf, ReciboPdfError } from '../lib/recibo-pdf'
+import { parsearRecibo } from '../lib/recibo-parser'
+import { compararRecibo, type Hallazgo, type Severidad, type Veredicto } from '../lib/recibo-comparador'
 import { basicoProyectado } from '../lib/paritarias'
 import { isMobilePhone } from '../lib/device'
 import {
@@ -140,8 +144,234 @@ function Proyeccion() {
           {tab === 'resumen' && <TabResumen est={est!} actual={actual!} settings={settings} mes={mes} anio={anio} />}
           {tab === 'analisis' && <TabAnalisis est={est!} actual={actual!} settings={settings} serieNeto={serieNeto} mes={mes} anio={anio} />}
           {tab === 'desglose' && <TabDesglose est={est!} />}
+
+          {/* Contraste del recibo real contra el cálculo (visible en todas las pestañas) */}
+          <ContrastarRecibo est={est!} convenio={settings.convenio} mes={mes} anio={anio} />
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Contrastar recibo (PDF) ─────────────────────────────────────────────────────
+// El usuario carga el PDF del recibo digital y la app lo compara concepto por
+// concepto contra el cálculo del período. 100% local y determinístico: el PDF se
+// procesa en el dispositivo y NO se guarda (solo el análisis, en Dexie, fuera del
+// respaldo). Sección solo alcanzable dentro del gate salarial de esta página.
+function ContrastarRecibo({ est, convenio, mes, anio }: {
+  est: SalaryEstimate; convenio: Convenio; mes: number; anio: number
+}) {
+  const periodo = `${String(mes + 1).padStart(2, '0')}/${anio}`
+  const [abierto, setAbierto] = useState(false)
+  const [procesando, setProcesando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [analisis, setAnalisis] = useState<ReciboAnalisisRow | null>(null)
+  const [periodoRecibo, setPeriodoRecibo] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  // Análisis guardado del período (si ya se contrastó antes). Al cambiar de período
+  // también se limpian el error y la advertencia de período del análisis anterior.
+  useEffect(() => {
+    let cancel = false
+    db.recibosAnalisis.get(periodo)
+      .then(row => {
+        if (cancel) return
+        setAnalisis(row ?? null)
+        setError(null)
+        setPeriodoRecibo(null)
+      })
+      .catch(() => { if (!cancel) setAnalisis(null) })
+    return () => { cancel = true }
+  }, [periodo])
+
+  async function procesar(file: File) {
+    setProcesando(true)
+    setError(null)
+    try {
+      const texto = await extraerTextoPdf(file)
+      const recibo = parsearRecibo(texto, convenio)
+      if (Object.keys(recibo.conceptos).length === 0) {
+        setError('No se reconocieron conceptos en el PDF. Verificá que sea el recibo digital y que el convenio configurado sea el correcto.')
+        return
+      }
+      const res = compararRecibo(recibo, est)
+      const row: ReciboAnalisisRow = {
+        periodo,
+        hallazgos: res.hallazgos,
+        veredicto: res.veredicto,
+        totalFaltante: res.totalFaltante,
+        fechaAnalisis: Date.now(),
+      }
+      await db.recibosAnalisis.put(row) // solo el análisis; el PDF nunca se guarda
+      setAnalisis(row)
+      setPeriodoRecibo(recibo.periodoAbonado)
+    } catch (e) {
+      setError(e instanceof ReciboPdfError ? e.message : 'No se pudo leer el PDF. Probá de nuevo con el recibo digital original.')
+    } finally {
+      setProcesando(false)
+      if (fileRef.current) fileRef.current.value = '' // permite re-elegir el mismo archivo
+    }
+  }
+
+  const noOk = analisis?.hallazgos.filter(h => h.severidad !== 'OK') ?? []
+  const cantOk = (analisis?.hallazgos.length ?? 0) - noOk.length
+
+  return (
+    <div className="rounded-2xl bg-slate-800/60 border border-slate-700/50">
+      <button onClick={() => setAbierto(a => !a)} className="w-full flex items-center justify-between p-4 active:opacity-80">
+        <div className="flex items-center gap-1.5">
+          <FileSearch size={15} className="text-sky-400" />
+          <h3 className="text-sm font-semibold text-slate-200">Contrastar recibo (PDF)</h3>
+        </div>
+        <div className="flex items-center gap-2">
+          {analisis && <VeredictoPill veredicto={analisis.veredicto} />}
+          <ChevronDown size={16} className={`text-slate-400 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+        </div>
+      </button>
+
+      {abierto && (
+        <div className="px-4 pb-4 space-y-3">
+          <input ref={fileRef} type="file" accept="application/pdf" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) void procesar(f) }} />
+
+          {!analisis && !procesando && (
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Cargá el PDF de tu recibo digital y la app lo compara concepto por concepto contra
+              el cálculo de {MESES_ES[mes]} {anio}. Todo se procesa en tu teléfono: el PDF no se
+              guarda ni se sube a ningún lado.
+            </p>
+          )}
+
+          {procesando ? (
+            <div className="flex items-center gap-2 py-3 text-sm text-slate-300">
+              <Loader2 size={16} className="animate-spin text-sky-400" /> Procesando el recibo…
+            </div>
+          ) : (
+            <button onClick={() => fileRef.current?.click()}
+              className="w-full py-2.5 rounded-xl bg-sky-600 text-white text-sm font-semibold active:bg-sky-700 flex items-center justify-center gap-2">
+              {analisis ? <><RefreshCw size={14} /> Re-analizar con otro PDF</> : <><FileSearch size={14} /> Cargar recibo PDF</>}
+            </button>
+          )}
+
+          {error && (
+            <div className="flex items-start gap-2 rounded-xl bg-red-900/30 border border-red-800/50 px-3 py-2.5">
+              <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-200 leading-relaxed">{error}</p>
+            </div>
+          )}
+
+          {periodoRecibo && periodoRecibo !== periodo && (
+            <div className="flex items-start gap-2 rounded-xl bg-amber-900/30 border border-amber-800/50 px-3 py-2.5">
+              <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-200 leading-relaxed">
+                El recibo dice período {periodoRecibo}, pero estás viendo {periodo}. Cambiá el mes
+                arriba para comparar contra el período correcto.
+              </p>
+            </div>
+          )}
+
+          {analisis && !procesando && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <VeredictoPill veredicto={analisis.veredicto} grande />
+                <span className="text-[10px] text-slate-500">
+                  {new Date(analisis.fechaAnalisis).toLocaleDateString('es-AR')}{' '}
+                  {new Date(analisis.fechaAnalisis).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+
+              {analisis.totalFaltante > 0 && (
+                <div className="rounded-xl bg-red-900/30 border border-red-800/50 px-3 py-2.5">
+                  <div className="text-[10px] text-red-300/80 tracking-wide">FALTANTE ESTIMADO A TU FAVOR (BRUTO)</div>
+                  <div className="text-lg font-bold text-red-200 tabular-nums">{fmtPesos(analisis.totalFaltante)}</div>
+                </div>
+              )}
+
+              <p className="text-[11px] text-slate-400">
+                {cantOk} concepto{cantOk === 1 ? '' : 's'} OK · {noOk.length} con observaciones
+              </p>
+
+              {noOk.length > 0 && (
+                <div className="space-y-1.5">
+                  {ordenarHallazgos(noOk).map((h, i) => <HallazgoRow key={`${h.codigo}-${i}`} h={h} />)}
+                </div>
+              )}
+
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Análisis local y estimativo (no es asesoramiento): verificá contra el PDF antes de
+                reclamar. Se guarda solo este resultado por período; el PDF no se almacena ni entra
+                en el respaldo.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const SEVERIDAD_ORDEN: Record<Severidad, number> = { FALTANTE: 0, REVISAR: 1, TOLERANCIA: 2, INFO: 3, OK: 4 }
+
+function ordenarHallazgos(hs: Hallazgo[]): Hallazgo[] {
+  return [...hs].sort((a, b) => SEVERIDAD_ORDEN[a.severidad] - SEVERIDAD_ORDEN[b.severidad])
+}
+
+function VeredictoPill({ veredicto, grande }: { veredicto: Veredicto; grande?: boolean }) {
+  const estilos: Record<Veredicto, string> = {
+    OK: 'bg-emerald-900/50 text-emerald-300 border-emerald-700/60',
+    REVISAR: 'bg-amber-900/50 text-amber-300 border-amber-700/60',
+    PAGO_INCOMPLETO: 'bg-red-900/50 text-red-300 border-red-700/60',
+  }
+  const textos: Record<Veredicto, string> = {
+    OK: 'Recibo OK', REVISAR: 'Revisar', PAGO_INCOMPLETO: 'Pago incompleto',
+  }
+  return (
+    <span className={`inline-flex items-center rounded-full border font-bold ${estilos[veredicto]} ${grande ? 'px-3 py-1 text-sm' : 'px-2 py-0.5 text-[10px]'}`}>
+      {textos[veredicto]}
+    </span>
+  )
+}
+
+function HallazgoRow({ h }: { h: Hallazgo }) {
+  const color: Record<Severidad, string> = {
+    FALTANTE: 'border-red-800/50 bg-red-900/20',
+    REVISAR: 'border-amber-800/50 bg-amber-900/20',
+    TOLERANCIA: 'border-slate-700/50 bg-slate-800/40',
+    INFO: 'border-slate-700/40 bg-slate-800/30',
+    OK: 'border-slate-700/40 bg-slate-800/30',
+  }
+  const etiqueta: Record<Severidad, { txt: string; cls: string }> = {
+    FALTANTE: { txt: 'FALTANTE', cls: 'text-red-300' },
+    REVISAR: { txt: 'REVISAR', cls: 'text-amber-300' },
+    TOLERANCIA: { txt: 'TOLERANCIA', cls: 'text-slate-400' },
+    INFO: { txt: 'INFO', cls: 'text-sky-300/80' },
+    OK: { txt: 'OK', cls: 'text-emerald-300' },
+  }
+  const e = etiqueta[h.severidad]
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${color[h.severidad]}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-slate-200 truncate">{h.concepto}</span>
+        <span className={`text-[9px] font-bold tracking-wide shrink-0 ${e.cls}`}>{e.txt}</span>
+      </div>
+      {(h.esperado != null || h.pagado != null) && (
+        <div className="text-[11px] text-slate-400 tabular-nums mt-0.5">
+          {h.esperado != null && <>esperado {fmtPesos(h.esperado)}</>}
+          {h.esperado != null && h.pagado != null && ' · '}
+          {h.pagado != null && <>pagado {fmtPesos(h.pagado)}</>}
+          {h.dif != null && Math.abs(h.dif) >= 1 && (
+            <span className={h.dif < 0 ? 'text-red-300/90' : 'text-emerald-300/90'}>
+              {' '}({h.dif < 0 ? '−' : '+'}{fmtPesos(Math.abs(h.dif))})
+            </span>
+          )}
+        </div>
+      )}
+      {(h.unidadesEsperadas != null || h.unidadesPagadas != null) && (
+        <div className="text-[11px] text-slate-500 tabular-nums">
+          unidades: planilla {h.unidadesEsperadas ?? '—'} · recibo {h.unidadesPagadas ?? '—'}
+        </div>
+      )}
+      {h.nota && <p className="text-[11px] text-slate-400 leading-relaxed mt-1">{h.nota}</p>}
     </div>
   )
 }
@@ -310,8 +540,9 @@ function TabDesglose({ est }: { est: SalaryEstimate }) {
         <Info size={14} className="text-slate-500 shrink-0 mt-0.5" />
         <p className="text-[11px] text-slate-400 leading-relaxed">
           Estimación. Ganancias y la vianda complementaria IG son estimadas (calibradas a recibos;
-          RRHH liquida el valor exacto). No incluye devoluciones/ajustes anuales de Ganancias, SAC
-          ni adicionales personales; las viandas son un conteo aproximado.
+          RRHH liquida el valor exacto). No incluye devoluciones/ajustes anuales de Ganancias ni SAC;
+          las viandas son un conteo aproximado. Los adicionales y retenciones personales se
+          configuran en Configuración → Salario.
         </p>
       </div>
     </div>

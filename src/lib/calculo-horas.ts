@@ -136,9 +136,9 @@ export function sufijoTurnoCampo(reg: RegistroHoras): string {
 
 /**
  * Horas de viaje que se liquidan APARTE (ítem "Horas Viaje", ~47% del valor hora):
- * cualquier día con horasViaje > 0 (Campo, o la +1h del toggle "Viaje a base").
- * "Manejó" NO cambia esto: igual que en EquipTrack, las horas de viaje siempre van al
- * ítem Viaje y nunca engrosan la jornada trabajada.
+ * cuenta el valor real cargado (2, 3, 4 hs...) el día que hubo traslado (Campo, o la +1h
+ * del toggle "Viaje a base"). "Manejó" NO cambia esto: igual que en EquipTrack, las horas
+ * de viaje siempre van al ítem Viaje y nunca engrosan la jornada trabajada.
  */
 export function horasViajeSeparadas(reg: RegistroHoras): number {
   const hv = reg.horasViaje ?? 0

@@ -8,6 +8,7 @@ export const SALARY_FIELDS = [
   'sueldoBasico', 'sueldoBasicoVigenciaMs', 'convenio', 'fechaIngresoMs', 'tipoTurno',
   'zonaVacaMuerta', 'tasaDesarraigo644', 'tieneGuardiaPasiva', 'valorGuardiaDia',
   'adicionalCampoRate', 'bonoPazRate644', 'solidaria644', 'backupCodigo', 'backupBloqueado',
+  'adicionalesPersonales', 'retencionesPersonales',
 ] as const satisfies ReadonlyArray<keyof AppSettings>
 
 type SalaryField = (typeof SALARY_FIELDS)[number]

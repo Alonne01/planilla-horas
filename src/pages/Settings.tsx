@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, FolderOpen, ChevronDown, ChevronRight, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Bell, BellRing, Monitor, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Download, FolderOpen, ChevronDown, ChevronRight, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Bell, BellRing, Monitor, RefreshCw, Plus } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
 import { db, exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros, msSinceCloudBackup, markCloudBackupDone } from '../db/database'
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
-import { CONVENIOS, isSalaryUser, salarioDesbloqueadoNube, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno } from '../lib/calculo-salarial'
+import { CONVENIOS, BASES_RETENCION, isSalaryUser, salarioDesbloqueadoNube, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno, type AdicionalPersonal, type RetencionPersonal, type BaseRetencion } from '../lib/calculo-salarial'
 import { LINEAS_TRABAJO, lineaLabel, type LineaTrabajo } from '../lib/calculo-horas'
 import { subirBackupNube, restaurarBackupNube, credencialesNubeValidas, quedanOperacionesNube, generarCodigoUnico, migrarBackupNube, ultimoUsuarioNube, setUltimoUsuarioNube, sincronizarTelefono } from '../lib/cloud-backup'
 import { activarRecordatorios, desactivarRecordatorios, notificacionesConcedidas, notificacionesSoportadas, recordatorioHabilitado, setRecordatorioHabilitado, actualizarAgenda, registrarSyncPeriodico } from '../lib/recordatorio'
@@ -39,6 +39,25 @@ const KAOMOJIS = [
   '(＾◡＾)', '＼(^o^)／', '(ง •̀_•́)ง', '(¬_¬")', 'ʕ•ᴥ•ʔ',
 ]
 const KAOMOJI = KAOMOJIS[Math.floor(Math.random() * KAOMOJIS.length)]
+
+// ── Adicionales/retenciones personales (SOLO dentro de la sección salarial gateada) ──
+// Filas editables: el valor se tipea como texto es-AR (mismo formateo que el sueldo básico)
+// y se convierte a número al persistir. Las filas vacías se ignoran en el cálculo.
+type AdicionalRow = { nombre: string; esPorcentajeBasico: boolean; valorStr: string; remunerativo: boolean }
+type RetencionRow = { nombre: string; esPorcentaje: boolean; valorStr: string; base: BaseRetencion }
+
+function adicionalesToRows(items: AdicionalPersonal[]): AdicionalRow[] {
+  return items.map(a => ({ nombre: a.nombre, esPorcentajeBasico: a.esPorcentajeBasico, valorStr: fmtBasicoDisplay(a.valor), remunerativo: a.remunerativo }))
+}
+function rowsToAdicionales(rows: AdicionalRow[]): AdicionalPersonal[] {
+  return rows.map(r => ({ nombre: r.nombre.trim(), esPorcentajeBasico: r.esPorcentajeBasico, valor: parseBasicoInput(r.valorStr), remunerativo: r.remunerativo }))
+}
+function retencionesToRows(items: RetencionPersonal[]): RetencionRow[] {
+  return items.map(r => ({ nombre: r.nombre, esPorcentaje: r.esPorcentaje, valorStr: fmtBasicoDisplay(r.valor), base: r.base }))
+}
+function rowsToRetenciones(rows: RetencionRow[]): RetencionPersonal[] {
+  return rows.map(r => ({ nombre: r.nombre.trim(), esPorcentaje: r.esPorcentaje, valor: parseBasicoInput(r.valorStr), base: r.base }))
+}
 
 function localDateStr(ms: number): string {
   const d = new Date(ms)
@@ -82,6 +101,9 @@ export function SettingsPage() {
   const [tipoTurno, setTipoTurno] = useState<TipoTurno>('NINGUNO')
   const [zonaVM, setZonaVM] = useState(false)
   const [tasaDesarraigo, setTasaDesarraigo] = useState(0.20)
+  // Adicionales/retenciones personales (viven dentro de la misma sección salarial gateada)
+  const [adicRows, setAdicRows] = useState<AdicionalRow[]>([])
+  const [retRows, setRetRows] = useState<RetencionRow[]>([])
   // Respaldo en la nube (identidad = nombre del empleado + código de 6 dígitos, con candado)
   const [bkCodigo, setBkCodigo] = useState('')
   const [bkBloqueado, setBkBloqueado] = useState(false)
@@ -127,6 +149,8 @@ export function SettingsPage() {
     setTipoTurno(settings.tipoTurno)
     setZonaVM(settings.zonaVacaMuerta)
     setTasaDesarraigo(settings.tasaDesarraigo644)
+    setAdicRows(adicionalesToRows(settings.adicionalesPersonales ?? []))
+    setRetRows(retencionesToRows(settings.retencionesPersonales ?? []))
     setBkCodigo(settings.backupCodigo)
     setBkBloqueado(settings.backupBloqueado)
     setDirty(false)
@@ -167,6 +191,8 @@ export function SettingsPage() {
       tipoTurno,
       zonaVacaMuerta: zonaVM,
       tasaDesarraigo644: tasaDesarraigo,
+      adicionalesPersonales: rowsToAdicionales(adicRows),
+      retencionesPersonales: rowsToRetenciones(retRows),
     })
     setDirty(false)
   }
@@ -213,7 +239,7 @@ export function SettingsPage() {
     const t = setTimeout(() => { persistConfig().catch(() => {}) }, 600)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, nombre, diagrama, diagramaFecha, linea, convenio, sueldoBasico, fechaIngreso, tipoTurno, zonaVM, tasaDesarraigo])
+  }, [dirty, nombre, diagrama, diagramaFecha, linea, convenio, sueldoBasico, fechaIngreso, tipoTurno, zonaVM, tasaDesarraigo, adicRows, retRows])
 
   async function handleExportBackup() {
     const json = await exportBackupJSON()
@@ -745,6 +771,23 @@ export function SettingsPage() {
               </div>
             )}
 
+            <SubSection title="Adicionales personales">
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Conceptos propios de tu recibo que la app no calcula sola (ej: mayor función).
+                Si es <strong className="text-slate-300">remunerativo</strong> suma a la base imponible
+                (paga aportes); si no, va al bloque no remunerativo.
+              </p>
+              <AdicionalesPersonalesEditor rows={adicRows} onChange={rs => { setAdicRows(rs); setDirty(true) }} />
+            </SubSection>
+
+            <SubSection title="Retenciones personales">
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Descuentos propios (ej: cuota alimentaria). Se restan del neto al final,
+                después de los aportes de ley y Ganancias.
+              </p>
+              <RetencionesPersonalesEditor rows={retRows} onChange={rs => { setRetRows(rs); setDirty(true) }} />
+            </SubSection>
+
             <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
               <Banknote size={13} className="text-slate-600 shrink-0 mt-0.5" />
               Las horas, viaje y nocturnas salen de la planilla. El detalle se ve en la pestaña Proyección y el resumen en Análisis.
@@ -1260,6 +1303,161 @@ function Field({ label, children, action }: { label: string; children: React.Rea
         {action}
       </div>
       {children}
+    </div>
+  )
+}
+
+// Botón de un selector segmentado chico (tipo de valor / remunerativo). Mismo estilo que el resto.
+function SegBtn({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 py-2 px-2 rounded-xl text-xs font-medium transition-colors ${active ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+    >
+      {label}
+    </button>
+  )
+}
+
+// Input de valor con sufijo % o $ (mismo formateo es-AR que el sueldo básico).
+function ValorInput({ valorStr, esPorcentaje, onChange, placeholder }: {
+  valorStr: string; esPorcentaje: boolean; onChange: (v: string) => void; placeholder: string
+}) {
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        inputMode="decimal"
+        value={valorStr}
+        onChange={e => onChange(formatBasicoInput(e.target.value))}
+        placeholder={placeholder}
+        className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 pr-8 text-sm"
+      />
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
+        {esPorcentaje ? '%' : '$'}
+      </span>
+    </div>
+  )
+}
+
+// Lista editable de adicionales personales (ej. mayor función): agregar/eliminar fila; nombre,
+// % del básico o monto fijo, y toggle remunerativo. Vive SOLO dentro de la sección salarial gateada.
+function AdicionalesPersonalesEditor({ rows, onChange }: { rows: AdicionalRow[]; onChange: (rows: AdicionalRow[]) => void }) {
+  function setRow(i: number, patch: Partial<AdicionalRow>) {
+    onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  }
+  return (
+    <div className="space-y-2">
+      {rows.map((r, i) => (
+        <div key={i} className="rounded-xl bg-slate-800/60 border border-slate-700 p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={r.nombre}
+              onChange={e => setRow(i, { nombre: e.target.value })}
+              placeholder="Ej: Mayor función"
+              className="flex-1 min-w-0 bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => onChange(rows.filter((_, j) => j !== i))}
+              aria-label="Eliminar adicional"
+              className="p-1.5 text-slate-500 active:text-red-400"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <SegBtn active={r.esPorcentajeBasico} onClick={() => setRow(i, { esPorcentajeBasico: true, valorStr: '' })} label="% del básico" />
+            <SegBtn active={!r.esPorcentajeBasico} onClick={() => setRow(i, { esPorcentajeBasico: false, valorStr: '' })} label="Monto fijo ($)" />
+          </div>
+          <ValorInput
+            valorStr={r.valorStr}
+            esPorcentaje={r.esPorcentajeBasico}
+            onChange={v => setRow(i, { valorStr: v })}
+            placeholder={r.esPorcentajeBasico ? 'Ej: 10' : 'Ej: 310.175,74'}
+          />
+          <div className="flex gap-2">
+            <SegBtn active={r.remunerativo} onClick={() => setRow(i, { remunerativo: true })} label="Remunerativo" />
+            <SegBtn active={!r.remunerativo} onClick={() => setRow(i, { remunerativo: false })} label="No remunerativo" />
+          </div>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...rows, { nombre: '', esPorcentajeBasico: false, valorStr: '', remunerativo: true }])}
+        className="w-full py-2.5 rounded-xl bg-slate-700/70 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 active:bg-slate-600"
+      >
+        <Plus size={14} /> Agregar adicional
+      </button>
+    </div>
+  )
+}
+
+// Lista editable de retenciones personales (ej. cuota alimentaria): agregar/eliminar fila; nombre,
+// % (con selector de base) o monto fijo. Vive SOLO dentro de la sección salarial gateada.
+function RetencionesPersonalesEditor({ rows, onChange }: { rows: RetencionRow[]; onChange: (rows: RetencionRow[]) => void }) {
+  function setRow(i: number, patch: Partial<RetencionRow>) {
+    onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  }
+  return (
+    <div className="space-y-2">
+      {rows.map((r, i) => (
+        <div key={i} className="rounded-xl bg-slate-800/60 border border-slate-700 p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={r.nombre}
+              onChange={e => setRow(i, { nombre: e.target.value })}
+              placeholder="Ej: Cuota alimentaria"
+              className="flex-1 min-w-0 bg-slate-700 text-white rounded-xl px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => onChange(rows.filter((_, j) => j !== i))}
+              aria-label="Eliminar retención"
+              className="p-1.5 text-slate-500 active:text-red-400"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <SegBtn active={r.esPorcentaje} onClick={() => setRow(i, { esPorcentaje: true, valorStr: '' })} label="Porcentaje (%)" />
+            <SegBtn active={!r.esPorcentaje} onClick={() => setRow(i, { esPorcentaje: false, valorStr: '' })} label="Monto fijo ($)" />
+          </div>
+          <ValorInput
+            valorStr={r.valorStr}
+            esPorcentaje={r.esPorcentaje}
+            onChange={v => setRow(i, { valorStr: v })}
+            placeholder={r.esPorcentaje ? 'Ej: 35' : 'Ej: 150.000'}
+          />
+          {r.esPorcentaje && (
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1">Base del porcentaje</label>
+              <div className="relative">
+                <select
+                  value={r.base}
+                  onChange={e => setRow(i, { base: e.target.value as BaseRetencion })}
+                  className="w-full appearance-none bg-slate-700 text-white rounded-xl px-3 py-2 pr-8 text-sm"
+                >
+                  {BASES_RETENCION.map(b => (
+                    <option key={b.key} value={b.key}>{b.label}</option>
+                  ))}
+                </select>
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...rows, { nombre: '', esPorcentaje: true, valorStr: '', base: 'NETO' }])}
+        className="w-full py-2.5 rounded-xl bg-slate-700/70 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 active:bg-slate-600"
+      >
+        <Plus size={14} /> Agregar retención
+      </button>
     </div>
   )
 }

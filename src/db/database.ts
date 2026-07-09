@@ -1,5 +1,8 @@
 import Dexie, { type Table } from 'dexie'
 import type { LineaTrabajo } from '../lib/calculo-horas'
+// Import SOLO de tipos (se borra al compilar): no crea ciclo en runtime con calculo-salarial.
+import type { AdicionalPersonal, RetencionPersonal } from '../lib/calculo-salarial'
+import type { Hallazgo, Veredicto } from '../lib/recibo-comparador'
 import { PRUEBA_CUTOFF_MS } from '../lib/diagrama'
 
 const SHADOW_KEY = 'planilla-shadow'
@@ -79,6 +82,11 @@ export interface AppSettings {
   adicionalCampoRate: number
   bonoPazRate644: number
   solidaria644: number
+  // Ítems personales del recibo (se configuran SOLO dentro de la sección salarial gateada):
+  // adicionales propios (ej. mayor función) y retenciones propias (ej. cuota alimentaria).
+  // Se aplican en calculo-salarial con códigos sintéticos PERS-A* / PERS-R*.
+  adicionalesPersonales: AdicionalPersonal[]
+  retencionesPersonales: RetencionPersonal[]
   // Respaldo en la nube (Firestore): identidad = nombre del empleado (nombreUsuario) + código de
   // 6 dígitos. El "candado" bloquea el código para evitar cambios accidentales.
   backupCodigo: string
@@ -113,21 +121,45 @@ export const DEFAULT_SETTINGS: AppSettings = {
   adicionalCampoRate: 0.30,
   bonoPazRate644: 0.1438,
   solidaria644: 0.022,
+  adicionalesPersonales: [],
+  retencionesPersonales: [],
   backupCodigo: '',
   backupBloqueado: false,
   francosCompSaldoBase: 0,
   guardarSiempreAlSalir: false,
 }
 
+/**
+ * Análisis GUARDADO de "Contrastar recibo (PDF)" (Proyección Salarial), uno por período.
+ * Se guarda SOLO el resultado (hallazgos + veredicto), NUNCA el PDF. Es local-only:
+ * NO viaja en el respaldo (ni archivo ni nube) — exportBackupJSON/subirBackupNube solo
+ * leen `registros` + `settings` — porque es regenerable desde el PDF y es dato sensible.
+ */
+export interface ReciboAnalisisRow {
+  /** Período de la app, ej. "06/2026" (mes 1-based / año). Clave primaria. */
+  periodo: string
+  hallazgos: Hallazgo[]
+  veredicto: Veredicto
+  totalFaltante: number
+  fechaAnalisis: number
+}
+
 class PlanillaDB extends Dexie {
   registros!: Table<RegistroHoras>
   settings!: Table<AppSettings>
+  recibosAnalisis!: Table<ReciboAnalisisRow>
 
   constructor() {
     super('PlanillaHorasDB')
     this.version(1).stores({
       registros: 'id, fechaMs',
       settings: 'id',
+    })
+    // v2: tabla de análisis de recibos (contrastar recibo PDF vs cálculo del período).
+    this.version(2).stores({
+      registros: 'id, fechaMs',
+      settings: 'id',
+      recibosAnalisis: 'periodo',
     })
   }
 }

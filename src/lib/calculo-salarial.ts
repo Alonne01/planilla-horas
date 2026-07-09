@@ -18,7 +18,8 @@ export type TipoTurno = 'NINGUNO' | 'TURNO_A' | 'TURNO_B' | 'TURNO_S'
  *  Meses sin entrada → último valor conocido (proyección plana); default abril 2026 (preserva el
  *  comportamiento histórico del 644, verificado al centavo). Recalibrar al cambiar la movilidad. */
 function topeAnses(periodoYm: number): number {
-  if (periodoYm >= 2026 * 12 + 4) return 4_303_619      // may-2026 en adelante
+  if (periodoYm >= 2026 * 12 + 5) return 4_414_652.36   // jun-2026 en adelante (recibo 06/2026)
+  if (periodoYm === 2026 * 12 + 4) return 4_303_619      // may-2026
   if (periodoYm === 2026 * 12 + 3) return 4_162_912.55  // abr-2026
   if (periodoYm === 2026 * 12 + 2) return 4_045_590.45  // mar-2026
   return 4_162_912.55                                    // default
@@ -148,6 +149,38 @@ export function esBeggarUnlock(nombre: string | undefined | null): boolean {
   return BEGGAR_UNLOCK_WHITELIST.includes(normalizar(nombre))
 }
 
+// ─── Adicionales y retenciones personales (configurables por el usuario) ──────
+/** Adicional propio del recibo (ej. "mayor función"). monto = esPorcentajeBasico ? básico×valor/100
+ *  : valor fijo en $. Si remunerativo=true entra a los ítems fijos ANTES de la base imponible
+ *  (tributa aportes/sindical); si no, va al bloque no remunerativo. */
+export interface AdicionalPersonal {
+  nombre: string
+  esPorcentajeBasico: boolean  // true = % del sueldo básico; false = monto fijo en $
+  valor: number                // porcentaje (ej. 10) o pesos, según esPorcentajeBasico
+  remunerativo: boolean
+}
+
+/** Base sobre la que se calcula una retención personal porcentual. */
+export type BaseRetencion = 'NETO' | 'REMUNERATIVO' | 'REMUNERATIVO_NETO' | 'BASICO' | 'BRUTO'
+
+/** Retención propia (ej. cuota alimentaria). Se aplica AL FINAL del cálculo, después de los
+ *  aportes de ley y Ganancias: monto = esPorcentaje ? base×valor/100 : valor fijo en $.
+ *  Se agrega como ítem de retención con su nombre y se descuenta del neto. */
+export interface RetencionPersonal {
+  nombre: string
+  esPorcentaje: boolean
+  valor: number
+  base: BaseRetencion
+}
+
+export const BASES_RETENCION: { key: BaseRetencion; label: string }[] = [
+  { key: 'NETO', label: 'Neto (bruto − ret. de ley)' },
+  { key: 'REMUNERATIVO', label: 'Remunerativo' },
+  { key: 'REMUNERATIVO_NETO', label: 'Remunerativo − ret. de ley' },
+  { key: 'BASICO', label: 'Sueldo básico' },
+  { key: 'BRUTO', label: 'Bruto total' },
+]
+
 // ─── Config ──────────────────────────────────────────────────────────────────
 export interface SalaryConfig {
   convenio: Convenio
@@ -157,6 +190,8 @@ export interface SalaryConfig {
   zonaVacaMuerta: boolean
   tasaDesarraigo644: number // 0 / 0,10 / 0,20
   lineaTrabajo: LineaTrabajo // SBDP suma 12 h al 50% por día de Campo
+  adicionalesPersonales: AdicionalPersonal[]   // ítems propios (códigos sintéticos PERS-A*)
+  retencionesPersonales: RetencionPersonal[]   // descuentos propios (códigos sintéticos PERS-R*)
 }
 
 /** Años completos de antigüedad desde la fecha de ingreso (0 si no está cargada). */
@@ -181,6 +216,8 @@ export function configFromSettings(s: AppSettings): SalaryConfig {
     zonaVacaMuerta: s.zonaVacaMuerta,
     tasaDesarraigo644: s.tasaDesarraigo644,
     lineaTrabajo: s.lineaTrabajo,
+    adicionalesPersonales: s.adicionalesPersonales ?? [],
+    retencionesPersonales: s.retencionesPersonales ?? [],
   }
 }
 
@@ -263,6 +300,43 @@ function itemsInasistencia(faltas: number, basico: number, presentismo: number, 
   return items
 }
 
+// ─── Ítems personales (códigos sintéticos PERS-A* / PERS-R*) ──────────────────
+/** Adicionales personales de un tipo (remunerativos o no): % del básico o monto fijo.
+ *  Filas sin nombre o con monto ≤ 0 se ignoran (borradores de la config). */
+function itemsAdicionalesPersonales(adicionales: AdicionalPersonal[], basico: number, remunerativos: boolean): LineItem[] {
+  const items: LineItem[] = []
+  adicionales.forEach((a, i) => {
+    if (a.remunerativo !== remunerativos) return
+    const monto = a.esPorcentajeBasico ? basico * (a.valor / 100) : a.valor
+    if (!a.nombre?.trim() || !(monto > 0)) return
+    items.push({ codigo: `PERS-A${i}`, concepto: a.nombre.trim(), monto })
+  })
+  return items
+}
+
+/** Retenciones personales (ej. cuota alimentaria): se aplican AL FINAL, después de los aportes
+ *  de ley y Ganancias, sobre la base elegida. Filas sin nombre o con monto ≤ 0 se ignoran. */
+function itemsRetencionesPersonales(retenciones: RetencionPersonal[], bases: Record<BaseRetencion, number>): LineItem[] {
+  const items: LineItem[] = []
+  retenciones.forEach((r, i) => {
+    const monto = r.esPorcentaje ? bases[r.base] * (r.valor / 100) : r.valor
+    if (!r.nombre?.trim() || !(monto > 0)) return
+    items.push({ codigo: `PERS-R${i}`, concepto: r.nombre.trim(), monto })
+  })
+  return items
+}
+
+/** Bases disponibles para una retención personal porcentual (mismas en ambos convenios). */
+function basesRetencion(bruto: number, retencionesLey: number, biRaw: number, basico: number): Record<BaseRetencion, number> {
+  return {
+    NETO: bruto - retencionesLey,               // neto antes de esta retención
+    REMUNERATIVO: biRaw,                        // base imponible sin tope
+    REMUNERATIVO_NETO: biRaw - retencionesLey,  // remunerativo − retenciones de ley
+    BASICO: basico,
+    BRUTO: bruto,
+  }
+}
+
 // ─── Tipos de salida ────────────────────────────────────────────────────────────
 export interface LineItem { codigo: string; concepto: string; monto: number }
 
@@ -334,6 +408,9 @@ function calcular637(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryE
     { codigo: '3373', concepto: 'Ant. Acta 9/11/22', monto: acta1 },
     { codigo: '3374', concepto: 'Ant. Acta 22/10/25', monto: acta2 },
   ]
+  // Adicionales personales remunerativos (ej. mayor función): entran a los fijos ANTES de la
+  // base imponible → tributan aportes de ley y sindical, igual que el resto del remunerativo.
+  fijoItems.push(...itemsAdicionalesPersonales(config.adicionalesPersonales, B, true))
   const subtotalFijos = fijoItems.reduce((s, i) => s + i.monto, 0)
 
   const varViaje = a.totalViaje * (hb * 0.44105)  // viaje $6.007,12 re-anclado al hb nuevo
@@ -367,7 +444,9 @@ function calcular637(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryE
   const aportesLey = retencionItems.reduce((s, i) => s + i.monto, 0)
   const ganancia = GANANCIAS_MARGINAL * Math.max(0, biRaw - aportesLey - GANANCIAS_UMBRAL)
   if (ganancia > 0) retencionItems.push({ codigo: '90000', concepto: 'Ret. Imp. Ganancias (estimada)', monto: ganancia })
-  const retenciones = retencionItems.reduce((s, i) => s + i.monto, 0)
+  // Retenciones de ley (aportes + sindical + Ganancias): base de las retenciones personales, que
+  // se agregan más abajo (necesitan el bruto ya calculado).
+  const retencionesLey = retencionItems.reduce((s, i) => s + i.monto, 0)
 
   // Conteos calibrados a recibos 04-05/2026: ~1,85 viandas adicionales por día de campo y ~1,5
   // desayunos por día trabajado (la app contaba 1/día → subestimaba). Aproximado (conteo operativo).
@@ -391,9 +470,14 @@ function calcular637(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryE
     { codigo: '42220', concepto: 'Asig. Vaca Muerta', monto: 380000 },
     { codigo: '42210', concepto: 'Asig. Vianda Fija', monto: 546197 },
   )
+  // Adicionales personales NO remunerativos: van al bloque no remunerativo (no tributan).
+  noRemItems.push(...itemsAdicionalesPersonales(config.adicionalesPersonales, B, false))
   const subtotalNoRemunerativo = noRemItems.reduce((s, i) => s + i.monto, 0)
 
   const bruto = subtotalFijos + subtotalVariables + subtotalNoRemunerativo
+  // Retenciones personales (ej. cuota alimentaria): AL FINAL, después de aportes de ley y Ganancias.
+  retencionItems.push(...itemsRetencionesPersonales(config.retencionesPersonales, basesRetencion(bruto, retencionesLey, biRaw, B)))
+  const retenciones = retencionItems.reduce((s, i) => s + i.monto, 0)
   return {
     convenio: 'CCT_637_11', horaBase: hb,
     totalExtra50: a.total50, totalExtra100: a.total100, totalViaje: a.totalViaje, totalNocturnas: 0,
@@ -436,13 +520,20 @@ function calcular644(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryE
     ? (desarraigoBase / 30) * a.pernoctesTrailer * PRIV_TASA_DESARRAIGO
     : 0
 
-  // Paso 7: presentismo = 6% de todo lo demás remunerativo.
-  const presentismo = 0.06 * (conformado + antiguedad + adicCampo + bonoPaz + varExtra50 + varExtra100 + varViaje + difNocturna + desarraigo)
+  // Paso 7: presentismo = 6% de todo lo demás remunerativo, INCLUIDOS los adicionales
+  // personales remunerativos (ej. Mayor función). Verificado contra recibo operador 06/2026:
+  // presentismo $340.603,34 = 6% de (fijos con Mayor función + variables), exacto.
+  const adicionalesPersRem = itemsAdicionalesPersonales(config.adicionalesPersonales, B, true)
+  const totalAdicPersRem = adicionalesPersRem.reduce((s, i) => s + i.monto, 0)
+  const presentismo = 0.06 * (conformado + antiguedad + adicCampo + bonoPaz + varExtra50 + varExtra100 + varViaje + difNocturna + desarraigo + totalAdicPersRem)
 
   const fijoItems: LineItem[] = [{ codigo: '2', concepto: 'Sueldo Básico', monto: B }]
   if (antiguedad > 0) fijoItems.push({ codigo: '30', concepto: `Antigüedad (${config.antiguedadAnios} años)`, monto: antiguedad })
   if (turnoAdic > 0) fijoItems.push({ codigo: '18', concepto: `Diferencial ${TURNOS.find(t => t.key === PRIV_TURNO)?.label ?? ''}`, monto: turnoAdic })
   if (zonaVM > 0) fijoItems.push({ codigo: '24', concepto: 'Zona Vaca Muerta +85%', monto: zonaVM })
+  // Adicionales personales remunerativos (ej. mayor función): entran a los fijos ANTES de la
+  // base imponible → tributan aportes de ley y sindical, e integran la base del presentismo.
+  fijoItems.push(...adicionalesPersRem)
   fijoItems.push(
     { codigo: '102', concepto: 'Adicional Torre/Campo', monto: adicCampo },
     { codigo: '100', concepto: 'Bono Paz Social', monto: bonoPaz },
@@ -470,7 +561,8 @@ function calcular644(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryE
     { codigo: '20101', concepto: 'Cuota Solidaria 2%', monto: biRaw * 0.02 },
     { codigo: '20102', concepto: 'Mutual MEOPP 3,9%', monto: biRaw * 0.039 },
   ]
-  const retenciones = retencionItems.reduce((s, i) => s + i.monto, 0)
+  // Retenciones de ley: base de las retenciones personales, que se agregan más abajo (necesitan el bruto).
+  const retencionesLey = retencionItems.reduce((s, i) => s + i.monto, 0)
 
   const noRemItems: LineItem[] = [
     { codigo: '40010', concepto: `Vianda art.34 (${a.diasTrabajados} días)`, monto: a.diasTrabajados * 35849 },
@@ -480,9 +572,14 @@ function calcular644(config: SalaryConfig, a: Agregados, periodoYm = 0): SalaryE
   noRemItems.push({ codigo: '40497', concepto: 'SNR 3% s/remunerativo', monto: biRaw * 0.03 })
   noRemItems.push({ codigo: '42210', concepto: 'Asig. Vianda Fija', monto: 546197 })
   if (PRIV_ZONA_VM) noRemItems.push({ codigo: '42220', concepto: 'Asig. Vaca Muerta', monto: 380000 })
+  // Adicionales personales NO remunerativos: van al bloque no remunerativo (no tributan).
+  noRemItems.push(...itemsAdicionalesPersonales(config.adicionalesPersonales, B, false))
   const subtotalNoRemunerativo = noRemItems.reduce((s, i) => s + i.monto, 0)
 
   const bruto = subtotalFijos + subtotalVariables + subtotalNoRemunerativo
+  // Retenciones personales (ej. cuota alimentaria): AL FINAL, después de los aportes de ley.
+  retencionItems.push(...itemsRetencionesPersonales(config.retencionesPersonales, basesRetencion(bruto, retencionesLey, biRaw, B)))
+  const retenciones = retencionItems.reduce((s, i) => s + i.monto, 0)
   return {
     convenio: 'CCT_644_12', horaBase: hb,
     totalExtra50: a.total50, totalExtra100: a.total100, totalViaje: a.totalViaje, totalNocturnas: a.totalNocturnas,
