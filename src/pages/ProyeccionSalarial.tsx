@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Construction, Banknote, TrendingUp, Minus, Plus, Wallet, Info,
   LayoutGrid, BarChart3, ListTree, CalendarRange, PartyPopper,
-  FileSearch, Loader2, RefreshCw, AlertTriangle,
+  FileSearch, Loader2, RefreshCw, AlertTriangle, Copy, Check,
 } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { useAnalytics, shiftPeriodo, MESES_ES, type PeriodoStats } from '../hooks/useAnalytics'
@@ -19,6 +19,7 @@ import { db, type AppSettings, type ReciboAnalisisRow } from '../db/database'
 import { extraerTextoPdf, ReciboPdfError } from '../lib/recibo-pdf'
 import { parsearRecibo } from '../lib/recibo-parser'
 import { compararRecibo, type Hallazgo, type Severidad, type Veredicto } from '../lib/recibo-comparador'
+import { generarReclamo, renderListaPuntos, type Reclamo } from '../lib/reclamo-generador'
 import { basicoProyectado } from '../lib/paritarias'
 import { isMobilePhone } from '../lib/device'
 import {
@@ -162,10 +163,12 @@ function ContrastarRecibo({ est, convenio, mes, anio }: {
   est: SalaryEstimate; convenio: Convenio; mes: number; anio: number
 }) {
   const periodo = `${String(mes + 1).padStart(2, '0')}/${anio}`
+  const periodoAnterior = `${String(mes === 0 ? 12 : mes).padStart(2, '0')}/${mes === 0 ? anio - 1 : anio}`
   const [abierto, setAbierto] = useState(false)
   const [procesando, setProcesando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [analisis, setAnalisis] = useState<ReciboAnalisisRow | null>(null)
+  const [anterior, setAnterior] = useState<ReciboAnalisisRow | null>(null)
   const [periodoRecibo, setPeriodoRecibo] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -183,6 +186,23 @@ function ContrastarRecibo({ est, convenio, mes, anio }: {
       .catch(() => { if (!cancel) setAnalisis(null) })
     return () => { cancel = true }
   }, [periodo])
+
+  // Análisis del período anterior (para detectar diferencias que se repiten).
+  useEffect(() => {
+    let cancel = false
+    db.recibosAnalisis.get(periodoAnterior)
+      .then(row => { if (!cancel) setAnterior(row ?? null) })
+      .catch(() => { if (!cancel) setAnterior(null) })
+    return () => { cancel = true }
+  }, [periodoAnterior])
+
+  const reclamo = useMemo<Reclamo | null>(() => {
+    if (!analisis) return null
+    const aRecibo = (r: ReciboAnalisisRow) => ({
+      veredicto: r.veredicto, hallazgos: r.hallazgos, totalFaltante: r.totalFaltante, resumenLocal: '',
+    })
+    return generarReclamo(aRecibo(analisis), anterior ? aRecibo(anterior) : null)
+  }, [analisis, anterior])
 
   async function procesar(file: File) {
     setProcesando(true)
@@ -297,6 +317,10 @@ function ContrastarRecibo({ est, convenio, mes, anio }: {
                 </div>
               )}
 
+              {reclamo && (reclamo.puntos.length > 0 || reclamo.consultas.length > 0) && (
+                <PuntosRRHH reclamo={reclamo} />
+              )}
+
               <p className="text-[10px] text-slate-500 leading-relaxed">
                 Análisis local y estimativo (no es asesoramiento): verificá contra el PDF antes de
                 reclamar. Se guarda solo este resultado por período; el PDF no se almacena ni entra
@@ -372,6 +396,42 @@ function HallazgoRow({ h }: { h: Hallazgo }) {
         </div>
       )}
       {h.nota && <p className="text-[11px] text-slate-400 leading-relaxed mt-1">{h.nota}</p>}
+    </div>
+  )
+}
+
+// Lista de puntos lista para copiarle a RRHH (100% local, sin IA). Ignora las horas
+// de viaje (se liquidan aparte) y separa reclamo duro de consultas; marca lo que se
+// repite respecto del período anterior.
+function PuntosRRHH({ reclamo }: { reclamo: Reclamo }) {
+  const [copiado, setCopiado] = useState(false)
+  const texto = useMemo(() => renderListaPuntos(reclamo), [reclamo])
+
+  async function copiar() {
+    try {
+      await navigator.clipboard.writeText(texto)
+      setCopiado(true)
+      setTimeout(() => setCopiado(false), 2000)
+    } catch {
+      /* clipboard no disponible: el texto ya está a la vista para copiar a mano */
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-sky-800/40 bg-sky-950/20 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold text-slate-200">Puntos para RRHH</span>
+          {reclamo.hayRecurrencia && (
+            <span className="text-[9px] font-bold tracking-wide text-amber-300 bg-amber-900/40 rounded-full px-1.5 py-0.5">SE REPITE</span>
+          )}
+        </div>
+        <button onClick={copiar}
+          className="flex items-center gap-1 text-[11px] font-semibold text-sky-300 active:text-sky-200 rounded-lg px-2 py-1 bg-sky-900/40">
+          {copiado ? <><Check size={12} /> ¡Copiado!</> : <><Copy size={12} /> Copiar</>}
+        </button>
+      </div>
+      <pre className="text-[11px] text-slate-300 whitespace-pre-wrap font-sans leading-relaxed">{texto}</pre>
     </div>
   )
 }
