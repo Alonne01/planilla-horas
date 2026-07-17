@@ -792,6 +792,10 @@ function AdminLoginModal({ onClose, onSuccess }: { onClose: () => void; onSucces
   const [pass, setPass] = useState("")
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(false)
+  // El caracol abre este modal en `pointerdown`; el `click` que sigue al MISMO toque caería sobre el
+  // backdrop recién montado y lo cerraría al instante (parpadeo). Sólo cerramos si el toque EMPEZÓ en
+  // el backdrop (su pointerdown también fue sobre él), no por el click-through de la apertura.
+  const downEnBackdrop = useRef(false)
 
   async function entrar() {
     if (!email.trim() || !pass) return
@@ -803,7 +807,11 @@ function AdminLoginModal({ onClose, onSuccess }: { onClose: () => void; onSucces
   }
 
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/60" onClick={busy ? undefined : onClose}>
+    <div
+      className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/60"
+      onPointerDown={e => { downEnBackdrop.current = e.target === e.currentTarget }}
+      onClick={e => { if (!busy && downEnBackdrop.current && e.target === e.currentTarget) onClose() }}
+    >
       <div className="w-full max-w-xs rounded-2xl border border-slate-700 bg-slate-800 p-4 space-y-3" onClick={e => e.stopPropagation()}>
         <p className="text-sm font-bold text-white">Acceso de administrador</p>
         <input
