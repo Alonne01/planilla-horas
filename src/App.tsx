@@ -721,7 +721,7 @@ function AppContent() {
             <ProyeccionSalarialPage />
           </Suspense>
         )}
-        {tab === "admin" && showAdmin && <AdminPage />}
+        {tab === "admin" && showAdmin && <AdminPage onLogout={() => { setShowAdmin(false); setTab("settings") }} />}
       </div>
 
       <nav ref={navRef} className="vt-bottom-nav fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30 pb-[env(safe-area-inset-bottom)]">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye, LayoutDashboard, Lightbulb, Copy, Check, Banknote } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, listarNetosNube, asegurarAuthAdmin, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry, type NetoEntry } from '../lib/cloud-backup'
+import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye, LayoutDashboard, Lightbulb, Copy, Check, Banknote, KeyRound, LogOut } from 'lucide-react'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, listarNetosNube, asegurarAuthAdmin, adminUidActual, refrescarTokenAdmin, logoutAdmin, ADMIN_UID_ESPERADO, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry, type NetoEntry } from '../lib/cloud-backup'
 import { fmtPesos } from '../lib/calculo-salarial'
 import { APP_VERSION } from '../version'
 
@@ -60,7 +60,7 @@ function agrupar(list: PadronEntry[], key: (e: PadronEntry) => string): [string,
 const lineaDe = (e: PadronEntry) => e.linea || SIN_LINEA
 const versionDe = (e: PadronEntry) => e.version || SIN_VERSION
 
-export function AdminPage() {
+export function AdminPage({ onLogout }: { onLogout: () => void }) {
   const [padron, setPadron] = useState<PadronEntry[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -237,6 +237,10 @@ export function AdminPage() {
         {/* ─── RESUMEN: uso de Firebase + métricas + gráficos ─── */}
         {tab === 'resumen' && (
           <>
+            {/* Diagnóstico de la sesión admin: muestra el UID logueado vs el de las reglas y permite
+                refrescar el token o cerrar sesión (única salida de admin de la app). */}
+            <SesionAdminCard onLogout={onLogout} />
+
             {uso && (
               <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4 space-y-3">
                 <div className="flex items-center justify-between">
@@ -583,6 +587,103 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
 }
 
 /** Botón de pestaña del header de admin. `badge` muestra un contador (ej. sugerencias nuevas). */
+/** Diagnóstico + acciones de la sesión admin. Compara el UID autenticado contra el de las reglas
+ *  (ADMIN_UID_ESPERADO): si NO coincide, ninguna escritura admin funciona. Permite refrescar el token
+ *  (arregla token viejo) o cerrar sesión (para reloguear). */
+function SesionAdminCard({ onLogout }: { onLogout: () => void }) {
+  const [uid, setUid] = useState<string | null | undefined>(undefined) // undefined = cargando
+  const [copiado, setCopiado] = useState(false)
+  const [refrescando, setRefrescando] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null)
+
+  useEffect(() => {
+    let vivo = true
+    adminUidActual().then(u => { if (vivo) setUid(u) })
+    return () => { vivo = false }
+  }, [])
+
+  const coincide = uid === ADMIN_UID_ESPERADO
+
+  async function copiar() {
+    if (!uid) return
+    try { await navigator.clipboard.writeText(uid); setCopiado(true); setTimeout(() => setCopiado(false), 1500) } catch { /* ignore */ }
+  }
+
+  async function refrescar() {
+    setRefrescando(true); setMsg(null)
+    const ok = await refrescarTokenAdmin()
+    setMsg(ok
+      ? { ok: true, texto: 'Token renovado ✓ — probá la acción de nuevo.' }
+      : { ok: false, texto: 'No se pudo: no hay sesión activa. Cerrá sesión y reingresá.' })
+    setUid(await adminUidActual())
+    setRefrescando(false)
+  }
+
+  async function salir() {
+    await logoutAdmin()
+    onLogout()
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4 space-y-3">
+      <span className="text-sm font-semibold text-white flex items-center gap-1.5"><KeyRound size={15} /> Sesión admin</span>
+
+      {uid === undefined ? (
+        <p className="text-xs text-slate-400">Verificando sesión…</p>
+      ) : (
+        <>
+          {/* Estado según el UID */}
+          {uid === null ? (
+            <div className="flex items-start gap-2 rounded-xl bg-amber-950/40 border border-amber-800/40 px-3 py-2 text-[12px] text-amber-200">
+              <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+              <span>No hay sesión de Firebase activa. Cerrá sesión y volvé a entrar para reautenticarte.</span>
+            </div>
+          ) : coincide ? (
+            <div className="flex items-start gap-2 rounded-xl bg-emerald-950/40 border border-emerald-800/40 px-3 py-2 text-[12px] text-emerald-200">
+              <Check size={15} className="shrink-0 mt-0.5" />
+              <span>Coincide con el UID de las reglas: sos admin. Si igual una acción falla, tocá «Refrescar token».</span>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2 rounded-xl bg-red-950/40 border border-red-800/40 px-3 py-2 text-[12px] text-red-200">
+              <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+              <span>Tu UID <b>no coincide</b> con el de las reglas: por eso fallan las escrituras admin. Poné este UID en <code className="font-mono">firestore.rules</code> (o volvé a la cuenta correcta).</span>
+            </div>
+          )}
+
+          {/* UID actual (copiable) */}
+          {uid !== null && (
+            <div className="space-y-1">
+              <span className="text-[11px] text-slate-400">UID actual (tocá para copiar)</span>
+              <button onClick={copiar} className="w-full flex items-center gap-2 rounded-lg bg-slate-900/60 border border-slate-700 px-3 py-2 text-left active:bg-slate-900">
+                <code className="flex-1 text-[12px] text-slate-200 break-all font-mono">{uid}</code>
+                {copiado ? <Check size={15} className="shrink-0 text-emerald-400" /> : <Copy size={15} className="shrink-0 text-slate-400" />}
+              </button>
+            </div>
+          )}
+
+          {/* UID esperado (referencia) */}
+          <div className="space-y-1">
+            <span className="text-[11px] text-slate-400">UID esperado (reglas)</span>
+            <code className="block rounded-lg bg-slate-900/40 border border-slate-800 px-3 py-2 text-[12px] text-slate-400 break-all font-mono">{ADMIN_UID_ESPERADO}</code>
+          </div>
+
+          {msg && <p className={`text-[12px] ${msg.ok ? 'text-emerald-300' : 'text-red-300'}`}>{msg.texto}</p>}
+
+          {/* Acciones */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button onClick={refrescar} disabled={refrescando} className="flex items-center justify-center gap-1.5 rounded-lg bg-slate-700 text-slate-100 text-xs font-medium px-3 py-2 active:bg-slate-600 disabled:opacity-50">
+              <RefreshCw size={14} className={refrescando ? 'animate-spin' : ''} /> {refrescando ? 'Refrescando…' : 'Refrescar token'}
+            </button>
+            <button onClick={salir} className="flex items-center justify-center gap-1.5 rounded-lg bg-red-900/60 text-red-100 text-xs font-medium px-3 py-2 active:bg-red-900">
+              <LogOut size={14} /> Cerrar sesión
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function TabBtn({ active, label, icon, badge, onClick }: { active: boolean; label: string; icon: React.ReactNode; badge?: number; onClick: () => void }) {
   return (
     <button

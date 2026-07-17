@@ -188,6 +188,35 @@ export async function asegurarAuthAdmin(): Promise<boolean> {
   } catch { return false }
 }
 
+// UID de la cuenta admin en las reglas de Firestore (function esAdmin()). Se replica ACÁ SÓLO para el
+// diagnóstico visual del panel (comparar contra el UID logueado); la AUTORIDAD real la siguen dando las
+// reglas. Si cambiás la cuenta admin, actualizá este valor Y el de firestore.rules.
+export const ADMIN_UID_ESPERADO = 'comWF8BlxMXEYPoEbzy27LkM2fp1'
+
+/** UID de la cuenta admin actualmente autenticada (o null si no hay sesión). Sólo diagnóstico. */
+export async function adminUidActual(): Promise<string | null> {
+  try {
+    const auth = await getAuthLazy()
+    if (auth.currentUser) return auth.currentUser.uid
+    // La sesión puede estar restaurándose desde persistencia: esperá a onAuthStateChanged.
+    const { onAuthStateChanged } = await import('firebase/auth')
+    return await new Promise<string | null>(resolve => {
+      const unsub = onAuthStateChanged(auth, u => { unsub(); resolve(u?.uid ?? null) })
+    })
+  } catch { return null }
+}
+
+/** Fuerza la renovación del token del admin (sin pedir credenciales). true si había sesión y se renovó.
+ *  Arregla el caso "sesión vieja/token expirado" con la cuenta correcta; si la cuenta fue borrada, falla. */
+export async function refrescarTokenAdmin(): Promise<boolean> {
+  try {
+    const auth = await getAuthLazy()
+    if (!auth.currentUser) return false
+    await auth.currentUser.getIdToken(true)
+    return true
+  } catch { return false }
+}
+
 /** Usuario no vacío + código de exactamente 6 dígitos. */
 export function credencialesNubeValidas(usuario: string, codigo: string): boolean {
   return usuario.trim().length > 0 && /^\d{6}$/.test(codigo.trim())
