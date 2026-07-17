@@ -108,9 +108,26 @@ export function marcarSalarioDesbloqueadoNube(activo: boolean): void {
 // Identidad sentinela para desbloquear SÓLO la pantalla de admin (no el salario): nombre
 // "Nicolas Vazquez" + código "000000". Combinado con el gesto de 3 toques al caracol.
 const ADMIN_NOMBRE = normalizar('Nicolas Vazquez')
-const ADMIN_CODIGO = '000000'
+/** Código de respaldo canónico del admin: es a la vez su código real y la llave del gate de admin. */
+export const CODIGO_ADMIN = '000000'
 export function esAdminNube(nombre: string | undefined | null, codigo: string | undefined | null): boolean {
-  return normalizar(nombre ?? '') === ADMIN_NOMBRE && (codigo ?? '').trim() === ADMIN_CODIGO
+  return esNombreAdmin(nombre) && (codigo ?? '').trim() === CODIGO_ADMIN
+}
+
+/** ¿El nombre corresponde a la identidad del admin (ignora acentos/mayúsculas/espacios)? */
+export function esNombreAdmin(nombre: string | undefined | null): boolean {
+  return normalizar(nombre ?? '') === ADMIN_NOMBRE
+}
+
+/**
+ * ¿Hay que re-anclar el código de respaldo del admin? true sólo si el nombre es el del admin y el
+ * código está vacío. Auto-sana el caso en que el 000000 desaparece (lo que dejaría al admin sin poder
+ * re-desbloquear su pantalla, ya que esAdminNube exige código "000000").
+ */
+export function debeReanclarCodigoAdmin(
+  nombre: string | undefined | null, codigo: string | undefined | null,
+): boolean {
+  return esNombreAdmin(nombre) && (codigo ?? '').trim() === ''
 }
 
 // SEGUNDO factor del admin = LOGIN REAL con Firebase Auth (ver cloud-backup.loginAdmin). El gesto del

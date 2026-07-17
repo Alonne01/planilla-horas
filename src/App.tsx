@@ -9,7 +9,7 @@ import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings, clearAllRegistros } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
-import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, loginAdmin, asegurarAuthAdmin, deviceIdLocal, reclamarSalaryDevice, revocarSalaryConflicto, miDocIdNube, restaurarSharedDoc, subirSharedDoc, leerUpdatedAtDoc, autoBajarCambiosPC, type AppConfig } from "./lib/cloud-backup"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, asegurarCodigoAdmin, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, loginAdmin, asegurarAuthAdmin, deviceIdLocal, reclamarSalaryDevice, revocarSalaryConflicto, miDocIdNube, restaurarSharedDoc, subirSharedDoc, leerUpdatedAtDoc, autoBajarCambiosPC, type AppConfig } from "./lib/cloud-backup"
 import { isMobilePhone } from "./lib/device"
 import { cargarSesion, esValida, guardarSesion, limpiarSesion, renovar, type PCSession } from "./lib/pc-session"
 import { PairGate } from "./components/PairGate"
@@ -315,7 +315,10 @@ function AppContent() {
       // Check record count after shadow restore
       try {
         const count = await db.registros.count()
-        const s = await getSettings()
+        let s = await getSettings()
+        // Red de seguridad: si el código de respaldo del admin quedó vacío, re-anclarlo a 000000
+        // (si no, se quedaría sin poder re-desbloquear la pantalla admin). Re-leemos si sanó.
+        if (await asegurarCodigoAdmin()) s = await getSettings()
         const cloudOn = credencialesNubeValidas(s.nombreUsuario, s.backupCodigo)
         // Baseline del nombre con el que existe el respaldo (para detectar una corrección de nombre luego).
         if (cloudOn && !ultimoUsuarioNube()) setUltimoUsuarioNube(s.nombreUsuario)
@@ -323,7 +326,7 @@ function AppContent() {
           // Si hay credenciales y EXISTE un respaldo en la nube, ofrecer restaurarlo;
           // si no, el aviso de "sin datos" (a lo sumo 1 vez por semana).
           let hayNube = false
-          if (cloudOn && quedanOperacionesNube()) {
+          if (cloudOn && quedanOperacionesNube(s.nombreUsuario)) {
             try { hayNube = await existeBackupNube(s.nombreUsuario, s.backupCodigo) } catch { /* sin conexión */ }
           }
           if (hayNube) {
@@ -341,7 +344,7 @@ function AppContent() {
           // no tiene ediciones locales sin subir (así nunca se pisan cambios propios). Esto hace que
           // "cambié en la PC → abro el teléfono → aparecen los cambios" funcione sin tocar botones. El
           // sueldo local queda intacto (la PC nunca escribe la sección 'salary').
-          if (esTelefono && cloudOn && quedanOperacionesNube()) {
+          if (esTelefono && cloudOn && quedanOperacionesNube(s.nombreUsuario)) {
             try {
               if (await autoBajarCambiosPC(s.nombreUsuario, s.backupCodigo)) {
                 window.location.reload() // repuebla el calendario con lo bajado
@@ -349,7 +352,7 @@ function AppContent() {
               }
             } catch { /* sin conexión: se reintenta al próximo arranque */ }
           }
-          if (cloudOn && msSinceCloudBackup() > CLOUD_BACKUP_INTERVAL_MS && quedanOperacionesNube()) {
+          if (cloudOn && msSinceCloudBackup() > CLOUD_BACKUP_INTERVAL_MS && quedanOperacionesNube(s.nombreUsuario)) {
             // Respaldo automático y silencioso a la nube (cada >=3 días al abrir la app).
             // soloSiCambio: si nada cambió desde la última subida, no sube (ahorra datos móviles).
             try {
@@ -357,7 +360,7 @@ function AppContent() {
               markCloudBackupDone()
               if (subido) setCloudBackupDone(true)
             } catch { /* sin conexión: reintenta en el próximo arranque */ }
-          } else if (!cloudOn && s.nombreUsuario.trim() && setupHecho() && quedanOperacionesNube()) {
+          } else if (!cloudOn && s.nombreUsuario.trim() && setupHecho() && quedanOperacionesNube(s.nombreUsuario)) {
             // Usuario con nombre y datos pero SIN respaldo en la nube: le generamos el código y subimos
             // su primer respaldo automáticamente (una sola vez; después cae en la rama cloudOn de arriba).
             // No corre para usuarios nuevos: a ésos los configura el setup obligatorio del primer inicio.

@@ -6,7 +6,8 @@
 // (util/BackupPinManager.kt). La privacidad la completan las reglas Firestore (get sí, list/delete no).
 import { initializeApp, type FirebaseApp } from 'firebase/app'
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc, increment, type Firestore } from 'firebase/firestore/lite'
-import { exportBackupJSON, importBackupJSON, saveSettings, db } from '../db/database'
+import { exportBackupJSON, importBackupJSON, saveSettings, getSettings, db } from '../db/database'
+import { esNombreAdmin, debeReanclarCodigoAdmin, CODIGO_ADMIN } from './calculo-salarial'
 import { APP_VERSION } from '../version'
 import { leerMetricas } from './metricas'
 import { calcularNetoActualParaAdmin } from './neto-admin'
@@ -38,6 +39,14 @@ const PBKDF2_ITERATIONS = 100_000
 // debajo; este tope corta el spam para no agotar la cuota.
 const OPS_KEY = 'planilla-cloud-ops'
 const MAX_OPS_DIA = 11
+// El admin (Nicolas Vazquez) tiene una operación más por día que el resto: al desloguearse de admin
+// (para refrescar el token) pierde el flag de dispositivo admin y vuelve a caer bajo el tope; este +1
+// por NOMBRE le deja hacer una restauración/operación de nube más que los demás igual.
+const MAX_OPS_DIA_ADMIN = 12
+/** Tope diario de operaciones de nube según el nombre (12 para el admin por nombre, 11 para el resto). */
+export function topeOpsDia(nombre?: string | null): number {
+  return esNombreAdmin(nombre) ? MAX_OPS_DIA_ADMIN : MAX_OPS_DIA
+}
 
 function hoyKey(): string {
   const d = new Date()
@@ -63,6 +72,22 @@ export function marcarAdminDispositivo(): void {
   try { localStorage.setItem(ADMIN_KEY, '1') } catch { /* ignore */ }
 }
 
+/**
+ * Auto-sana el código de respaldo del admin: si el usuario es "Nicolas Vazquez" y su código quedó
+ * vacío, lo re-ancla a "000000" (bloqueado). Su código es a la vez la llave del gate de admin
+ * (esAdminNube exige "000000"), así que si desaparece se queda sin poder re-desbloquear la pantalla.
+ * Idempotente y best-effort: se llama al arrancar la app y al desloguearse de admin. Devuelve true si
+ * re-ancló el código.
+ */
+export async function asegurarCodigoAdmin(): Promise<boolean> {
+  try {
+    const s = await getSettings()
+    if (!debeReanclarCodigoAdmin(s.nombreUsuario, s.backupCodigo)) return false
+    await saveSettings({ backupCodigo: CODIGO_ADMIN, backupBloqueado: true })
+    return true
+  } catch { return false }
+}
+
 // ── Último nombre con el que se respaldó en la nube (para detectar correcciones de nombre) ──────
 // El respaldo se direcciona por hash(nombre:código). Si el usuario corrige su nombre (mismo código),
 // el id cambia y queda un respaldo huérfano. Guardamos acá el último nombre respaldado para poder
@@ -76,9 +101,9 @@ export function setUltimoUsuarioNube(usuario: string): void {
 }
 
 /** ¿Quedan operaciones de nube disponibles hoy en este dispositivo? (anti-abuso de cuota).
- *  El dispositivo admin no tiene tope. */
-export function quedanOperacionesNube(): boolean {
-  return esAdminDispositivo() || opsHoy() < MAX_OPS_DIA
+ *  El dispositivo admin no tiene tope; el admin POR NOMBRE tiene una operación más que el resto. */
+export function quedanOperacionesNube(nombre?: string | null): boolean {
+  return esAdminDispositivo() || opsHoy() < topeOpsDia(nombre)
 }
 
 // ── Uso GLOBAL de Firebase (todos los usuarios) ─────────────────────────────────

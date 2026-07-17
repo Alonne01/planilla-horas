@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye, LayoutDashboard, Lightbulb, Copy, Check, Banknote, KeyRound, LogOut } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, listarNetosNube, asegurarAuthAdmin, adminUidActual, refrescarTokenAdmin, logoutAdmin, ADMIN_UID_ESPERADO, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry, type NetoEntry } from '../lib/cloud-backup'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, listarNetosNube, asegurarAuthAdmin, adminUidActual, refrescarTokenAdmin, logoutAdmin, asegurarCodigoAdmin, ADMIN_UID_ESPERADO, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry, type NetoEntry } from '../lib/cloud-backup'
 import { fmtPesos } from '../lib/calculo-salarial'
 import { APP_VERSION } from '../version'
 
@@ -621,6 +621,9 @@ function SesionAdminCard({ onLogout }: { onLogout: () => void }) {
 
   async function salir() {
     await logoutAdmin()
+    // Al salir de admin, asegurar que el código de respaldo 000000 no quedó vacío (si no, quedaría
+    // sin poder re-desbloquear la pantalla admin). Best-effort, no bloquea la navegación.
+    await asegurarCodigoAdmin()
     onLogout()
   }
 

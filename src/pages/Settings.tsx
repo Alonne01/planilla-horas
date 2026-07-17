@@ -308,7 +308,7 @@ export function SettingsPage() {
     const viejo = ultimoUsuarioNube()
     if (!credencialesNubeValidas(nuevo, bkCodigo)) return
     if (!viejo || viejo.toLowerCase() === nuevo.toLowerCase()) { setUltimoUsuarioNube(nuevo); return }
-    if (!quedanOperacionesNube()) return
+    if (!quedanOperacionesNube(nombre)) return
     setCloudBusy(true)
     try {
       const r = await migrarBackupNube(viejo, nuevo, bkCodigo, lineaLabel(linea))
@@ -331,7 +331,7 @@ export function SettingsPage() {
       flash('Completá tu nombre y un código de 6 dígitos', 'err')
       return
     }
-    if (!quedanOperacionesNube()) {
+    if (!quedanOperacionesNube(nombre)) {
       setLimiteMsg('Por hoy no se pueden hacer más respaldos. Intentá de nuevo mañana.')
       return
     }
@@ -355,7 +355,7 @@ export function SettingsPage() {
       flash('Configurá tu nombre y código de nube primero', 'err')
       return
     }
-    if (!quedanOperacionesNube()) {
+    if (!quedanOperacionesNube(nombre)) {
       setLimiteMsg('Por hoy no se pueden hacer más sincronizaciones. Intentá de nuevo mañana.')
       return
     }
@@ -386,7 +386,7 @@ export function SettingsPage() {
       flash('Completá tu nombre y el código de 6 dígitos a recuperar', 'err')
       return
     }
-    if (!quedanOperacionesNube()) {
+    if (!quedanOperacionesNube(nombre)) {
       setLimiteMsg('Por hoy no se pueden hacer más restauraciones. Intentá de nuevo mañana.')
       return
     }
