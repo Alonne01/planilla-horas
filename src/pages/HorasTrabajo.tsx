@@ -13,6 +13,7 @@ import { esFeriadoNacional } from '../lib/feriados'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
 import { registrarExportacion } from '../lib/metricas'
+import { registrarSalidaDeLaApp, evaluarVueltaDeDonar } from '../lib/donacion'
 import { Cafecito } from '../components/Cafecito'
 import { ShareQR } from '../components/ShareQR'
 import { MonthPeriodPicker } from '../components/MonthPeriodPicker'
@@ -73,7 +74,7 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const { registros, loading, upsert, remove, reload } = useHoras(mes, anio)
-  const { settings, update } = useSettings()
+  const { settings, loaded: settingsLoaded, update } = useSettings()
   // El "ya donó" de la tacita se decide por usuario+código (no por dispositivo). idKeyRef = siempre fresco.
   const idKey = useMemo(() => beggarIdKey(settings.nombreUsuario, settings.backupCodigo), [settings.nombreUsuario, settings.backupCodigo])
   const idKeyRef = useRef(idKey)
@@ -95,42 +96,49 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
     try { localStorage.setItem('planilla-tip-copiar', 'dismissed') } catch { /* ignore */ }
   }
 
-  // Agradecimiento al volver de donar: si tocó el link y tardó >1 min en volver,
-  // probablemente donó → la tacita agradece (heurística, sin backend).
+  // Agradecimiento al volver de donar: si tocó la tacita y salió de la app (MercadoPago cobra desde
+  // su app u otra pestaña), al volver se cuenta como que donó → la tacita agradece (ver lib/donacion).
   const [graciasVisible, setGraciasVisible] = useState(false)
   const cerrarGracias = useCallback(() => setGraciasVisible(false), [])
   // Si ya donó en las últimas 24 h (por usuario+código), la tacita queda quieta (sin balancearse).
   // Se inicializa en el effect de identidad (depende de settings, que carga async).
   const [yaAgradecioHoy, setYaAgradecioHoy] = useState(false)
   useEffect(() => {
+    // Recién con los ajustes cargados: si la app arrancó de cero al volver de MercadoPago, la marca de
+    // "ya donó" tiene que quedar con la identidad real (usuario+código), no con 'anon'.
+    if (!settingsLoaded) return
     function check() {
-      if (document.visibilityState !== 'visible') return
+      if (document.visibilityState !== 'visible') {
+        registrarSalidaDeLaApp() // se fue (a MercadoPago u otra app/pestaña) después de tocar
+        return
+      }
+      if (!evaluarVueltaDeDonar()) return
       try {
-        const ts = Number(localStorage.getItem('planilla-donacion-ts') || 0)
-        if (!ts) return
-        localStorage.removeItem('planilla-donacion-ts')
-        const elapsed = Date.now() - ts
         const donoKey = `planilla-dono-ts:${idKeyRef.current}`
         const donoTs = Number(localStorage.getItem(donoKey) || 0)
         const yaDono24h = donoTs > 0 && Date.now() - donoTs < 24 * 60 * 60 * 1000
         // Mostrar el "gracias" sólo una vez por 24 h (por usuario+código).
-        if (elapsed > 60_000 && elapsed < 30 * 60_000 && !yaDono24h) {
+        if (!yaDono24h) {
           localStorage.setItem(donoKey, String(Date.now()))
           setYaAgradecioHoy(true)
           setGraciasVisible(true)
         }
       } catch { /* ignore */ }
     }
+    // pagehide: si el navegador descarga la página al ir a MercadoPago (fallback sin popup).
+    const salida = () => registrarSalidaDeLaApp()
     document.addEventListener('visibilitychange', check)
     window.addEventListener('focus', check)
     window.addEventListener('pageshow', check)
+    window.addEventListener('pagehide', salida)
     check()
     return () => {
       document.removeEventListener('visibilitychange', check)
       window.removeEventListener('focus', check)
       window.removeEventListener('pageshow', check)
+      window.removeEventListener('pagehide', salida)
     }
-  }, [])
+  }, [settingsLoaded])
 
   // yaAgradecioHoy se decide por usuario+código: se sincroniza según la identidad.
   useEffect(() => {

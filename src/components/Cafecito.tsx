@@ -2,12 +2,13 @@ import { useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent 
 import { Heart } from 'lucide-react'
 import { MERCADOPAGO_DONACION_URL } from '../lib/calculo-salarial'
 import { registrarTapDonacion, registrarGracias } from '../lib/metricas'
+import { registrarToqueDonacion } from '../lib/donacion'
 
 // Tacita de café para donar: botón chico y FIJO abajo a la izquierda, al lado del botón del QR.
 // Siempre está (no aparece/desaparece como el viejo personaje): humea y cada tanto se balancea
 // un poquito para invitar a tocarla, y una vez por sesión asoma un cartelito "click acá".
 // Al tocarla: onda + vibración corta (Android), la taza "toma un sorbo" (se inclina, baja el café,
-// sube un corazoncito), avisa "Abriendo MercadoPago…" y lo abre. Al volver de donar (`gracias`)
+// sube un corazoncito), avisa "Abriendo MercadoPago…" y lo abre. Si tocó y salió de la app, al volver (`gracias`)
 // suben corazones con un "¡Gracias!" y, durante las 24 h siguientes (`calma`), queda quieta con
 // una insignia de corazón.
 
@@ -47,8 +48,8 @@ export function Cafecito({ hidden = false, calma = false, gracias = false, onGra
     setSorbiendo(true)
     setAbriendo(true)
     try { navigator.vibrate?.(12) } catch { /* sin vibración (iPhone/escritorio) */ }
-    // Marco la hora para detectar "volvió de donar" (heurística >1 min) y cuento el toque.
-    try { localStorage.setItem('planilla-donacion-ts', String(Date.now())) } catch { /* ignore */ }
+    // Marca el toque: si después sale de la app (a MercadoPago), al volver se agradece (lib/donacion).
+    registrarToqueDonacion()
     registrarTapDonacion()
     // 550 ms queda dentro de la ventana de "gesto del usuario" de los navegadores (no lo bloquean como popup).
     window.setTimeout(() => {
