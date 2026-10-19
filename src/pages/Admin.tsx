@@ -208,7 +208,7 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="min-h-screen bg-slate-900 pb-12">
       {/* Header + pestañas (sticky): cortan el scroll infinito y agrupan por tarea. */}
-      <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+      <div className="sticky top-[env(safe-area-inset-top)] z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
         <div className="px-4 pt-4 pb-2.5 flex items-center justify-between">
           <h1 className="text-lg font-bold text-white">Admin</h1>
           <button

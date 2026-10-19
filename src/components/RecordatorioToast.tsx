@@ -19,7 +19,7 @@ export function RecordatorioToast({ cierreMs, onClose }: { cierreMs: number; onC
   }
 
   return (
-    <div className="fixed inset-x-3 bottom-20 z-[80] mx-auto max-w-sm rounded-2xl border border-amber-500/40 bg-slate-800 p-4 shadow-2xl shadow-black/50 animate-[gate-rise_240ms_ease_both]">
+    <div className="fixed inset-x-3 bottom-[calc(var(--nav-h,3.5rem)+1.5rem)] z-[80] mx-auto max-w-sm rounded-2xl border border-amber-500/40 bg-slate-800 p-4 shadow-2xl shadow-black/50 animate-[gate-rise_240ms_ease_both]">
       <div className="flex items-start gap-3">
         <span className="grid place-items-center w-9 h-9 rounded-full bg-amber-500/15 shrink-0">
           <CalendarClock size={18} className="text-amber-300" />

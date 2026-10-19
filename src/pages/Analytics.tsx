@@ -49,7 +49,7 @@ export function AnalyticsPage() {
   return (
     <div className="min-h-screen bg-slate-900 pb-24">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+      <div className="sticky top-[env(safe-area-inset-top)] z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={() => cambiarMes(-1)} className="p-2 text-slate-400 active:text-white">‹</button>
           <button onClick={() => setShowMonthPicker(true)} className="text-center active:opacity-70 transition-opacity" title="Elegir período">

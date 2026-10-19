@@ -72,7 +72,7 @@ export function ShareQR({ hidden = false }: { hidden?: boolean }) {
         onClick={abrir}
         aria-label="Compartir la app"
         title="Compartir la app"
-        className={`fixed bottom-20 left-4 z-40 w-12 h-12 rounded-full bg-slate-800/90 border border-slate-600/70 text-teal-300 shadow-lg flex items-center justify-center backdrop-blur transition-all duration-200 active:scale-95 animate-[qr-btn-in_240ms_ease_both] ${
+        className={`fixed bottom-[calc(var(--nav-h,3.5rem)+1.5rem)] left-4 z-40 w-12 h-12 rounded-full bg-slate-800/90 border border-slate-600/70 text-teal-300 shadow-lg flex items-center justify-center backdrop-blur transition-all duration-200 active:scale-95 animate-[qr-btn-in_240ms_ease_both] ${
           hidden ? 'opacity-0 scale-50 pointer-events-none' : 'opacity-100'
         }`}
       >

@@ -436,7 +436,7 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
     <div className={`relative isolate h-[100dvh] ${viewMode === 'list' ? 'overflow-y-auto' : 'overflow-hidden'} bg-slate-900 pb-24`}>
       <BgBlobs />
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+      <div className="sticky top-[env(safe-area-inset-top)] z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800">
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={() => cambiarMes(-1)} className="p-2 text-slate-400 active:text-white">‹</button>
           <button onClick={() => setShowMonthPicker(true)} className="text-center active:opacity-70 transition-opacity" title="Elegir período">
@@ -557,7 +557,7 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
       )}
 
       {/* Export FAB — above the bottom nav (z-30, ~52px); oculto en modo aplicar */}
-      <div className={`fixed bottom-20 right-4 z-40 flex flex-col items-end ${applySource || deleteMode ? 'hidden' : ''}`}>
+      <div className={`fixed bottom-[calc(var(--nav-h,3.5rem)+1.5rem)] right-4 z-40 flex flex-col items-end ${applySource || deleteMode ? 'hidden' : ''}`}>
         {showExportMenu && (
           <div className="mb-2 flex flex-col gap-2 items-end">
             <button

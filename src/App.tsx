@@ -121,7 +121,6 @@ function AppContent() {
   const [beggarUser, setBeggarUser] = useState(false)
   const restoreRef = useRef<HTMLInputElement>(null)
   // Alto real del nav (incluye safe-area) para apoyar el caracol del easter egg en su borde.
-  const navRef = useRef<HTMLElement>(null)
   const [navH, setNavH] = useState(56)
 
   // ─── Primer inicio: setup OBLIGATORIO (nombre + apellido → código → respaldo) + tutorial simple ───
@@ -262,15 +261,23 @@ function AppContent() {
   }
 
   // Medir el alto del nav (cambia con el safe-area y si aparece la pestaña Sueldo) para el caracol.
-  useEffect(() => {
-    const el = navRef.current
+  // También se publica como `--nav-h` para que los botones flotantes (FAB, QR, tacita) se apoyen
+  // sobre el nav real: en iPhone instalado el nav suma la franja del indicador de inicio.
+  // Ref de callback (no useEffect): el nav recién existe después del gate de instalación, y un
+  // effect que corre antes nunca lo veía.
+  const navRoRef = useRef<ResizeObserver | null>(null)
+  const navRef = useCallback((el: HTMLElement | null) => {
+    navRoRef.current?.disconnect()
+    navRoRef.current = null
     if (!el) return
-    const medir = () => setNavH(el.offsetHeight)
+    const medir = () => {
+      setNavH(el.offsetHeight)
+      document.documentElement.style.setProperty('--nav-h', `${el.offsetHeight}px`)
+    }
     medir()
-    const ro = new ResizeObserver(medir)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [showSalary, showAdmin])
+    navRoRef.current = new ResizeObserver(medir)
+    navRoRef.current.observe(el, { box: 'border-box' }) // border-box: el safe-area es padding
+  }, [])
 
   // iOS Safari can silently erase PWA storage after 7 days of inactivity
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
@@ -579,8 +586,11 @@ function AppContent() {
   }
 
   return (
-    <div className="max-w-lg mx-auto min-h-screen relative">
-      <div className="pb-16 vt-page-content">
+    <div className="max-w-lg mx-auto min-h-screen relative pt-[env(safe-area-inset-top)]">
+      {/* iPhone instalado (status bar translúcida): franja opaca detrás de la hora/batería para que el
+          contenido no se lea por debajo al scrollear. En Android/escritorio mide 0. */}
+      <div aria-hidden className="fixed inset-x-0 top-0 z-50 h-[env(safe-area-inset-top)] bg-slate-900" />
+      <div className="pb-[max(4rem,var(--nav-h,4rem))] vt-page-content">
         <Greeting />
         {/* Barra de PC vinculada: sincronizar (última-escritura-gana) + cerrar sesión. Sólo en PC. */}
         {pcSesion && (

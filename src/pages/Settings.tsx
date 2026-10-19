@@ -487,7 +487,7 @@ export function SettingsPage() {
   return (
     <div className="relative isolate min-h-screen bg-slate-900 pb-12">
       <BgBlobs />
-      <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-4">
+      <div className="sticky top-[env(safe-area-inset-top)] z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-4">
         <h1 className="text-lg font-bold text-white">Configuración</h1>
       </div>
 

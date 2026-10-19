@@ -232,6 +232,22 @@ html.vt-back ::view-transition-new(root) { animation: 190ms ease both vt-slide-l
   100% { opacity: 0; transform: translate(-50%, -40px) scale(0.9); }
 }
 .cafecito-corazon-sorbo { animation: cafecito-corazon-sorbo 900ms ease-out forwards; }
+/* Durante el sorbo el café baja un poco (como si se hubiera tomado). */
+@keyframes cafecito-cafe-baja {
+  0%, 100% { transform: none; }
+  40%, 70% { transform: translateY(1.4px) scaleX(0.88); }
+}
+.cafecito-cafe { transform-box: fill-box; transform-origin: center; }
+.cafecito-sorbo .cafecito-cafe { animation: cafecito-cafe-baja 600ms ease-in-out both; }
+/* Onda cálida al tocar. */
+@keyframes cafecito-onda {
+  0%   { opacity: 0.9; transform: scale(1); }
+  100% { opacity: 0;   transform: scale(1.7); }
+}
+.cafecito-onda { animation: cafecito-onda 600ms ease-out forwards; }
+/* Cartel "click acá": entra desde la taza con rebote y se esconde hacia ella. */
+@keyframes cafecito-cartel-in  { from { opacity: 0; transform: translate(-10px, -50%) scale(0.6); } to { opacity: 1; transform: translate(0, -50%) scale(1); } }
+@keyframes cafecito-cartel-out { from { opacity: 1; transform: translate(0, -50%) scale(1); } to { opacity: 0; transform: translate(-10px, -50%) scale(0.7); } }
 /* Agradecimiento: corazones que suben + globito. */
 @keyframes cafecito-corazon {
   0%   { opacity: 0; transform: translateY(2px) scale(0.5); }
@@ -241,7 +257,7 @@ html.vt-back ::view-transition-new(root) { animation: 190ms ease both vt-slide-l
 @keyframes cafecito-globo-in { 0% { opacity: 0; transform: translateY(6px) scale(0.7); } 55% { opacity: 1; } 100% { opacity: 1; transform: none; } }
 @keyframes cafecito-globo-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-5px) scale(0.94); } }
 @media (prefers-reduced-motion: reduce) {
-  .cafecito-balanceo, .cafecito-vapor, .cafecito-sorbo { animation: none; }
+  .cafecito-balanceo, .cafecito-vapor, .cafecito-sorbo, .cafecito-sorbo .cafecito-cafe, .cafecito-onda { animation: none; }
 }
 
 /* ─── Walkthrough / tour: glow pulsante sobre el elemento resaltado ─── */
