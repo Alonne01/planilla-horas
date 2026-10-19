@@ -378,8 +378,8 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
         <ConfirmDoble
           titulo={config.beggarActivo ? 'Desactivar el donador para todos' : 'Activar el donador para todos'}
           detalle={config.beggarActivo
-            ? 'El personaje que pide donaciones dejará de aparecer para todos los usuarios.'
-            : 'El personaje que pide donaciones volverá a aparecer (al exportar) para todos los usuarios.'}
+            ? 'La tacita de café para donar dejará de verse para todos los usuarios.'
+            : 'La tacita de café para donar va a quedar fija abajo en Horas para todos los usuarios.'}
           etiquetaConfirmar={config.beggarActivo ? 'Desactivar' : 'Activar'}
           peligro={config.beggarActivo}
           enviando={enviando}
@@ -506,7 +506,7 @@ function MensajeModal({ user, onClose }: { user: PadronEntry; onClose: () => voi
         <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-600/60 bg-slate-700/30 px-3 py-2">
           <div className="min-w-0">
             <p className="text-xs font-medium text-white flex items-center gap-1.5"><Power size={13} className="shrink-0" /> Donador para este usuario</p>
-            <p className="text-[11px] text-slate-500">{actual === undefined ? 'Cargando…' : actual?.beggar ? 'Activado: le aparece el pedido de donación.' : 'Apagado para este usuario.'}</p>
+            <p className="text-[11px] text-slate-500">{actual === undefined ? 'Cargando…' : actual?.beggar ? 'Activado: le aparece la tacita de café para donar.' : 'Apagado para este usuario.'}</p>
           </div>
           <button
             onClick={toggleBeggar}
@@ -951,7 +951,7 @@ function AdminAcciones({ config, difusiones, titulo, setTitulo, cuerpo, setCuerp
         <div className="min-w-0">
           <p className="text-sm font-medium text-white flex items-center gap-1.5"><Power size={14} /> Donador para todos</p>
           <p className="text-[11px] text-slate-500">
-            {config == null ? 'Cargando…' : config.beggarActivo ? 'Activo: aparece al exportar.' : 'Desactivado para todos.'}
+            {config == null ? 'Cargando…' : config.beggarActivo ? 'Activo: la tacita de café se ve abajo en Horas.' : 'Desactivado para todos.'}
           </p>
         </div>
         <button

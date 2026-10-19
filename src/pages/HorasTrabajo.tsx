@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { FileText, FileBarChart, Upload, X, LayoutGrid, List, Copy, Check, Lightbulb, MoreVertical, Trash2, CalendarX2, Download, ChevronDown } from 'lucide-react'
 import { useHoras, useFrancoCounter } from '../hooks/useHoras'
 import { useSettings } from '../hooks/useSettings'
@@ -13,7 +13,7 @@ import { esFeriadoNacional } from '../lib/feriados'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
 import { registrarExportacion } from '../lib/metricas'
-import { DonadorDonacion, DonadorGracias } from '../components/DonadorDonacion'
+import { Cafecito } from '../components/Cafecito'
 import { ShareQR } from '../components/ShareQR'
 import { MonthPeriodPicker } from '../components/MonthPeriodPicker'
 import { esBeggarUnlock } from '../lib/calculo-salarial'
@@ -23,19 +23,12 @@ function dayKey(d: Date) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
 
-/** Clave del estado del beggar por IDENTIDAD (usuario+código), no por dispositivo. */
+/** Clave del estado de la donación por IDENTIDAD (usuario+código), no por dispositivo. */
 function beggarIdKey(usuario: string, codigo: string): string {
   const u = (usuario || '').trim().toLowerCase()
   const c = (codigo || '').trim()
   return u && c ? `${u}|${c}` : 'anon'
 }
-
-// Cuenta cuántas veces se entró a la planilla en ESTA sesión de app (la página se monta por pestaña).
-// Se reinicia al recargar. El donador sale seguro en la 3ª visita y, en otras, al azar.
-let visitasPlanilla = 0
-// Si ya se exportó en ESTA sesión: evita re-disparar el "entró a la app luego de exportar"
-// (ese disparo es para la PRÓXIMA apertura de la app, no para la sesión donde se exportó).
-let exportadoEnEstaSesion = false
 
 
 /** Reconstruye la fecha (mediodía) desde una clave `año-mes-día`. */
@@ -81,7 +74,7 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const { registros, loading, upsert, remove, reload } = useHoras(mes, anio)
   const { settings, update } = useSettings()
-  // El beggar decide su aparición por usuario+código (no por dispositivo). idKeyRef = siempre fresco.
+  // El "ya donó" de la tacita se decide por usuario+código (no por dispositivo). idKeyRef = siempre fresco.
   const idKey = useMemo(() => beggarIdKey(settings.nombreUsuario, settings.backupCodigo), [settings.nombreUsuario, settings.backupCodigo])
   const idKeyRef = useRef(idKey)
   idKeyRef.current = idKey
@@ -103,13 +96,10 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
   }
 
   // Agradecimiento al volver de donar: si tocó el link y tardó >1 min en volver,
-  // probablemente donó → el personaje agradece (heurística, sin backend).
+  // probablemente donó → la tacita agradece (heurística, sin backend).
   const [graciasVisible, setGraciasVisible] = useState(false)
-  // El donador se remonta (key nueva) en cada disparo: 3ª visita, al azar, al exportar, o al
-  // entrar a la app luego de exportar. `beggarVisible` decide si se muestra en esta página montada.
-  const [beggarKey, setBeggarKey] = useState(0)
-  const [beggarVisible, setBeggarVisible] = useState(false)
-  // Si ya donó en las últimas 24 h (por usuario+código), no aparece más el donador.
+  const cerrarGracias = useCallback(() => setGraciasVisible(false), [])
+  // Si ya donó en las últimas 24 h (por usuario+código), la tacita queda quieta (sin balancearse).
   // Se inicializa en el effect de identidad (depende de settings, que carga async).
   const [yaAgradecioHoy, setYaAgradecioHoy] = useState(false)
   useEffect(() => {
@@ -148,27 +138,7 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
       const ts = Number(localStorage.getItem(`planilla-dono-ts:${idKey}`) || 0)
       setYaAgradecioHoy(ts > 0 && Date.now() - ts < 24 * 60 * 60 * 1000)
     } catch { /* ignore */ }
-    // "La próxima vez que entra a la app luego de exportar": si quedó la marca de una exportación
-    // de una sesión ANTERIOR (no de ésta), mostrar el donador una vez y limpiar la marca.
-    try {
-      const k = `planilla-beggar-post-export:${idKey}`
-      if (!exportadoEnEstaSesion && localStorage.getItem(k) === '1') {
-        localStorage.removeItem(k)
-        setBeggarVisible(true)
-        setBeggarKey(n => n + 1)
-      }
-    } catch { /* ignore */ }
   }, [idKey])
-
-  // Donador por VISITAS: "salga aleatorio, a la tercera vez de ir a la planilla". Cada entrada a la
-  // planilla suma una visita; la 3ª lo muestra seguro y, en otras visitas, sale al azar (~1 de 4).
-  useEffect(() => {
-    visitasPlanilla += 1
-    if (visitasPlanilla === 3 || Math.random() < 0.25) {
-      setBeggarVisible(true)
-      setBeggarKey(n => n + 1)
-    }
-  }, [])
   // ─── Modo "aplicar datos a otro día": se pintan los días destino (tocando o arrastrando) ───
   const [applySource, setApplySource] = useState<RegistroHoras | null>(null)
   const [applySourceKey, setApplySourceKey] = useState<string | null>(null)
@@ -444,11 +414,6 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
     try {
       await fn()
       registrarExportacion()
-      // Marca para que el donador reaparezca en la PRÓXIMA apertura de la app (otra sesión).
-      exportadoEnEstaSesion = true
-      try { localStorage.setItem(`planilla-beggar-post-export:${idKeyRef.current}`, '1') } catch { /* ignore */ }
-      setBeggarVisible(true)    // al exportar: el donador aparece ahora
-      setBeggarKey(k => k + 1)  // remonta el donador para mostrarlo de nuevo
     } catch (e) {
       console.error('Error exportando Excel:', e)
       alert('Error al generar el Excel.')
@@ -630,21 +595,21 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
         </button>
       </div>
 
-      {/* Donador — pedido de donación. Aparece sólo si el admin lo ACTIVÓ globalmente (beggarActivo,
-          apagado por defecto) O si esta identidad está en la whitelist de desbloqueo (esBeggarUnlock,
-          vista previa para el admin aunque esté apagado para todos). O agradecimiento al volver de
-          donar (>1 min). Si donó en las últimas 24 h, no aparece. */}
-      {(beggarActivo || esBeggarUnlock(settings.nombreUsuario)) && (graciasVisible
-        ? <DonadorGracias onDone={() => setGraciasVisible(false)} />
-        : (!yaAgradecioHoy && beggarVisible && <DonadorDonacion key={beggarKey} idKey={idKey} />))}
+      {/* Tacita de café para donar: fija abajo, al lado del QR. Está sólo si el admin la ACTIVÓ
+          (globalmente o para este usuario: beggarActivo, apagado por defecto) o si esta identidad
+          está en la whitelist de vista previa (esBeggarUnlock). Al volver de donar (>1 min) agradece;
+          si donó en las últimas 24 h, queda quieta. Se oculta al aplicar/borrar días, igual que el FAB. */}
+      {(beggarActivo || esBeggarUnlock(settings.nombreUsuario)) && (
+        <Cafecito
+          hidden={!!applySource || deleteMode}
+          calma={yaAgradecioHoy}
+          gracias={graciasVisible}
+          onGraciasDone={cerrarGracias}
+        />
+      )}
 
-      {/* Botón QR para compartir la app (espejo del FAB). Se OCULTA cuando el beggar está en pantalla
-          o cuando se está aplicando/borrando días (igual que el FAB). */}
-      {(() => {
-        const beggarUnlocked = beggarActivo || esBeggarUnlock(settings.nombreUsuario)
-        const beggarMostrandose = beggarUnlocked && (graciasVisible || (!yaAgradecioHoy && beggarVisible))
-        return <ShareQR hidden={beggarMostrandose || !!applySource || deleteMode} />
-      })()}
+      {/* Botón QR para compartir la app (espejo del FAB). Se OCULTA al aplicar/borrar días (igual que el FAB). */}
+      <ShareQR hidden={!!applySource || deleteMode} />
 
       {/* Selector de período (calendario de meses) — alternativa a las flechas ‹ › */}
       {showMonthPicker && (

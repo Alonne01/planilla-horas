@@ -4,7 +4,7 @@ import { QrCode, Share2, X, Copy, Check } from 'lucide-react'
 // Botón flotante (abajo a la izquierda, espejo del FAB de exportar) que abre una tarjeta con el
 // código QR de la app para compartirla, más un botón de "Compartir" (Web Share API + fallback a
 // copiar el link). El QR se genera en el cliente (lib `qrcode`, import dinámico para no inflar el
-// bundle inicial) con un logo centrado. Se OCULTA cuando aparece el beggar (prop `hidden`).
+// bundle inicial) con un logo centrado. Se OCULTA al aplicar/borrar días (prop `hidden`).
 
 const SHARE_URL = window.location.origin + import.meta.env.BASE_URL
 const LOGO = `${import.meta.env.BASE_URL}icons/icon-192.png`
@@ -36,7 +36,7 @@ export function ShareQR({ hidden = false }: { hidden?: boolean }) {
     return () => { alive = false }
   }, [open, qr])
 
-  // Si aparece el beggar con el panel abierto, ciérralo.
+  // Si se oculta con el panel abierto, cerrarlo.
   useEffect(() => {
     if (hidden && open) cerrar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
