@@ -31,6 +31,10 @@ const PADRON = 'padron'
 // Netos estimados por usuario (privado: lectura SÓLO-admin por reglas). El usuario sube su neto del
 // período; el admin lo lee para su panel. Va aparte del padrón (que es público) por ser dato sensible.
 const NETOS = 'netos'
+// Código de recuperación por usuario (lectura SÓLO-admin por reglas): nombre + código EN CLARO, para
+// que el admin pueda decírselo a quien lo olvidó. id = mismo docId que su backup/padrón.
+const RECUPERACION = 'recuperacion'
+const RECUPERACION_KEY = 'planilla-recuperacion-registrada' // docId ya registrado (evita re-escribir)
 const PBKDF2_ITERATIONS = 100_000
 
 // ── Tope diario de operaciones de nube POR DISPOSITIVO ──────────────────────────
@@ -423,6 +427,7 @@ export async function subirBackupNube(
   } catch { /* el neto es secundario: no debe romper el respaldo */ }
   setUltimoUsuarioNube(usuario.trim()) // recordar bajo qué nombre quedó el respaldo (para migrar si lo corrige)
   setPhoneLastSeen(payload.updatedAt)  // marca de sync: lo que acabamos de subir ES lo último visto (no re-bajar)
+  void asegurarRecuperacionRegistrada(usuario, codigo)
   void asegurarCodigoReservado(codigo)  // segundo candado: reserva el código si se generó offline (best-effort)
   registrarOperacionNube()
   contarUso(0, 2) // backup + padrón (escrituras)
@@ -466,6 +471,45 @@ export async function listarPadronNube(): Promise<PadronEntry[]> {
       gracias: typeof x.gracias === 'number' ? x.gracias : 0,
       exportaciones: typeof x.exportaciones === 'number' ? x.exportaciones : 0,
       difusionVista: typeof x.difusionVista === 'string' ? x.difusionVista : '',
+    }
+  })
+}
+
+/**
+ * Registra (una vez por nombre+código) el código de recuperación del usuario para que el admin lo
+ * pueda ver si se le olvida. Best-effort: sin red o sin reglas publicadas, se reintenta al próximo arranque.
+ */
+export async function asegurarRecuperacionRegistrada(usuario: string, codigo: string): Promise<void> {
+  if (!credencialesNubeValidas(usuario, codigo)) return
+  try {
+    const docId = await computeDocId(usuario, codigo)
+    if (localStorage.getItem(RECUPERACION_KEY) === docId) return
+    await setDoc(doc(getDb(), RECUPERACION, docId), { nombre: usuario.trim(), codigo: codigo.trim(), updatedAt: Date.now() })
+    contarUso(0, 1)
+    localStorage.setItem(RECUPERACION_KEY, docId)
+  } catch { /* se reintenta en el próximo arranque */ }
+}
+
+/** Código de recuperación de un usuario (privado, sólo-admin). id = mismo docId que su backup/padrón. */
+export interface RecuperacionEntry {
+  id: string
+  nombre: string
+  codigo: string
+  updatedAt: number
+}
+
+/** [admin] Lista los códigos de recuperación (lectura SÓLO-admin por reglas Firestore). */
+export async function listarRecuperacionNube(): Promise<RecuperacionEntry[]> {
+  const snap = await getDocs(collection(getDb(), RECUPERACION))
+  registrarOperacionNube()
+  contarUso(Math.max(1, snap.docs.length), 0)
+  return snap.docs.map(d => {
+    const x = d.data() as Partial<RecuperacionEntry>
+    return {
+      id: d.id,
+      nombre: String(x.nombre ?? '').trim(),
+      codigo: String(x.codigo ?? '').trim(),
+      updatedAt: typeof x.updatedAt === 'number' ? x.updatedAt : 0,
     }
   })
 }
@@ -706,6 +750,7 @@ export async function borrarBackupNube(usuario: string, codigo: string): Promise
   const docId = await computeDocId(usuario, codigo)
   await deleteDoc(doc(getDb(), COLLECTION, docId))
   try { await deleteDoc(doc(getDb(), PADRON, docId)) } catch { /* el padrón es secundario */ }
+  try { await deleteDoc(doc(getDb(), RECUPERACION, docId)) } catch { /* secundario */ }
   contarUso(0, 2)
 }
 

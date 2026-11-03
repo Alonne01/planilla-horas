@@ -9,7 +9,7 @@ import { lineaLabel } from "./lib/calculo-horas"
 import { InstallGate } from "./components/InstallGate"
 import { restoreFromShadow, db, exportBackupJSON, importBackupJSON, msSinceAutoBackup, markAutoBackupDone, msSinceCloudBackup, markCloudBackupDone, pruneOldRegistros, migrateHorasViaje, clearPeriodoPrueba, getSettings, clearAllRegistros } from "./db/database"
 import { refrescarParitarias } from "./lib/paritarias"
-import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, asegurarCodigoAdmin, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, loginAdmin, asegurarAuthAdmin, deviceIdLocal, reclamarSalaryDevice, revocarSalaryConflicto, miDocIdNube, restaurarSharedDoc, subirSharedDoc, leerUpdatedAtDoc, autoBajarCambiosPC, type AppConfig } from "./lib/cloud-backup"
+import { subirBackupNube, restaurarBackupNube, existeBackupNube, credencialesNubeValidas, quedanOperacionesNube, esAdminDispositivo, asegurarCodigoAdmin, leerConfigNube, configCacheada, DIFUSION_VISTA_KEY, leerMensajeIndividual, marcarMensajeRecibido, ultimoUsuarioNube, setUltimoUsuarioNube, configurarNubeAuto, loginAdmin, asegurarAuthAdmin, deviceIdLocal, reclamarSalaryDevice, revocarSalaryConflicto, miDocIdNube, restaurarSharedDoc, subirSharedDoc, leerUpdatedAtDoc, autoBajarCambiosPC, asegurarRecuperacionRegistrada, type AppConfig } from "./lib/cloud-backup"
 import { isMobilePhone } from "./lib/device"
 import { cargarSesion, esValida, guardarSesion, limpiarSesion, renovar, type PCSession } from "./lib/pc-session"
 import { PairGate } from "./components/PairGate"
@@ -359,6 +359,8 @@ function AppContent() {
               }
             } catch { /* sin conexión: se reintenta al próximo arranque */ }
           }
+          // Código de recuperación visible para el admin (una sola escritura por nombre+código).
+          if (cloudOn) void asegurarRecuperacionRegistrada(s.nombreUsuario, s.backupCodigo)
           if (cloudOn && msSinceCloudBackup() > CLOUD_BACKUP_INTERVAL_MS && quedanOperacionesNube(s.nombreUsuario)) {
             // Respaldo automático y silencioso a la nube (cada >=3 días al abrir la app).
             // soloSiCambio: si nada cambió desde la última subida, no sube (ahorra datos móviles).

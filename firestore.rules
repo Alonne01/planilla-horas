@@ -91,6 +91,20 @@ service cloud.firestore {
         && request.resource.data.updatedAt is number;
     }
 
+    // Codigo de recuperacion por usuario (dato sensible: nombre + codigo EN CLARO). Lectura SOLO del
+    // admin (para decirle el codigo a quien lo olvido); el usuario sube el suyo. id = hash(usuario:codigo).
+    match /recuperacion/{id} {
+      allow read: if esAdmin();
+      allow delete: if true;
+      allow create, update: if
+        request.resource.data.keys().hasOnly(['nombre', 'codigo', 'updatedAt'])
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() < 200
+        && request.resource.data.codigo is string
+        && request.resource.data.codigo.matches('^[0-9]{6}$')
+        && request.resource.data.updatedAt is number;
+    }
+
     // Config GLOBAL (un unico doc `global`): donador on/off + difusion actual.
     // La leen todos al abrir; la escribe el admin (merge: campos parciales).
     match /config/{id} {

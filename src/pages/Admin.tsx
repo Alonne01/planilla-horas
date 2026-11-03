@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye, LayoutDashboard, Lightbulb, Copy, Check, Banknote, KeyRound, LogOut } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, listarNetosNube, asegurarAuthAdmin, adminUidActual, refrescarTokenAdmin, logoutAdmin, asegurarCodigoAdmin, ADMIN_UID_ESPERADO, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry, type NetoEntry } from '../lib/cloud-backup'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, listarNetosNube, listarRecuperacionNube, asegurarAuthAdmin, adminUidActual, refrescarTokenAdmin, logoutAdmin, asegurarCodigoAdmin, ADMIN_UID_ESPERADO, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry, type NetoEntry, type RecuperacionEntry } from '../lib/cloud-backup'
 import { fmtPesos } from '../lib/calculo-salarial'
 import { APP_VERSION } from '../version'
 
@@ -87,6 +87,8 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
   const [sugVistas, setSugVistas] = useState(leerSugVistas)
   // Netos estimados por usuario (privado, sólo-admin). Mapa docId → neto para cruzar con el padrón.
   const [netos, setNetos] = useState<NetoEntry[]>([])
+  // Códigos de recuperación por usuario (sólo-admin): docId → código, para decírselo a quien lo olvidó.
+  const [recuperacion, setRecuperacion] = useState<RecuperacionEntry[]>([])
 
   async function cargar() {
     setBusy(true); setErr(null)
@@ -107,6 +109,7 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
     // Netos: lectura SÓLO-admin → primero aseguramos la sesión Firebase Auth (puede no estar restaurada
     // al montar), si no la lectura iría sin token y las reglas la rechazarían.
     try { await asegurarAuthAdmin(); setNetos(await listarNetosNube()) } catch { /* reglas de "netos" sin publicar o sin sesión admin */ }
+    try { await asegurarAuthAdmin(); setRecuperacion(await listarRecuperacionNube()) } catch { /* reglas de "recuperacion" sin publicar o sin sesión admin */ }
   }
   useEffect(() => { void cargar() }, [])
 
@@ -192,6 +195,7 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
   const porVersion = useMemo(() => agrupar(filtrado, versionDe), [filtrado])
 
   // Netos: mapa docId → neto + lista cruzada con el padrón filtrado (sólo usuarios que subieron neto).
+  const codigoById = useMemo(() => new Map(recuperacion.map(r => [r.id, r.codigo])), [recuperacion])
   const netosById = useMemo(() => new Map(netos.map(n => [n.id, n])), [netos])
   const netosFiltrados = useMemo(
     () => filtrado
@@ -336,6 +340,7 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
                           <p className="text-[11px] text-slate-500 truncate">
                             {e.linea || '—'} · <span className={vieja ? 'text-amber-400' : 'text-slate-500'}>v{e.version || '?'}</span> · {hace(e.updatedAt)}
                           </p>
+                          {e.id && codigoById.get(e.id) && <CodigoRecuperacion codigo={codigoById.get(e.id)!} />}
                         </div>
                         <div className="flex items-center gap-2 shrink-0 text-[11px] tabular-nums">
                           {e.id && netosById.get(e.id) && <span className="flex items-center gap-0.5 text-teal-300 font-semibold" title={`Neto estimado: ${fmtPesos(netosById.get(e.id)!.neto)} · proyectado: ${fmtPesos(netosById.get(e.id)!.proyectado)}`}><Banknote size={11} /> {fmtPesosCompact(netosById.get(e.id)!.neto)}</span>}
@@ -837,6 +842,28 @@ function UsoBar({ label, usado, tope }: { label: string; usado: number; tope: nu
       <div className="h-2.5 rounded-full bg-slate-700 overflow-hidden">
         <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${pct}%`, background: color }} />
       </div>
+    </div>
+  )
+}
+
+/** Código de recuperación de un usuario: oculto por defecto; tocar lo muestra, y se puede copiar. */
+function CodigoRecuperacion({ codigo }: { codigo: string }) {
+  const [visible, setVisible] = useState(false)
+  const [copiado, setCopiado] = useState(false)
+  async function copiar() {
+    try { await navigator.clipboard.writeText(codigo); setCopiado(true); setTimeout(() => setCopiado(false), 1500) } catch { /* sin portapapeles */ }
+  }
+  return (
+    <div className="mt-0.5 flex items-center gap-1.5 text-[11px]">
+      <button onClick={() => setVisible(v => !v)} className="flex items-center gap-1 text-slate-400 active:text-amber-300" title={visible ? 'Ocultar código' : 'Ver código de recuperación'}>
+        <KeyRound size={11} />
+        <span className={`tabular-nums tracking-wider ${visible ? 'text-amber-300 font-semibold' : ''}`}>{visible ? codigo : '••••••'}</span>
+      </button>
+      {visible && (
+        <button onClick={copiar} className="flex items-center text-slate-400 active:text-emerald-300" title="Copiar código">
+          {copiado ? <Check size={11} className="text-emerald-300" /> : <Copy size={11} />}
+        </button>
+      )}
     </div>
   )
 }
