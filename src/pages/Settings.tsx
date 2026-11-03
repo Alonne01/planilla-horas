@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { AlertTriangle, Download, FolderOpen, ChevronDown, ChevronRight, X, Smartphone, Trash2, CalendarDays, Banknote, Cloud, Lock, Unlock, Shuffle, Bell, BellRing, Monitor, RefreshCw, Plus } from 'lucide-react'
 import { useSettings } from '../hooks/useSettings'
 import { usePWAInstall } from '../hooks/usePWAInstall'
-import { DIAGRAMAS, type DiagramaPatternKey } from '../lib/diagrama'
+import { DIAGRAMAS, type DiagramaPatternKey, CIERRE_FIN_DE_MES, MESES_ES, aplicarCambioCierre, defaultPeriodoAnio, defaultPeriodoMes, diaCierreConfigurado, periodoEnd, periodoStart, rangoCierreTexto } from '../lib/diagrama'
 import { db, exportBackupJSON, importBackupJSON, msSinceLastBackup, markBackupDone, clearAllRegistros, msSinceCloudBackup, markCloudBackupDone } from '../db/database'
 import { actualizarFeriadosNacionales, feriadosActualizadoMs } from '../lib/feriados'
 import { CONVENIOS, BASES_RETENCION, isSalaryUser, salarioDesbloqueadoNube, fmtBasicoDisplay, formatBasicoInput, parseBasicoInput, type Convenio, type TipoTurno, type AdicionalPersonal, type RetencionPersonal, type BaseRetencion } from '../lib/calculo-salarial'
@@ -126,8 +126,21 @@ export function SettingsPage() {
   // `cfgEditable` = se pueden tocar esos controles.
   const [cfgBloqueado, setCfgBloqueado] = useState(leerConfigLock)
   const cfgEditable = !cfgBloqueado
-  // Pestaña activa de la tarjeta "Trabajo" (Línea / Diagrama).
-  const [trabajoTab, setTrabajoTab] = useState<'linea' | 'diagrama'>('linea')
+  // Pestaña activa de la tarjeta "Trabajo" (Línea / Diagrama / Período).
+  const [trabajoTab, setTrabajoTab] = useState<'linea' | 'diagrama' | 'periodo'>('linea')
+  // Día de cierre del período: el elegido en el selector (se aplica con botón, no auto-guarda).
+  const [cierreSel, setCierreSel] = useState(() => diaCierreConfigurado(defaultPeriodoMes(), defaultPeriodoAnio()))
+  const [cierreMsg, setCierreMsg] = useState('')
+  // Aplica el nuevo día de cierre desde el período VIGENTE en adelante (los anteriores no cambian).
+  async function aplicarCierre() {
+    const desde = defaultPeriodoAnio() * 12 + defaultPeriodoMes()
+    await update({ cambiosCierre: aplicarCambioCierre(settings.cambiosCierre, desde, cierreSel) })
+    await actualizarAgenda().catch(() => {})
+    const m = defaultPeriodoMes(), a = defaultPeriodoAnio()
+    setCierreSel(diaCierreConfigurado(m, a))
+    setCierreMsg(`Listo. Período vigente: ${MESES_ES[m]} ${a} (${fmtDiaMes(periodoStart(m, a))} – ${fmtDiaMes(periodoEnd(m, a))}).`)
+  }
+
   function toggleConfigLock() {
     const next = !cfgBloqueado
     setCfgBloqueado(next)
@@ -641,10 +654,10 @@ export function SettingsPage() {
         </SubSection>
         </div>
 
-        {/* 2. Línea + Diagrama — tarjeta COLAPSABLE (colapsada por defecto) con dos pestañas animadas */}
-        <CollapsibleCard title="Línea y diagrama" defaultOpen={false} action={<CandadoBtn bloqueado={cfgBloqueado} onToggle={toggleConfigLock} />}>
+        {/* 2. Línea + Diagrama + Período — tarjeta COLAPSABLE (colapsada por defecto) con pestañas animadas */}
+        <CollapsibleCard title="Línea, diagrama y período" defaultOpen={false} action={<CandadoBtn bloqueado={cfgBloqueado} onToggle={toggleConfigLock} />}>
           <div className="flex w-fit gap-1 rounded-xl bg-slate-900/50 p-1">
-            {([['linea', 'Línea'], ['diagrama', 'Diagrama']] as const).map(([t, label]) => (
+            {([['linea', 'Línea'], ['diagrama', 'Diagrama'], ['periodo', 'Período']] as const).map(([t, label]) => (
               <button
                 key={t}
                 onClick={() => setTrabajoTab(t)}
@@ -656,7 +669,7 @@ export function SettingsPage() {
           </div>
           {!cfgEditable && (
             <p className="mb-3 text-[11px] text-slate-500 flex items-center gap-1.5">
-              <Lock size={11} className="shrink-0" /> Tocá el candado para cambiar {trabajoTab === 'linea' ? 'la línea' : 'el diagrama o la fecha'}.
+              <Lock size={11} className="shrink-0" /> Tocá el candado para cambiar {trabajoTab === 'linea' ? 'la línea' : trabajoTab === 'periodo' ? 'el período' : 'el diagrama o la fecha'}.
             </p>
           )}
 
@@ -688,6 +701,15 @@ export function SettingsPage() {
                 </div>
               )}
             </div>
+          ) : trabajoTab === 'periodo' ? (
+            <PeriodoCierreTab
+              cierreSel={cierreSel}
+              cierreActual={diaCierreConfigurado(defaultPeriodoMes(), defaultPeriodoAnio())}
+              editable={cfgEditable}
+              mensaje={cierreMsg}
+              onChange={d => { setCierreSel(d); setCierreMsg('') }}
+              onAplicar={aplicarCierre}
+            />
           ) : (
             <div key="diagrama" className="space-y-3 animate-[view-fade-in_220ms_ease_both]">
               <div className="grid grid-cols-2 gap-2">
@@ -1141,6 +1163,62 @@ function CollapsibleCard({ title, children, defaultOpen = false, action }: { tit
         <div className="space-y-5 pt-4">{children}</div>
       </AnimatedCollapse>
     </Card>
+  )
+}
+
+function fmtDiaMes(d: Date): string {
+  return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
+}
+
+// Opciones del día de cierre: 1..28 (existen en todos los meses) + "fin de mes" (30/31, 28/29 en febrero).
+const OPCIONES_CIERRE = [...Array.from({ length: 28 }, (_, i) => i + 1), CIERRE_FIN_DE_MES]
+
+// Pestaña "Período" de la tarjeta de trabajo: elegir el día de cierre de la planilla.
+function PeriodoCierreTab({ cierreSel, cierreActual, editable, mensaje, onChange, onAplicar }: {
+  cierreSel: number
+  cierreActual: number
+  editable: boolean
+  mensaje: string
+  onChange: (dia: number) => void
+  onAplicar: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const mes = defaultPeriodoMes()
+  const anio = defaultPeriodoAnio()
+  const cambio = cierreSel !== cierreActual
+  return (
+    <div key="periodo" className="space-y-3 animate-[view-fade-in_220ms_ease_both]">
+      <p className="text-xs text-slate-400 leading-snug">
+        Ahora el período va <strong className="text-slate-200">{rangoCierreTexto(cierreActual)}</strong>{' '}
+        ({MESES_ES[mes]} {anio}: {fmtDiaMes(periodoStart(mes, anio))} – {fmtDiaMes(periodoEnd(mes, anio))}).
+      </p>
+      <Field label="Día de cierre">
+        <select
+          value={cierreSel}
+          disabled={!editable}
+          onChange={e => onChange(Number(e.target.value))}
+          className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {OPCIONES_CIERRE.map(d => (
+            <option key={d} value={d}>
+              {d === CIERRE_FIN_DE_MES ? 'Fin de mes (del 1 al 30/31)' : `${String(d).padStart(2, '0')} (del ${d + 1} al ${d})`}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <p className="text-[11px] text-slate-500 leading-snug">
+        El cambio rige desde el período actual ({MESES_ES[mes]} {anio}) en adelante: arranca el día siguiente al
+        cierre anterior. Los períodos ya cerrados no cambian y los registros cargados no se tocan.
+      </p>
+      <button
+        onClick={async () => { setBusy(true); try { await onAplicar() } finally { setBusy(false) } }}
+        disabled={!editable || !cambio || busy}
+        className="w-full py-2.5 rounded-xl text-sm font-medium transition-colors bg-blue-600 text-white active:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
+      >
+        {busy ? 'Aplicando…' : cambio ? `Aplicar: ${rangoCierreTexto(cierreSel)}` : 'Sin cambios'}
+      </button>
+      {mensaje && <p className="text-xs text-emerald-300">{mensaje}</p>}
+    </div>
   )
 }
 

@@ -3,7 +3,7 @@ import type { LineaTrabajo } from '../lib/calculo-horas'
 // Import SOLO de tipos (se borra al compilar): no crea ciclo en runtime con calculo-salarial.
 import type { AdicionalPersonal, RetencionPersonal } from '../lib/calculo-salarial'
 import type { Hallazgo, Veredicto } from '../lib/recibo-comparador'
-import { PRUEBA_CUTOFF_MS } from '../lib/diagrama'
+import { PRUEBA_CUTOFF_MS, setCambiosCierre, type CambioCierre } from '../lib/diagrama'
 
 const SHADOW_KEY = 'planilla-shadow'
 const LAST_BACKUP_KEY = 'planilla-last-backup-ts'
@@ -98,6 +98,9 @@ export interface AppSettings {
   // Al cerrar la carga de un día con cambios sin guardar: si está activo, guarda siempre sin
   // preguntar; si no, muestra el diálogo "Guardar / Descartar" (con la opción de activarlo).
   guardarSiempreAlSalir: boolean
+  // Cambios del día de cierre del período elegidos por el usuario (ej. pasar de "16 al 15" a
+  // "21 al 20"). Cada cambio rige desde un período en adelante; ver diaCierre en lib/diagrama.
+  cambiosCierre: CambioCierre[]
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -127,6 +130,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   backupBloqueado: false,
   francosCompSaldoBase: 0,
   guardarSiempreAlSalir: false,
+  cambiosCierre: [],
 }
 
 /**
@@ -231,11 +235,14 @@ export async function getSettings(): Promise<AppSettings> {
   const s = await db.settings.get(1)
   if (!s) {
     await db.settings.put(DEFAULT_SETTINGS)
+    setCambiosCierre(DEFAULT_SETTINGS.cambiosCierre)
     return DEFAULT_SETTINGS
   }
   // Mezclar defaults para que los campos nuevos (ej. lineaTrabajo) tengan valor en
   // configuraciones guardadas antes de que existieran.
-  return { ...DEFAULT_SETTINGS, ...s }
+  const merged = { ...DEFAULT_SETTINGS, ...s }
+  setCambiosCierre(merged.cambiosCierre)
+  return merged
 }
 
 export async function saveSettings(partial: Partial<AppSettings>): Promise<void> {

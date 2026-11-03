@@ -44,17 +44,77 @@ export function esFrancoPorDiagrama(
   return pos >= pattern.diasTrabajo
 }
 
+/** Día de cierre que significa "último día del mes" (período del 1 al 30/31). */
+export const CIERRE_FIN_DE_MES = 31
+
 /**
- * Día de cierre del período que termina en el mes `mes`/`anio` (0-indexed).
+ * Cambio de día de cierre elegido por el usuario en Configuración. Rige desde el período `desde`
+ * (= anio*12 + mes del mes de cierre, 0-indexed) en adelante; los períodos anteriores no cambian.
+ */
+export interface CambioCierre {
+  desde: number
+  dia: number  // 1..28, o CIERRE_FIN_DE_MES
+}
+
+// Copia en memoria de `settings.cambiosCierre` (la carga getSettings). Se espeja en localStorage para
+// que esté disponible SINCRÓNICAMENTE al arrancar (los useState(defaultPeriodoMes()) corren antes que
+// cualquier lectura async de Dexie).
+const CAMBIOS_CIERRE_KEY = 'planilla-cambios-cierre'
+let cambiosCierre: CambioCierre[] = leerCambiosCierreCache()
+
+function leerCambiosCierreCache(): CambioCierre[] {
+  try {
+    const raw = localStorage.getItem(CAMBIOS_CIERRE_KEY)
+    const arr = raw ? JSON.parse(raw) : []
+    return Array.isArray(arr) ? arr : []
+  } catch { return [] }
+}
+
+export function setCambiosCierre(list: CambioCierre[] | undefined): void {
+  cambiosCierre = [...(list ?? [])].sort((a, b) => a.desde - b.desde)
+  try { localStorage.setItem(CAMBIOS_CIERRE_KEY, JSON.stringify(cambiosCierre)) } catch { /* ignore */ }
+}
+
+/**
+ * Calendario de cierres por defecto (sin cambios del usuario).
  * Histórico hasta junio 2026: 20. Transición: julio 2026 cierra el 18, y desde agosto 2026
  * en adelante el 15 (período "16 al 15"). Como el inicio de cada período es el día siguiente
  * al cierre del anterior, la transición 19/7 → 15/8 sale sola.
  */
-export function diaCierre(mes: number, anio: number): number {
-  const ym = anio * 12 + mes
+function diaCierreBase(ym: number): number {
   if (ym <= 2026 * 12 + 5) return 20   // hasta junio 2026 (mes 5)
   if (ym === 2026 * 12 + 6) return 18  // julio 2026 (mes 6)
   return 15                             // agosto 2026 (mes 7) en adelante
+}
+
+/** Día de cierre configurado (sin recortar al largo del mes) para el período `mes`/`anio`. */
+export function diaCierreConfigurado(mes: number, anio: number): number {
+  const ym = anio * 12 + mes
+  let dia = diaCierreBase(ym)
+  for (const c of cambiosCierre) if (c.desde <= ym) dia = c.dia
+  return dia
+}
+
+/**
+ * Día de cierre del período que termina en el mes `mes`/`anio` (0-indexed). Respeta los cambios
+ * del usuario y se recorta al último día del mes (ej. "fin de mes" en febrero = 28/29).
+ */
+export function diaCierre(mes: number, anio: number): number {
+  const ultimo = new Date(anio, mes + 1, 0).getDate()
+  return Math.min(diaCierreConfigurado(mes, anio), ultimo)
+}
+
+/** Texto corto del rango de un día de cierre: "del 16 al 15" / "del 1 al fin de mes". */
+export function rangoCierreTexto(dia: number): string {
+  return dia >= CIERRE_FIN_DE_MES ? 'del 1 al fin de mes' : `del ${dia + 1} al ${dia}`
+}
+
+/**
+ * Devuelve la lista de cambios con `dia` rigiendo desde el período vigente (`desde`) en adelante.
+ * Descarta cambios previos programados para ese período o posteriores.
+ */
+export function aplicarCambioCierre(list: CambioCierre[], desde: number, dia: number): CambioCierre[] {
+  return [...list.filter(c => c.desde < desde), { desde, dia }].sort((a, b) => a.desde - b.desde)
 }
 
 /** Período "vigente" hoy: si hoy ya pasó el cierre de este mes, es el del mes siguiente. */
