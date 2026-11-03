@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RefreshCw, Users, Heart, Sparkles, Search, X, Cloud, Activity, AlertTriangle, FileSpreadsheet, Power, Megaphone, Send, History, Eraser, Eye, LayoutDashboard, Lightbulb, Copy, Check, Banknote, KeyRound, LogOut } from 'lucide-react'
-import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, listarNetosNube, listarRecuperacionNube, asegurarAuthAdmin, adminUidActual, refrescarTokenAdmin, logoutAdmin, asegurarCodigoAdmin, ADMIN_UID_ESPERADO, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry, type NetoEntry, type RecuperacionEntry } from '../lib/cloud-backup'
+import { listarPadronNube, leerUsoFirebase, leerConfigNube, setBeggarActivo, setCafeFrecuencia, enviarDifusion, listarDifusiones, limpiarDifusion, enviarMensajeIndividual, leerRecepcionMensaje, setBeggarUsuario, setSalaryUnlockUsuario, listarSugerencias, listarNetosNube, listarRecuperacionNube, asegurarAuthAdmin, adminUidActual, refrescarTokenAdmin, logoutAdmin, asegurarCodigoAdmin, ADMIN_UID_ESPERADO, type PadronEntry, type UsoFirebase, type AppConfig, type DifusionEntry, type MensajeIndividual, type SugerenciaEntry, type NetoEntry, type RecuperacionEntry } from '../lib/cloud-backup'
 import { fmtPesos } from '../lib/calculo-salarial'
 import { APP_VERSION } from '../version'
 
@@ -134,6 +134,17 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
       alert('No se pudo cambiar el donador. ¿Publicaste las reglas de Firestore para "config"?')
     } finally {
       setEnviando(false)
+    }
+  }
+
+  // Frecuencia de la tacita para todos (sin confirmación: no es destructivo).
+  async function cambiarCafeFrecuencia(frecuencia: number) {
+    if (!config) return
+    const previa = config.cafeFrecuencia
+    setConfig({ ...config, cafeFrecuencia: frecuencia })
+    try { await setCafeFrecuencia(frecuencia) } catch {
+      setConfig(c => (c ? { ...c, cafeFrecuencia: previa } : c))
+      alert('No se pudo cambiar la frecuencia. ¿Publicaste las reglas de Firestore para "config" (campo cafeFrecuencia)?')
     }
   }
 
@@ -367,6 +378,7 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
             titulo={titulo} setTitulo={setTitulo}
             cuerpo={cuerpo} setCuerpo={setCuerpo}
             onToggleBeggar={() => setAccion('beggar')}
+            onCafeFrecuencia={cambiarCafeFrecuencia}
             onEnviar={() => setAccion('difusion')}
             onLimpiar={() => setAccion('limpiar')}
           />
@@ -381,10 +393,10 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
       {/* Confirmaciones dobles (afectan a TODOS los usuarios) */}
       {accion === 'beggar' && config && (
         <ConfirmDoble
-          titulo={config.beggarActivo ? 'Desactivar el donador para todos' : 'Activar el donador para todos'}
+          titulo={config.beggarActivo ? 'Desactivar la tacita de café para todos' : 'Activar la tacita de café para todos'}
           detalle={config.beggarActivo
             ? 'La tacita de café para donar dejará de verse para todos los usuarios.'
-            : 'La tacita de café para donar va a quedar fija abajo en Horas para todos los usuarios.'}
+            : 'La tacita de café para donar va a aparecer abajo en Horas para todos los usuarios, con la frecuencia elegida.'}
           etiquetaConfirmar={config.beggarActivo ? 'Desactivar' : 'Activar'}
           peligro={config.beggarActivo}
           enviando={enviando}
@@ -959,12 +971,20 @@ function fmtFecha(ms: number): string {
 }
 
 /** Panel de acciones globales: encender/apagar el donador para todos + difundir un mensaje + historial. */
-function AdminAcciones({ config, difusiones, titulo, setTitulo, cuerpo, setCuerpo, onToggleBeggar, onEnviar, onLimpiar }: {
+// Opciones de frecuencia de la tacita: cada cuántas aperturas de la app aparece.
+const FRECUENCIAS_CAFE: { valor: number; label: string; desc: string }[] = [
+  { valor: 1, label: 'Siempre', desc: 'en todas las aperturas' },
+  { valor: 3, label: 'A veces', desc: '1 de cada 3 aperturas' },
+  { valor: 6, label: 'Rara vez', desc: '1 de cada 6 aperturas' },
+]
+
+function AdminAcciones({ config, difusiones, titulo, setTitulo, cuerpo, setCuerpo, onToggleBeggar, onCafeFrecuencia, onEnviar, onLimpiar }: {
   config: AppConfig | null
   difusiones: DifusionEntry[]
   titulo: string; setTitulo: (v: string) => void
   cuerpo: string; setCuerpo: (v: string) => void
   onToggleBeggar: () => void
+  onCafeFrecuencia: (frecuencia: number) => void
   onEnviar: () => void
   onLimpiar: () => void
 }) {
@@ -976,20 +996,38 @@ function AdminAcciones({ config, difusiones, titulo, setTitulo, cuerpo, setCuerp
       {/* Donador on/off para todos */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-white flex items-center gap-1.5"><Power size={14} /> Donador para todos</p>
+          <p className="text-sm font-medium text-white flex items-center gap-1.5"><Power size={14} /> Tacita de café para todos</p>
           <p className="text-[11px] text-slate-500">
-            {config == null ? 'Cargando…' : config.beggarActivo ? 'Activo: la tacita de café se ve abajo en Horas.' : 'Desactivado para todos.'}
+            {config == null ? 'Cargando…' : config.beggarActivo
+              ? `Activa: aparece abajo en Horas ${FRECUENCIAS_CAFE.find(f => f.valor === config.cafeFrecuencia)?.desc ?? `1 de cada ${config.cafeFrecuencia} aperturas`}.`
+              : 'Desactivada para todos.'}
           </p>
         </div>
         <button
           onClick={onToggleBeggar}
           disabled={config == null}
           className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-40 ${config?.beggarActivo ? 'bg-emerald-500' : 'bg-slate-600'}`}
-          aria-label="Activar o desactivar el donador para todos"
+          aria-label="Activar o desactivar la tacita de café para todos"
         >
           <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${config?.beggarActivo ? 'left-6' : 'left-1'}`} />
         </button>
       </div>
+      {config != null && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] text-slate-400">Frecuencia (para que no moleste):</p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {FRECUENCIAS_CAFE.map(f => (
+              <button
+                key={f.valor}
+                onClick={() => onCafeFrecuencia(f.valor)}
+                className={`rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${config.cafeFrecuencia === f.valor ? 'bg-amber-500/90 text-slate-900' : 'bg-slate-700 text-slate-300 active:bg-slate-600'}`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Difusión: mensaje a todos */}
       <div className="border-t border-slate-700/70 pt-3 space-y-2">

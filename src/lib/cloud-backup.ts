@@ -561,9 +561,15 @@ export interface AppConfig {
   difusionTitulo: string
   difusionCuerpo: string
   difusionCreatedAt: number
+  /** Cada cuántas aperturas de la app aparece la tacita (1 = siempre). Default 3 = "a veces". */
+  cafeFrecuencia: number
 }
 
+/** Frecuencia de la tacita por defecto: 1 de cada 3 aperturas (para que no moleste). */
+export const CAFE_FRECUENCIA_DEFAULT = 3
+
 const CONFIG_DEFAULT: AppConfig = {
+  cafeFrecuencia: CAFE_FRECUENCIA_DEFAULT,
   beggarActivo: false, difusionId: '', difusionTitulo: '', difusionCuerpo: '', difusionCreatedAt: 0,
 }
 
@@ -575,6 +581,7 @@ function parseConfig(x: Record<string, unknown>): AppConfig {
     difusionTitulo: typeof x.difusionTitulo === 'string' ? x.difusionTitulo : '',
     difusionCuerpo: typeof x.difusionCuerpo === 'string' ? x.difusionCuerpo : '',
     difusionCreatedAt: typeof x.difusionCreatedAt === 'number' ? x.difusionCreatedAt : 0,
+    cafeFrecuencia: typeof x.cafeFrecuencia === 'number' && x.cafeFrecuencia >= 1 ? Math.round(x.cafeFrecuencia) : CAFE_FRECUENCIA_DEFAULT,
   }
 }
 
@@ -611,6 +618,14 @@ export async function setBeggarActivo(activo: boolean): Promise<void> {
   registrarOperacionNube()
   contarUso(0, 1)
   cachearConfig({ ...configCacheada(), beggarActivo: activo })
+}
+
+/** [admin] Cada cuántas aperturas aparece la tacita para todos (1 = siempre). Merge. */
+export async function setCafeFrecuencia(frecuencia: number): Promise<void> {
+  await setDoc(doc(getDb(), CONFIG, CONFIG_DOC), { cafeFrecuencia: frecuencia, updatedAt: Date.now() }, { merge: true })
+  registrarOperacionNube()
+  contarUso(0, 1)
+  cachearConfig({ ...configCacheada(), cafeFrecuencia: frecuencia })
 }
 
 export interface DifusionEntry {

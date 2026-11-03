@@ -114,8 +114,16 @@ service cloud.firestore {
         esAdmin()
         && request.resource.data.keys().hasOnly([
           'beggarActivo', 'difusionId', 'difusionTitulo',
-          'difusionCuerpo', 'difusionCreatedAt', 'updatedAt'
+          'difusionCuerpo', 'difusionCreatedAt', 'updatedAt', 'cafeFrecuencia'
         ])
+        && (
+          !('cafeFrecuencia' in request.resource.data)
+          || (
+            request.resource.data.cafeFrecuencia is int
+            && request.resource.data.cafeFrecuencia >= 1
+            && request.resource.data.cafeFrecuencia <= 30
+          )
+        )
         && (
           !('difusionTitulo' in request.resource.data)
           || (

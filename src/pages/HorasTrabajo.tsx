@@ -13,7 +13,7 @@ import { esFeriadoNacional } from '../lib/feriados'
 import { exportarExcelNormal } from '../lib/excel-export'
 import { exportarExcelCompleto } from '../lib/excel-export-full'
 import { registrarExportacion } from '../lib/metricas'
-import { registrarSalidaDeLaApp, evaluarVueltaDeDonar } from '../lib/donacion'
+import { registrarSalidaDeLaApp, evaluarVueltaDeDonar, cafeTocaEstaSesion } from '../lib/donacion'
 import { Cafecito } from '../components/Cafecito'
 import { ShareQR } from '../components/ShareQR'
 import { MonthPeriodPicker } from '../components/MonthPeriodPicker'
@@ -70,7 +70,7 @@ function cloneForDate(source: RegistroHoras, target: Date, diagrama: DiagramaPat
   }
 }
 
-export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { beggarActivo?: boolean; onAbrirTutorial?: () => void }) {
+export function HorasTrabajoPage({ beggarActivo = false, cafeFrecuencia = 1, onAbrirTutorial }: { beggarActivo?: boolean; cafeFrecuencia?: number; onAbrirTutorial?: () => void }) {
   const [mes, setMes] = useState(defaultPeriodoMes())
   const [anio, setAnio] = useState(defaultPeriodoAnio())
   const { registros, loading, upsert, remove, reload } = useHoras(mes, anio)
@@ -606,8 +606,10 @@ export function HorasTrabajoPage({ beggarActivo = false, onAbrirTutorial }: { be
       {/* Tacita de café para donar: fija abajo, al lado del QR. Está sólo si el admin la ACTIVÓ
           (globalmente o para este usuario: beggarActivo, apagado por defecto) o si esta identidad
           está en la whitelist de vista previa (esBeggarUnlock). Al volver de donar (>1 min) agradece;
-          si donó en las últimas 24 h, queda quieta. Se oculta al aplicar/borrar días, igual que el FAB. */}
-      {(beggarActivo || esBeggarUnlock(settings.nombreUsuario)) && (
+          si donó en las últimas 24 h, queda quieta. Se oculta al aplicar/borrar días, igual que el FAB.
+          No sale en todas las aperturas: 1 de cada `cafeFrecuencia` (la elige el admin), salvo para
+          agradecer una donación o en la vista previa de la whitelist. */}
+      {(esBeggarUnlock(settings.nombreUsuario) || (beggarActivo && (graciasVisible || cafeTocaEstaSesion(cafeFrecuencia)))) && (
         <Cafecito
           hidden={!!applySource || deleteMode}
           calma={yaAgradecioHoy}

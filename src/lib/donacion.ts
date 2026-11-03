@@ -24,6 +24,26 @@ function escribir(key: string, valor: number | null): void {
   } catch { /* storage bloqueado: la heurística no corre */ }
 }
 
+// ─── Frecuencia: la tacita aparece "a veces" ──────────────────────────────────
+// Se cuenta una apertura por carga de la app; la tacita sale en la 1ª, y después 1 de cada
+// `frecuencia` aperturas (la decide el admin; 1 = siempre). Así no está siempre ahí molestando.
+const APERTURAS_KEY = 'planilla-cafe-aperturas'
+let aperturaActual = 0
+
+function aperturaDeEstaSesion(): number {
+  if (!aperturaActual) {
+    aperturaActual = leer(APERTURAS_KEY) + 1
+    escribir(APERTURAS_KEY, aperturaActual)
+  }
+  return aperturaActual
+}
+
+/** ¿La tacita sale en esta apertura de la app? */
+export function cafeTocaEstaSesion(frecuencia: number): boolean {
+  if (frecuencia <= 1) return true
+  return (aperturaDeEstaSesion() - 1) % frecuencia === 0
+}
+
 /** Tocó la tacita: arranca un intento nuevo (descarta una salida vieja). */
 export function registrarToqueDonacion(ahora = Date.now()): void {
   escribir(TOQUE_KEY, ahora)

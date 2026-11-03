@@ -728,7 +728,7 @@ function AppContent() {
         {/* Input de restauración: fuera del banner para que sobreviva al auto-cierre durante la selección de archivo */}
         <input ref={restoreRef} type="file" accept=".json" onChange={handleRestoreFromFile} className="hidden" />
 
-        {tab === "horas" && <HorasTrabajoPage beggarActivo={config.beggarActivo || beggarUser} onAbrirTutorial={() => setShowTutorial(true)} />}
+        {tab === "horas" && <HorasTrabajoPage beggarActivo={config.beggarActivo || beggarUser} cafeFrecuencia={config.cafeFrecuencia} onAbrirTutorial={() => setShowTutorial(true)} />}
         {tab === "analytics" && <AnalyticsPage />}
         {tab === "settings" && <SettingsPage />}
         {esTelefono && tab === "salary" && showSalary && (
