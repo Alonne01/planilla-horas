@@ -1170,10 +1170,19 @@ function fmtDiaMes(d: Date): string {
   return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
 }
 
-// Opciones del día de cierre: 1..28 (existen en todos los meses) + "fin de mes" (30/31, 28/29 en febrero).
-const OPCIONES_CIERRE = [...Array.from({ length: 28 }, (_, i) => i + 1), CIERRE_FIN_DE_MES]
+// Días 1..31 para los selectores "desde" / "hasta".
+const DIAS_MES = Array.from({ length: 31 }, (_, i) => i + 1)
 
-// Pestaña "Período" de la tarjeta de trabajo: elegir el día de cierre de la planilla.
+// El período es continuo: arranca el día siguiente al cierre, así que "desde" y "hasta" van atados
+// (desde = cierre + 1; desde el 1 = cierre a fin de mes). El cierre "fin de mes" se guarda como 31.
+function inicioDeCierre(cierre: number): number {
+  return cierre >= CIERRE_FIN_DE_MES ? 1 : cierre + 1
+}
+function cierreDeInicio(inicio: number): number {
+  return inicio <= 1 ? CIERRE_FIN_DE_MES : inicio - 1
+}
+
+// Pestaña "Período" de la tarjeta de trabajo: elegir desde qué día hasta qué día va la planilla.
 function PeriodoCierreTab({ cierreSel, cierreActual, editable, mensaje, onChange, onAplicar }: {
   cierreSel: number
   cierreActual: number
@@ -1186,29 +1195,42 @@ function PeriodoCierreTab({ cierreSel, cierreActual, editable, mensaje, onChange
   const mes = defaultPeriodoMes()
   const anio = defaultPeriodoAnio()
   const cambio = cierreSel !== cierreActual
+  const inicioSel = inicioDeCierre(cierreSel)
+  const finDeMes = cierreSel >= CIERRE_FIN_DE_MES
+  // Vista previa del período vigente con lo elegido: el inicio no cambia (día siguiente al cierre
+  // anterior, que ya pasó); el fin es el día elegido, recortado al largo del mes.
+  const finPreview = new Date(anio, mes, Math.min(cierreSel, new Date(anio, mes + 1, 0).getDate()))
+  const selectCls = 'w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed'
   return (
     <div key="periodo" className="space-y-3 animate-[view-fade-in_220ms_ease_both]">
       <p className="text-xs text-slate-400 leading-snug">
         Ahora el período va <strong className="text-slate-200">{rangoCierreTexto(cierreActual)}</strong>{' '}
         ({MESES_ES[mes]} {anio}: {fmtDiaMes(periodoStart(mes, anio))} – {fmtDiaMes(periodoEnd(mes, anio))}).
       </p>
-      <Field label="Día de cierre">
-        <select
-          value={cierreSel}
-          disabled={!editable}
-          onChange={e => onChange(Number(e.target.value))}
-          className="w-full bg-slate-700 text-white rounded-xl px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {OPCIONES_CIERRE.map(d => (
-            <option key={d} value={d}>
-              {d === CIERRE_FIN_DE_MES ? 'Fin de mes (del 1 al 30/31)' : `${String(d).padStart(2, '0')} (del ${d + 1} al ${d})`}
-            </option>
-          ))}
-        </select>
-      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Desde el día">
+          <select value={inicioSel} disabled={!editable} onChange={e => onChange(cierreDeInicio(Number(e.target.value)))} className={selectCls}>
+            {DIAS_MES.map(d => <option key={d} value={d}>{String(d).padStart(2, '0')}</option>)}
+          </select>
+        </Field>
+        <Field label={finDeMes ? 'Hasta el día (mismo mes)' : 'Hasta el día (mes siguiente)'}>
+          <select value={cierreSel} disabled={!editable} onChange={e => onChange(Number(e.target.value))} className={selectCls}>
+            {DIAS_MES.slice(0, 30).map(d => <option key={d} value={d}>{String(d).padStart(2, '0')}</option>)}
+            <option value={CIERRE_FIN_DE_MES}>Fin de mes (30/31)</option>
+          </select>
+        </Field>
+      </div>
+      {cambio && (
+        <p className="text-xs text-blue-200/90 leading-snug">
+          Va a quedar <strong>{rangoCierreTexto(cierreSel)}</strong>. {MESES_ES[mes]} {anio}:{' '}
+          {fmtDiaMes(periodoStart(mes, anio))} – {fmtDiaMes(finPreview)}.
+        </p>
+      )}
       <p className="text-[11px] text-slate-500 leading-snug">
-        El cambio rige desde el período actual ({MESES_ES[mes]} {anio}) en adelante: arranca el día siguiente al
-        cierre anterior. Los períodos ya cerrados no cambian y los registros cargados no se tocan.
+        Elegí cualquiera de los dos y el otro se acomoda solo: el período es continuo, así que siempre termina el
+        día anterior al que arranca el siguiente. Si un mes no tiene ese día (ej. 30 o 31 en febrero), cierra el
+        último día del mes. El cambio rige desde el período actual ({MESES_ES[mes]} {anio}) en adelante; los
+        períodos ya cerrados no cambian y los registros cargados no se tocan.
       </p>
       <button
         onClick={async () => { setBusy(true); try { await onAplicar() } finally { setBusy(false) } }}

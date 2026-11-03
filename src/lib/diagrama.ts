@@ -53,7 +53,7 @@ export const CIERRE_FIN_DE_MES = 31
  */
 export interface CambioCierre {
   desde: number
-  dia: number  // 1..28, o CIERRE_FIN_DE_MES
+  dia: number  // 1..30, o CIERRE_FIN_DE_MES (se recorta al largo de cada mes)
 }
 
 // Copia en memoria de `settings.cambiosCierre` (la carga getSettings). Se espeja en localStorage para
@@ -104,9 +104,9 @@ export function diaCierre(mes: number, anio: number): number {
   return Math.min(diaCierreConfigurado(mes, anio), ultimo)
 }
 
-/** Texto corto del rango de un día de cierre: "del 16 al 15" / "del 1 al fin de mes". */
+/** Texto corto del rango de un día de cierre: "del 16 al 15 del mes siguiente" / "del 1 al fin de mes". */
 export function rangoCierreTexto(dia: number): string {
-  return dia >= CIERRE_FIN_DE_MES ? 'del 1 al fin de mes' : `del ${dia + 1} al ${dia}`
+  return dia >= CIERRE_FIN_DE_MES ? 'del 1 al fin de mes' : `del ${dia + 1} al ${dia} del mes siguiente`
 }
 
 /**
