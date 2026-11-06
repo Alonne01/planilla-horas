@@ -544,10 +544,36 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
             <div className="mt-3 space-y-3 animate-[apply-bar-in_220ms_ease_both]">
               <div className="flex items-start gap-2.5 rounded-xl bg-amber-950/40 border border-amber-700/50 px-3 py-2.5">
                 <TriangleAlert size={15} className="text-amber-300 shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-100/90 leading-snug">
-                  <span className="font-semibold text-amber-200">Cargar doble franja puede traer errores de cálculo en la planilla</span>{' '}
-                  y dificultarle el trabajo a quien las tiene que pasar en limpio. Usar con discreción.
-                </p>
+                <div className="text-xs text-amber-100/90 leading-snug space-y-2 min-w-0">
+                  <p>
+                    <span className="font-semibold text-amber-200">Cargar doble franja puede traer errores de cálculo en la planilla</span>{' '}
+                    y dificultarle el trabajo a quien las tiene que pasar en limpio. Usar con discreción.
+                  </p>
+                  {/* Ejemplo concreto: segunda franja que termina al día siguiente */}
+                  <div className="rounded-lg bg-black/20 px-2.5 py-2 space-y-1.5">
+                    <p className="font-semibold text-amber-200">
+                      Ejemplo: <span className="font-mono">05–09</span> y <span className="font-mono">19–07</span>
+                    </p>
+                    <p>
+                      Son 4 h + 12 h = 16 h. Pero la segunda franja termina a las 07 <span className="font-semibold">del día siguiente</span>,
+                      así que en la planilla la salida se escribe <span className="font-mono font-semibold">31</span> (07 + 24) para que la cuenta dé bien.
+                    </p>
+                    <ul className="list-disc pl-4 space-y-1 marker:text-amber-400/70">
+                      <li>
+                        Si al pasarla en limpio se escribe <span className="font-mono">07</span>, la fórmula hace
+                        (9 − 5) + (7 − 19) = <span className="font-semibold text-rose-300">−8 h</span>: el día queda en negativo.
+                      </li>
+                      <li>
+                        Si al día siguiente se vuelve a cargar <span className="font-mono">05–09</span>, de 05 a 07 se
+                        cuenta <span className="font-semibold text-rose-300">dos veces</span> (ya estaba dentro de 19–07).
+                      </li>
+                      <li>
+                        Con apenas una hora más (<span className="font-mono">05–10</span> y <span className="font-mono">19–07</span> = 17 h)
+                        la planilla corta en 16 h y <span className="font-semibold text-rose-300">se pierde 1 h</span>.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
               </div>
               <div>
                 <p className="text-[11px] font-semibold text-slate-400 mb-1.5">Franja 2</p>
