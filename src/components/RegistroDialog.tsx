@@ -178,6 +178,12 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   const [dobleFranja, setDobleFranja] = useState(existing?.entradaFinMs != null && existing?.salidaFinMs != null)
   const [e2, setE2] = useState(msToTime(existing?.entradaFinMs))
   const [s2, setS2] = useState(msToTime(existing?.salidaFinMs))
+  // "Guardar de todas maneras" una doble franja con error (superpuesta, 1ª cruzando medianoche, 0 h).
+  // Si el registro ya se había guardado así, arranca tildado para no volver a bloquearlo al reabrir.
+  const [forzarDoble, setForzarDoble] = useState(() =>
+    existing?.entradaFinMs != null && existing?.salidaFinMs != null &&
+    analizarDobleFranja(msToTime(existing.entradaInicioMs), msToTime(existing.salidaInicioMs),
+      msToTime(existing.entradaFinMs), msToTime(existing.salidaFinMs)).error != null)
   function handleSetDobleFranja(v: boolean) {
     setDobleFranja(v)
     if (!v) { setE2(''); setS2('') }  // al apagarlo se descarta la 2ª franja
@@ -260,7 +266,9 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   const isDayOff = !e1 && !s1 && !(usaDoble && (e2 || s2))  // todo vacío → día de ausencia
   const analisisDoble = franja2Completa && hasWork ? analizarDobleFranja(e1, s1, e2, s2) : null
   const errorDoble = analisisDoble?.error ?? null
-  const bloqueaGuardar = isPartialEntry || !!errorDoble
+  // Un error de doble franja bloquea Guardar salvo que el usuario elija "guardar de todas maneras".
+  // La media carga (falta una hora) bloquea siempre: no hay nada coherente que guardar.
+  const bloqueaGuardar = isPartialEntry || (!!errorDoble && !forzarDoble)
   const isFrancoWorked = esFrancoHoy && hasWork                        // diagrama franco + times → 100%
   const isFeriadoWorked = esFeriadoHoy && hasWork                      // feriado nacional + horas → 100%
 
@@ -549,6 +557,12 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
                     <span className="font-semibold text-amber-200">Cargar doble franja puede traer errores de cálculo en la planilla</span>{' '}
                     y dificultarle el trabajo a quien las tiene que pasar en limpio. Usar con discreción.
                   </p>
+                  <p>
+                    No es un error de la app: es una <span className="font-semibold text-amber-200">limitación de la fórmula de la planilla</span>.
+                    Cada día tiene una sola fila con dos pares entró–salió y el total se calcula como{' '}
+                    <span className="font-mono whitespace-nowrap">(Salió − Entró) + (Salió − Entró)</span>, con un máximo de 16 h.
+                    La fórmula no sabe que una hora puede ser del día siguiente ni si dos horarios se pisan.
+                  </p>
                   {/* Ejemplo concreto: segunda franja que termina al día siguiente */}
                   <div className="rounded-lg bg-black/20 px-2.5 py-2 space-y-1.5">
                     <p className="font-semibold text-amber-200">
@@ -583,7 +597,22 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
                 </div>
               </div>
               {errorDoble && (
-                <p className="text-xs text-red-400 leading-snug">{errorDoble}</p>
+                <div className="rounded-xl bg-rose-950/30 border border-rose-800/40 px-3 py-2.5 space-y-2">
+                  <p className="text-xs text-red-300 leading-snug">{errorDoble}</p>
+                  {/* Escape: el usuario puede guardarlo igual, sabiendo que la planilla lo va a calcular mal */}
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={forzarDoble}
+                      onChange={e => setForzarDoble(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 rounded accent-rose-500 shrink-0"
+                    />
+                    <span className="text-xs text-rose-100/90 leading-snug">
+                      Guardar de todas maneras. Entiendo que la fórmula de la planilla puede calcular mal las horas de este día
+                      y que puede haber que corregirlo a mano.
+                    </span>
+                  </label>
+                </div>
               )}
               {analisisDoble && !errorDoble && (analisisDoble.segundaCruzaMedianoche || analisisDoble.superaTope) && (
                 <div className="space-y-1.5">
