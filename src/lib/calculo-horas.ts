@@ -88,39 +88,106 @@ export function esDiaNoTrabajado(reg: RegistroHoras): boolean {
   )
 }
 
-/**
- * ¿El turno principal cruza la medianoche? (turno noche: la salida tiene una hora
- * de reloj menor que la entrada, p. ej. 19:00 → 07:00). Se usa para avisar, en el
- * día siguiente, que esas horas de la madrugada ya quedaron contadas en este día.
- */
-export function turnoCruzaMedianoche(reg: RegistroHoras): boolean {
-  const e = reg.entradaInicioMs
-  const s = reg.salidaInicioMs
-  if (e == null || s == null) return false
-  const eMin = new Date(e).getHours() * 60 + new Date(e).getMinutes()
-  const sMin = new Date(s).getHours() * 60 + new Date(s).getMinutes()
-  return sMin < eMin
+/** Minutos de reloj (0–1439) de un timestamp. */
+function minDelDia(ms: number): number {
+  const d = new Date(ms)
+  return d.getHours() * 60 + d.getMinutes()
+}
+
+/** Franjas completas (entró/salió) de un registro: la 1ª y, si hay doble franja, la 2ª. */
+function franjasReg(reg: RegistroHoras): [number, number][] {
+  const out: [number, number][] = []
+  if (reg.entradaInicioMs != null && reg.salidaInicioMs != null) out.push([reg.entradaInicioMs, reg.salidaInicioMs])
+  if (reg.entradaFinMs != null && reg.salidaFinMs != null) out.push([reg.entradaFinMs, reg.salidaFinMs])
+  return out
 }
 
 /**
- * Clasifica el turno principal de un registro como 'noche' o 'dia', o null si está
- * incompleto. Es noche si cruza la medianoche o si la mitad o más de sus horas caen en la
- * ventana nocturna 21:00–06:00 — mismo criterio que la nota del diálogo y EquipTrack.
+ * ¿El último turno del día cruza la medianoche? (turno noche: la salida tiene una hora
+ * de reloj menor que la entrada, p. ej. 19:00 → 07:00). Con doble franja se mira la 2ª,
+ * que es la que puede seguir de madrugada. Se usa para avisar, en el día siguiente, que
+ * esas horas de la madrugada ya quedaron contadas en este día.
+ */
+export function turnoCruzaMedianoche(reg: RegistroHoras): boolean {
+  const fr = franjasReg(reg)
+  const ultima = fr[fr.length - 1]
+  if (!ultima) return false
+  return minDelDia(ultima[1]) < minDelDia(ultima[0])
+}
+
+/** Hora de salida (ms) del último turno del día (la 2ª franja si la hay). */
+export function salidaUltimoTurno(reg: RegistroHoras): number | null {
+  const fr = franjasReg(reg)
+  return fr.length ? fr[fr.length - 1][1] : null
+}
+
+/** Horas totales y nocturnas (ventana 21:00–06:00) de una franja en horas de reloj. */
+function horasYNocturnas(startH: number, endH: number): { total: number; noct: number; cruza: boolean } {
+  let end = endH
+  const cruza = end < startH
+  if (cruza) end += 24
+  const total = end - startH
+  let noct = Math.max(0, Math.min(end, 30) - Math.max(startH, 21))
+  noct += Math.max(0, Math.min(end, 6) - Math.max(startH, 0))
+  return { total, noct, cruza }
+}
+
+/**
+ * Clasifica el turno de un registro como 'noche' o 'dia', o null si está incompleto. Es
+ * noche si alguna franja cruza la medianoche o si la mitad o más de las horas (sumando
+ * ambas franjas) caen en la ventana nocturna 21:00–06:00 — mismo criterio que la nota del
+ * diálogo y EquipTrack.
  */
 function clasificarTurnoReg(reg: RegistroHoras): 'noche' | 'dia' | null {
-  const e = reg.entradaInicioMs
-  const s = reg.salidaInicioMs
-  if (e == null || s == null) return null
-  const ed = new Date(e), sd = new Date(s)
-  const start = ed.getHours() + ed.getMinutes() / 60
-  let end = sd.getHours() + sd.getMinutes() / 60
-  const cruza = end < start
-  if (cruza) end += 24
-  const total = end - start
+  let total = 0, noct = 0, cruza = false
+  for (const [e, s] of franjasReg(reg)) {
+    const r = horasYNocturnas(minDelDia(e) / 60, minDelDia(s) / 60)
+    total += r.total; noct += r.noct; cruza = cruza || r.cruza
+  }
   if (total <= 0) return null
-  let noct = Math.max(0, Math.min(end, 30) - Math.max(start, 21))
-  noct += Math.max(0, Math.min(end, 6) - Math.max(start, 0))
   return cruza || noct >= total / 2 ? 'noche' : 'dia'
+}
+
+/** "HH:MM" → minutos del día, o null si está vacío/mal formado. */
+function hhmmAMin(v: string): number | null {
+  if (!v) return null
+  const [h, m] = v.split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
+  return h * 60 + m
+}
+
+export interface AnalisisDobleFranja {
+  /** Error que impide guardar (franjas superpuestas, 1ª cruzando medianoche, franja de 0 h). */
+  error: string | null
+  horas1: number
+  horas2: number
+  /** Suma de ambas franjas, ANTES del almuerzo de Base y del tope de 16 h. */
+  totalCrudo: number
+  /** La 2ª franja termina al día siguiente (ej. 19:00 → 07:00). */
+  segundaCruzaMedianoche: boolean
+  /** La suma supera las 16 h: la planilla la recorta (MIN(16, ...)). */
+  superaTope: boolean
+}
+
+/**
+ * Valida y resume una carga en DOBLE FRANJA (entró–salió / entró–salió) dada en "HH:MM".
+ * Reglas: la 1ª franja no puede cruzar la medianoche (la 2ª tiene que ir después, el mismo
+ * día); la 2ª no puede empezar antes de que termine la 1ª; ninguna puede durar 0 h. La 2ª SÍ
+ * puede cruzar la medianoche, pero se avisa (y si la suma pasa las 16 h, la planilla la topea).
+ * Si alguna franja está incompleta devuelve todo en 0 sin error (lo marca la UI como "media carga").
+ */
+export function analizarDobleFranja(e1: string, s1: string, e2: string, s2: string): AnalisisDobleFranja {
+  const vacio: AnalisisDobleFranja = { error: null, horas1: 0, horas2: 0, totalCrudo: 0, segundaCruzaMedianoche: false, superaTope: false }
+  const [a1, b1, a2, b2] = [e1, s1, e2, s2].map(hhmmAMin)
+  if (a1 == null || b1 == null || a2 == null || b2 == null) return vacio
+  if (a1 === b1 || a2 === b2) return { ...vacio, error: 'Una de las franjas dura 0 h: revisá entrada y salida.' }
+  if (b1 < a1) return { ...vacio, error: 'La primera franja no puede pasar la medianoche: la segunda tiene que ser después, el mismo día.' }
+  if (a2 < b1) return { ...vacio, error: 'Las franjas se superponen: la segunda tiene que empezar después de que termina la primera.' }
+  const horas1 = (b1 - a1) / 60
+  const segundaCruzaMedianoche = b2 < a2
+  const horas2 = ((segundaCruzaMedianoche ? b2 + 1440 : b2) - a2) / 60
+  const totalCrudo = horas1 + horas2
+  return { error: null, horas1, horas2, totalCrudo, segundaCruzaMedianoche, superaTope: totalCrudo > MAX_HORAS_DIA }
 }
 
 /**

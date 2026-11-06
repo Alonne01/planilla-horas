@@ -2,7 +2,7 @@
 
 import { esFeriadoNacional } from './feriados'
 
-export type DiagramaPatternKey = 'LUNES_VIERNES' | 'D10X5' | 'D7X7' | 'D10X4'
+export type DiagramaPatternKey = 'LUNES_VIERNES' | 'D10X5' | 'D7X7' | 'D10X4' | 'D14X14'
 
 export interface DiagramaPattern {
   key: DiagramaPatternKey
@@ -16,6 +16,7 @@ export const DIAGRAMAS: DiagramaPattern[] = [
   { key: 'D10X5',         label: '10 × 5',          diasTrabajo: 10, diasFranco: 5 },
   { key: 'D7X7',          label: '7 × 7',            diasTrabajo: 7,  diasFranco: 7 },
   { key: 'D10X4',         label: '10 × 4',           diasTrabajo: 10, diasFranco: 4 },
+  { key: 'D14X14',        label: '14 × 14',          diasTrabajo: 14, diasFranco: 14 },
 ]
 
 function startOfDay(ms: number): number {

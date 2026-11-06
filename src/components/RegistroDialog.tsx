@@ -1,11 +1,11 @@
 import { useState, useEffect, useLayoutEffect, useRef, type FocusEvent } from 'react'
 import { v4 as uuid } from 'uuid'
-import { X, CalendarDays, Clock, Moon, Sun, Palmtree, Check } from 'lucide-react'
+import { X, CalendarDays, Clock, Moon, Sun, Palmtree, Check, TriangleAlert } from 'lucide-react'
 import { TimeDrumPicker } from './TimeDrumPicker'
 import type { RegistroHoras } from '../db/database'
 import { esFeriadoNacional, nombreFeriado } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
-import { turnoCruzaMedianoche, type LineaTrabajo } from '../lib/calculo-horas'
+import { turnoCruzaMedianoche, salidaUltimoTurno, analizarDobleFranja, type LineaTrabajo } from '../lib/calculo-horas'
 
 interface Props {
   fecha: Date
@@ -77,6 +77,26 @@ function clasificarTurno(entrada: string, salida: string): 'noche' | 'dia' | nul
   return cruza || noct >= total / 2 ? 'noche' : 'dia'
 }
 
+/** Igual que clasificarTurno pero sumando las dos franjas (doble franja horaria). */
+function clasificarDoble(e1: string, s1: string, e2: string, s2: string): 'noche' | 'dia' | null {
+  const a = clasificarTurno(e1, s1), b = clasificarTurno(e2, s2)
+  if (!a || !b) return a ?? b
+  if (cruzaMedianocheStr(e1, s1) || cruzaMedianocheStr(e2, s2)) return 'noche'
+  const horas = (e: string, s: string) => {
+    const [eh, em] = e.split(':').map(Number), [sh, sm] = s.split(':').map(Number)
+    const st = eh + em / 60, en = sh + sm / 60
+    const noct = Math.max(0, Math.min(en, 30) - Math.max(st, 21)) + Math.max(0, Math.min(en, 6) - Math.max(st, 0))
+    return { total: en - st, noct }
+  }
+  const h1 = horas(e1, s1), h2 = horas(e2, s2)
+  return h1.noct + h2.noct >= (h1.total + h2.total) / 2 ? 'noche' : 'dia'
+}
+
+/** Horas decimales → "5 h" / "7,5 h". */
+function fmtH(h: number): string {
+  return `${Number.isInteger(h) ? h : h.toFixed(2).replace(/0+$/, '').replace('.', ',')} h`
+}
+
 type LugarTrabajo = 'Base' | 'Campo' | 'Franco'  // 'Franco' used only for saving absences
 type Pernocte = 'NO' | 'Hotel' | 'Trailer'
 
@@ -136,6 +156,16 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   )
   const [e1, setE1] = useState(msToTime(existing?.entradaInicioMs))
   const [s1, setS1] = useState(msToTime(existing?.salidaInicioMs))
+  // Doble franja horaria (entró–salió / entró–salió): segunda franja del mismo día. Se guarda en
+  // entradaFinMs/salidaFinMs (el cálculo y la exportación ya suman ambas). Arranca activa si el
+  // registro ya tenía una segunda franja cargada.
+  const [dobleFranja, setDobleFranja] = useState(existing?.entradaFinMs != null && existing?.salidaFinMs != null)
+  const [e2, setE2] = useState(msToTime(existing?.entradaFinMs))
+  const [s2, setS2] = useState(msToTime(existing?.salidaFinMs))
+  function handleSetDobleFranja(v: boolean) {
+    setDobleFranja(v)
+    if (!v) { setE2(''); setS2('') }  // al apagarlo se descarta la 2ª franja
+  }
   const [pernocte, setPernocte] = useState<Pernocte>(existing?.pernocte ?? 'NO')
   // Viaje. Campo: slider 0→350 (0 = sin viaje), 1,5 h c/100 km; el máximo habilita hora manual.
   // Base: toggle +1 h fija (viajeActivo). km/horas se derivan de horasViaje al editar.
@@ -205,8 +235,16 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
   // Auto-detect based on external context (diagrama + national calendar) + times
   const hasWork = !!(e1 && s1)
-  const isPartialEntry = !!(e1 || s1) && !hasWork  // exactly one time filled → incomplete
-  const isDayOff = !e1 && !s1                       // both empty → absence day
+  // La doble franja no aplica a SBDP en Campo (ahí el horario lo define el tipo de día on-call).
+  const usaDoble = dobleFranja && !(linea === 'SBDP' && lugar === 'Campo')
+  const franja2Completa = usaDoble && !!(e2 && s2)
+  // Media carga: falta entrada o salida en alguna franja (o la 2ª está cargada sin la 1ª).
+  const franja2Parcial = usaDoble && !!(e2 || s2) && !franja2Completa
+  const isPartialEntry = (!!(e1 || s1) && !hasWork) || franja2Parcial || (franja2Completa && !hasWork)
+  const isDayOff = !e1 && !s1 && !(usaDoble && (e2 || s2))  // todo vacío → día de ausencia
+  const analisisDoble = franja2Completa && hasWork ? analizarDobleFranja(e1, s1, e2, s2) : null
+  const errorDoble = analisisDoble?.error ?? null
+  const bloqueaGuardar = isPartialEntry || !!errorDoble
   const isFrancoWorked = esFrancoHoy && hasWork                        // diagrama franco + times → 100%
   const isFeriadoWorked = esFeriadoHoy && hasWork                      // feriado nacional + horas → 100%
 
@@ -220,10 +258,12 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   const francosProyectados = baseFrancos + (isFrancoWorked ? 1 : 0) - (usaCompensatorio ? 1 : 0)
 
   // Nota estética turno noche / día + recordatorio del día anterior
-  const turnoTipo = hasWork ? clasificarTurno(e1, s1) : null
-  const turnoCruza = cruzaMedianocheStr(e1, s1)
+  const turnoTipo = hasWork
+    ? (franja2Completa ? clasificarDoble(e1, s1, e2, s2) : clasificarTurno(e1, s1))
+    : null
+  const turnoCruza = franja2Completa ? cruzaMedianocheStr(e2, s2) : cruzaMedianocheStr(e1, s1)
   const prevTurnoNoche = !!prevDayRegistro && turnoCruzaMedianoche(prevDayRegistro)
-  const prevSalida = prevTurnoNoche ? msToTime(prevDayRegistro?.salidaInicioMs) : ''
+  const prevSalida = prevTurnoNoche ? msToTime(salidaUltimoTurno(prevDayRegistro!)) : ''
 
   // Reloj sugerido (no aplicado) según el último día cargado — sólo si el turno está vacío
   const turnoVacio = !e1 && !s1
@@ -258,7 +298,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   }, [prevTurnoNoche])
 
   function handleSave() {
-    if (isPartialEntry) return  // guarded by UI — button disabled when partial
+    if (bloqueaGuardar) return  // guarded by UI — button disabled when partial / franjas inválidas
     const horasViajeFinal = isDayOff ? 0
       : lugar === 'Base' ? (viajeActivo ? 1 : 0)
       : viajeModo === 'NO' ? 0
@@ -273,8 +313,8 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       fechaMs: fecha.getTime(),
       entradaInicioMs: isDayOff ? null : timeToMs(fecha, e1),
       salidaInicioMs: isDayOff ? null : timeToMs(fecha, s1),
-      entradaFinMs: existing?.entradaFinMs ?? null,
-      salidaFinMs: existing?.salidaFinMs ?? null,
+      entradaFinMs: (!isDayOff && franja2Completa) ? timeToMs(fecha, e2) : null,
+      salidaFinMs: (!isDayOff && franja2Completa) ? timeToMs(fecha, s2) : null,
       lugarTrabajo: (isDayOff ? 'Franco' : lugar) as LugarTrabajo,
       pernocte: (isDayOff || lugar === 'Base') ? 'NO' : pernocte,
       // Mantenimiento: "maneja" se reusa como Guardia → independiente del viaje y del lugar (Base o Campo).
@@ -334,7 +374,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
   // ── Cambios sin guardar ──────────────────────────────────────────────────────
   // Snapshot de los campos editables en el 1er render; si el estado actual difiere, hay cambios.
-  const camposActuales = JSON.stringify({ lugar, e1, s1, pernocte, viajeActivo, viajeModo, kmManual, horasManual, maneja, tipoDia, proyectoObs, subFranco })
+  const camposActuales = JSON.stringify({ lugar, e1, s1, dobleFranja, e2, s2, pernocte, viajeActivo, viajeModo, kmManual, horasManual, maneja, tipoDia, proyectoObs, subFranco })
   const snapshotInicial = useRef(camposActuales)
   const hayCambios = snapshotInicial.current !== camposActuales
   const [showConfirmExit, setShowConfirmExit] = useState(false)
@@ -343,7 +383,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
   // preferencia: "guardar siempre" guarda directo (si es válido); si no, abre el diálogo.
   function requestClose() {
     if (!hayCambios) { handleClose(); return }
-    if (guardarSiempreAlSalir && !isPartialEntry) { handleSave(); return }
+    if (guardarSiempreAlSalir && !bloqueaGuardar) { handleSave(); return }
     setShowConfirmExit(true)
   }
 
@@ -464,10 +504,58 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
             </div>
           ) : (
           <>
+          {usaDoble && <p className="text-[11px] font-semibold text-slate-400 mb-1.5">Franja 1</p>}
           <div className="grid grid-cols-2 gap-3">
-            <TimeInput label="Entrada" value={e1} onChange={setE1} />
-            <TimeInput label="Salida" value={s1} onChange={setS1} />
+            <TimeInput label={usaDoble ? 'Entró' : 'Entrada'} value={e1} onChange={setE1} />
+            <TimeInput label={usaDoble ? 'Salió' : 'Salida'} value={s1} onChange={setS1} />
           </div>
+          {/* ── Doble franja horaria (entró–salió / entró–salió) ── */}
+          <div className="mt-3 rounded-xl bg-slate-700/40 px-3 py-2.5">
+            <Toggle label="Cargar doble franja horaria" value={dobleFranja} onChange={handleSetDobleFranja} />
+          </div>
+          {usaDoble && (
+            <div className="mt-3 space-y-3 animate-[apply-bar-in_220ms_ease_both]">
+              <div className="flex items-start gap-2.5 rounded-xl bg-amber-950/40 border border-amber-700/50 px-3 py-2.5">
+                <TriangleAlert size={15} className="text-amber-300 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-100/90 leading-snug">
+                  <span className="font-semibold text-amber-200">Cargar doble franja puede traer errores de cálculo en la planilla</span>{' '}
+                  y dificultarle el trabajo a quien las tiene que pasar en limpio. Usar con discreción.
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-slate-400 mb-1.5">Franja 2</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <TimeInput label="Entró" value={e2} onChange={setE2} />
+                  <TimeInput label="Salió" value={s2} onChange={setS2} />
+                </div>
+              </div>
+              {errorDoble && (
+                <p className="text-xs text-red-400 leading-snug">{errorDoble}</p>
+              )}
+              {analisisDoble && !errorDoble && (
+                <div className="rounded-xl bg-slate-900/50 ring-1 ring-white/[0.06] px-3 py-2.5 space-y-1.5">
+                  <p className="text-[11px] text-slate-400">Así va a la planilla (entró – salió · entró – salió):</p>
+                  <p className="font-mono text-sm text-white">
+                    {e1} – {s1} <span className="text-slate-500">·</span> {e2} – {s2}
+                  </p>
+                  <p className="text-xs text-slate-300">
+                    {fmtH(analisisDoble.horas1)} + {fmtH(analisisDoble.horas2)} = <span className="font-semibold text-white">{fmtH(analisisDoble.totalCrudo)}</span>
+                    {lugar === 'Base' && <span className="text-slate-400"> (− 1 h de almuerzo en Base)</span>}
+                  </p>
+                  {analisisDoble.segundaCruzaMedianoche && (
+                    <p className="text-[11px] text-amber-300/90 leading-snug">
+                      La segunda franja termina al día siguiente ({s2}). Esas horas de la madrugada ya quedan contadas acá: no las cargues de nuevo mañana.
+                    </p>
+                  )}
+                  {analisisDoble.superaTope && (
+                    <p className="text-[11px] text-rose-300/90 leading-snug">
+                      La suma supera las 16 h: la planilla recorta el día a 16 h. Revisá que el horario sea correcto.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {turnoTipo && (
             <div className="mt-2.5 flex items-center gap-2 animate-[apply-bar-in_220ms_ease_both]">
               {turnoTipo === 'noche' ? (
@@ -485,7 +573,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
             </div>
           )}
           {/* ── Aviso: salida 00:00 → probablemente está partiendo un turno noche a mano ── */}
-          {!!e1 && s1 === '00:00' && (
+          {!usaDoble && !!e1 && s1 === '00:00' && (
             <div className="mt-3 rounded-2xl overflow-hidden border border-indigo-700/50 bg-gradient-to-b from-indigo-950/70 to-slate-900/60 animate-[apply-bar-in_220ms_ease_both]">
               {/* header */}
               <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-indigo-900/40 border-b border-indigo-700/40">
@@ -547,6 +635,7 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               <p className="text-xs text-red-400">
                 {esSBDPCampo
                   ? (tipoDia === 'LLEGADA' ? 'Ingresá la hora de entrada al campo' : 'Ingresá la hora de llegada a base')
+                  : usaDoble ? 'Completá entró y salió en las dos franjas'
                   : 'Ingresá tanto la Entrada como la Salida'}
               </p>
             )}
@@ -742,8 +831,8 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
             </button>
           )}
           {!ocultarCierre && <button onClick={requestClose} className="flex-1 py-3 rounded-xl bg-slate-700 text-slate-300 text-sm font-medium transition-transform active:scale-95">Cancelar</button>}
-          <button data-tour="dlg-guardar" onClick={handleSave} disabled={isPartialEntry}
-            className={`flex-1 py-3 rounded-xl text-sm font-bold transition-[transform,background-color,color] active:scale-95 disabled:active:scale-100 ${isPartialEntry ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
+          <button data-tour="dlg-guardar" onClick={handleSave} disabled={bloqueaGuardar}
+            className={`flex-1 py-3 rounded-xl text-sm font-bold transition-[transform,background-color,color] active:scale-95 disabled:active:scale-100 ${bloqueaGuardar ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}>
             Guardar
           </button>
         </div>
@@ -770,8 +859,8 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               />
               <span className="text-xs text-slate-300">Guardar siempre al salir (no volver a preguntar)</span>
             </label>
-            {isPartialEntry && (
-              <p className="text-[11px] text-red-400 mt-3">Para guardar este día ingresá entrada y salida; si no, sólo podés descartar.</p>
+            {bloqueaGuardar && (
+              <p className="text-[11px] text-red-400 mt-3">{errorDoble ?? 'Para guardar este día ingresá entrada y salida; si no, sólo podés descartar.'}</p>
             )}
             <div className="flex gap-2 mt-5">
               <button
@@ -782,8 +871,8 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               </button>
               <button
                 onClick={() => { setShowConfirmExit(false); handleSave() }}
-                disabled={isPartialEntry}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-transform active:scale-95 ${isPartialEntry ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}
+                disabled={bloqueaGuardar}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-transform active:scale-95 ${bloqueaGuardar ? 'bg-blue-600/40 text-white/40 cursor-not-allowed' : 'bg-blue-600 text-white'}`}
               >
                 Guardar
               </button>

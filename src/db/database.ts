@@ -3,7 +3,7 @@ import type { LineaTrabajo } from '../lib/calculo-horas'
 // Import SOLO de tipos (se borra al compilar): no crea ciclo en runtime con calculo-salarial.
 import type { AdicionalPersonal, RetencionPersonal } from '../lib/calculo-salarial'
 import type { Hallazgo, Veredicto } from '../lib/recibo-comparador'
-import { PRUEBA_CUTOFF_MS, setCambiosCierre, type CambioCierre } from '../lib/diagrama'
+import { PRUEBA_CUTOFF_MS, setCambiosCierre, type CambioCierre, type DiagramaPatternKey } from '../lib/diagrama'
 
 const SHADOW_KEY = 'planilla-shadow'
 const LAST_BACKUP_KEY = 'planilla-last-backup-ts'
@@ -65,7 +65,7 @@ export interface RegistroHoras {
 export interface AppSettings {
   id: 1  // singleton row
   nombreUsuario: string
-  diagrama: 'LUNES_VIERNES' | 'D10X5' | 'D7X7' | 'D10X4'
+  diagrama: DiagramaPatternKey
   diagramaInicioMs: number
   lineaTrabajo: LineaTrabajo  // afecta el conteo de horas (SBDP suma 12 h al 50% en Campo)
   proyectosFrecuentes: string[]  // JSON array
