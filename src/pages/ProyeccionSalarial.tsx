@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Construction, Banknote, TrendingUp, Minus, Plus, Wallet, Info,
+  Construction, Banknote, TrendingUp, Wallet, Info, Clock, Receipt,
   LayoutGrid, BarChart3, ListTree, CalendarRange, PartyPopper,
   FileSearch, Loader2, RefreshCw, AlertTriangle, Copy, Check,
 } from 'lucide-react'
@@ -24,7 +24,7 @@ import { basicoProyectado } from '../lib/paritarias'
 import { isMobilePhone } from '../lib/device'
 import {
   TendenciaNetoChart, TendenciaAcumuladaChart, ComposicionCard, GananciaDiaCard, MiniDonut, KpiGrid,
-  ProyeccionCard, DeltaBadge, useCountUp,
+  DeltaBadge, useCountUp,
 } from '../components/SalaryCharts'
 import { SlotMachineMoney, BilletesRain, nivelNeto } from '../components/SalaryFx'
 import { MonthPeriodPicker } from '../components/MonthPeriodPicker'
@@ -131,7 +131,7 @@ function Proyeccion() {
       ) : (
         <div className="px-4 py-4 space-y-4">
           {/* Hero del neto — siempre visible */}
-          <HeroNeto est={est!} settings={settings} mes={mes} anio={anio} hsActivas={actual!.total} festejo={festejo} onToggleFestejo={toggleFestejo} />
+          <HeroNeto est={est!} settings={settings} mes={mes} anio={anio} festejo={festejo} onToggleFestejo={toggleFestejo} />
 
           {/* Pestañas */}
           <div className="sticky top-[52px] z-10 -mx-4 px-4 py-2 bg-slate-900/95 backdrop-blur">
@@ -144,10 +144,13 @@ function Proyeccion() {
 
           {tab === 'resumen' && <TabResumen est={est!} actual={actual!} settings={settings} mes={mes} anio={anio} />}
           {tab === 'analisis' && <TabAnalisis est={est!} actual={actual!} settings={settings} serieNeto={serieNeto} mes={mes} anio={anio} />}
-          {tab === 'desglose' && <TabDesglose est={est!} />}
-
-          {/* Contraste del recibo real contra el cálculo (visible en todas las pestañas) */}
-          <ContrastarRecibo est={est!} convenio={settings.convenio} mes={mes} anio={anio} />
+          {tab === 'desglose' && (
+            <>
+              <TabDesglose est={est!} />
+              {/* Contraste del recibo real contra el cálculo: vive junto al recibo estimado */}
+              <ContrastarRecibo est={est!} convenio={settings.convenio} mes={mes} anio={anio} />
+            </>
+          )}
         </div>
       )}
     </div>
@@ -437,14 +440,24 @@ function PuntosRRHH({ reclamo }: { reclamo: Reclamo }) {
 }
 
 // ─── Hero ─────────────────────────────────────────────────────────────────────────
-function HeroNeto({ est, settings, mes, anio, hsActivas, festejo, onToggleFestejo }: {
-  est: SalaryEstimate; settings: any; mes: number; anio: number; hsActivas: number; festejo: boolean; onToggleFestejo: () => void
+/**
+ * Hero con UN solo número protagonista:
+ *  - período en curso → "Vas a cobrar (est.)" = neto proyectado a fin de período, con una barra de lo
+ *    cobrado hasta hoy (neto a la fecha / proyectado) y los días que faltan;
+ *  - período cerrado → "Neto estimado" del mes, sin barra.
+ * Mini-datos: Bruto · Retenciones · Días trabajados (el valor hora y las horas viven en el Resumen).
+ */
+function HeroNeto({ est, settings, mes, anio, festejo, onToggleFestejo }: {
+  est: SalaryEstimate; settings: any; mes: number; anio: number; festejo: boolean; onToggleFestejo: () => void
 }) {
-  const netoAnim = useCountUp(est.netoEstimado)
-  const vhProm = valorHoraEstable(est, settings, mes, anio, hsActivas)
+  const proy = useMemo(() => calcularProyeccion(est, settings, mes, anio), [est, settings, mes, anio])
+  const principal = proy ? proy.proyectado : est.netoEstimado
+  const principalAnim = useCountUp(principal)
   const [billetes, setBilletes] = useState(false)
-  const nivel = nivelNeto(est.netoEstimado, settings.sueldoBasico)
+  const nivel = nivelNeto(principal, settings.sueldoBasico)
   const festejando = festejo && billetes
+  const pctCobrado = proy && proy.proyectado > 0 ? Math.min(1, est.netoEstimado / proy.proyectado) : 1
+  const falta = proy ? Math.max(0, proy.proyectado - est.netoEstimado) : 0
   return (
     <div className="relative rounded-2xl bg-gradient-to-br from-emerald-900/50 to-slate-800/60 border border-emerald-800/40 p-5"
       style={festejando && nivel >= 4 ? { animation: 'hero-shake 0.6s ease-in-out' } : undefined}>
@@ -452,19 +465,36 @@ function HeroNeto({ est, settings, mes, anio, hsActivas, festejo, onToggleFestej
         className={`absolute top-3 right-3 p-1.5 rounded-lg transition-colors ${festejo ? 'text-amber-300 bg-amber-400/10' : 'text-slate-500 active:text-slate-300'}`}>
         <PartyPopper size={16} />
       </button>
-      <div className="text-xs text-emerald-300/80 tracking-wide">NETO ESTIMADO · {MESES_ES[mes]} {anio}</div>
-      <div className="text-4xl font-bold text-white leading-none mt-1 tabular-nums"
+      <div className="text-xs text-emerald-300/80 tracking-wide uppercase">
+        {proy ? 'Vas a cobrar (estimado)' : 'Neto estimado'} · {MESES_ES[mes]} {anio}
+      </div>
+      <div className="text-4xl font-bold text-white leading-none mt-1.5 tabular-nums"
         style={festejando ? { animation: 'neto-glow 1.2s ease-in-out 2' } : undefined}>
         {festejo
-          ? <SlotMachineMoney value={est.netoEstimado} nivel={nivel} onSettled={() => setBilletes(true)} />
-          : fmtPesos(Math.round(netoAnim))}
+          ? <SlotMachineMoney value={principal} nivel={nivel} onSettled={() => setBilletes(true)} />
+          : fmtPesos(Math.round(principalAnim))}
       </div>
+
+      {proy && (
+        <div className="mt-4">
+          <div className="h-2 rounded-full bg-slate-900/60 overflow-hidden">
+            <div className="h-full rounded-full bg-emerald-400 transition-[width] duration-700"
+              style={{ width: `${Math.round(pctCobrado * 100)}%` }} />
+          </div>
+          <div className="flex items-baseline justify-between gap-2 mt-1.5 text-[11px]">
+            <span className="text-slate-400">Cobrado hasta hoy <span className="text-white font-semibold tabular-nums">{fmtPesos(est.netoEstimado)}</span></span>
+            <span className="text-slate-400 shrink-0">Falta <span className="text-emerald-300 font-semibold tabular-nums">{fmtPesos(falta)}</span></span>
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5">{proy.diasTxt}</div>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-2 mt-4">
         <Mini label="Bruto" value={fmtPesos(est.bruto)} />
-        <Mini label="Valor hora" value={fmtPesos(vhProm)} />
-        <Mini label="Hs activas" value={`${hsActivas.toFixed(1)}`} />
+        <Mini label="Retenciones" value={`-${fmtPesos(est.retenciones)}`} accent="text-red-300" />
+        <Mini label="Días trabajados" value={String(est.diasTrabajados)} />
       </div>
-      {festejo && billetes && <BilletesRain key={est.netoEstimado} nivel={nivel} onDone={() => setBilletes(false)} />}
+      {festejo && billetes && <BilletesRain key={principal} nivel={nivel} onDone={() => setBilletes(false)} />}
     </div>
   )
 }
@@ -473,7 +503,6 @@ function HeroNeto({ est, settings, mes, anio, hsActivas, festejo, onToggleFestej
 function TabResumen({ est, actual, settings, mes, anio }: {
   est: SalaryEstimate; actual: PeriodoStats; settings: any; mes: number; anio: number
 }) {
-  const proy = useMemo(() => calcularProyeccion(est, settings, mes, anio), [est, settings, mes, anio])
   const totalDiasOp = est.diasBase + est.diasCampo
   const campoPct = totalDiasOp > 0 ? (est.diasCampo / totalDiasOp) * 100 : 0
   const extraPct = actual.total > 0 ? (actual.extra / actual.total) * 100 : 0
@@ -482,10 +511,7 @@ function TabResumen({ est, actual, settings, mes, anio }: {
 
   return (
     <div className="space-y-4">
-      {proy && (
-        <ProyeccionCard pct={proy.pct} diasTxt={proy.diasTxt} neto={est.netoEstimado} proyectado={proy.proyectado} />
-      )}
-
+      {/* La proyección a fin de período ya es el número del hero: acá sólo indicadores. */}
       <KpiGrid items={[
         { label: '$/Hora prom.', value: fmtPesos(valorHoraEstable(est, settings, mes, anio, actual.total)) },
         { label: '$/Día trabajado', value: fmtPesos(ingresoDia) },
@@ -498,7 +524,12 @@ function TabResumen({ est, actual, settings, mes, anio }: {
           <MiniDonut pct={campoPct} label="Días campo" sub={`${est.diasCampo}/${totalDiasOp}`} color="#34d399" />
           <MiniDonut pct={extraPct} label="Horas extras" sub={`${extraPct.toFixed(0)}%`} color="#fb923c" />
         </div>
-        <div className="grid grid-cols-4 gap-2 mt-3">
+      </Card>
+
+      <Card title="Horas del período" icon={<Clock size={15} className="text-sky-400" />}
+        action={<span className="text-sm font-bold text-white tabular-nums">{fmtHs(actual.total)} hs</span>}>
+        <div className="grid grid-cols-5 gap-1.5">
+          <HoraChip label="Normal" value={actual.normales} />
           <HoraChip label="50%" value={est.totalExtra50} accent="text-amber-300" />
           <HoraChip label="100%" value={est.totalExtra100} accent="text-orange-300" />
           <HoraChip label="Viaje" value={est.totalViaje} />
@@ -544,11 +575,7 @@ function TabAnalisis({ est, actual, settings, serieNeto, mes, anio }: {
 
   return (
     <div className="space-y-4">
-      <Card title="Tendencia del neto" icon={<TrendingUp size={15} className="text-emerald-400" />}
-        action={<DeltaBadge cur={cur} prev={prev} />}>
-        <TendenciaNetoChart data={serieNeto} />
-      </Card>
-
+      {/* Primero lo del mes en curso; la tendencia de varios meses al final. */}
       {acumData.length >= 2 && (
         <Card title="Cobrado acumulado del período" icon={<TrendingUp size={15} className="text-emerald-400" />}>
           <TendenciaAcumuladaChart data={acumData} proyectado={proyectado} />
@@ -566,44 +593,99 @@ function TabAnalisis({ est, actual, settings, serieNeto, mes, anio }: {
           <GananciaDiaCard data={diasData} />
         </Card>
       )}
+
+      {serieNeto.length >= 2 ? (
+        <Card title="Tendencia del neto" icon={<TrendingUp size={15} className="text-emerald-400" />}
+          action={<DeltaBadge cur={cur} prev={prev} />}>
+          <TendenciaNetoChart data={serieNeto} />
+        </Card>
+      ) : (
+        <p className="flex items-center gap-2 text-xs text-slate-500 px-1">
+          <TrendingUp size={14} className="shrink-0" /> La tendencia mes a mes aparece cuando tengas al menos dos meses cargados.
+        </p>
+      )}
     </div>
   )
 }
 
 // ─── Tab: Desglose ──────────────────────────────────────────────────────────────
+/** Desglose con forma de RECIBO: una sola hoja con los bloques de haberes y descuentos, y el neto al pie. */
 function TabDesglose({ est }: { est: SalaryEstimate }) {
   return (
     <div className="space-y-4">
-      <LineSection title="Remunerativo fijo" icon={<Wallet size={15} className="text-sky-400" />}
-        items={est.fijoItems} subtotal={est.subtotalFijos} />
-      {est.variableItems.length > 0 && (
-        <LineSection title="Remunerativo variable" icon={<TrendingUp size={15} className="text-amber-400" />}
-          items={est.variableItems} subtotal={est.subtotalVariables} />
-      )}
-      <LineSection title="No remunerativo" icon={<Plus size={15} className="text-emerald-400" />}
-        items={est.noRemItems} subtotal={est.subtotalNoRemunerativo} />
-      <LineSection title="Retenciones" icon={<Minus size={15} className="text-red-400" />}
-        items={est.retencionItems} subtotal={est.retenciones} negative />
+      <div className="rounded-2xl bg-slate-800/60 border border-slate-700/50 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50 bg-slate-800/80">
+          <div className="flex items-center gap-1.5">
+            <Receipt size={15} className="text-emerald-400" />
+            <h3 className="text-sm font-semibold text-slate-200">Recibo estimado</h3>
+          </div>
+          <span className="text-[11px] text-slate-500">Concepto · Importe</span>
+        </div>
 
-      <div className="rounded-2xl bg-slate-800/60 border border-slate-700/50 p-4 space-y-1.5">
-        <Row label="Bruto" value={fmtPesos(est.bruto)} />
-        <Row label="Retenciones" value={`-${fmtPesos(est.retenciones)}`} accent="text-red-300" />
-        <div className="border-t border-slate-700/50 my-1" />
-        <Row label="Neto estimado" value={fmtPesos(est.netoEstimado)} bold />
-        <p className="text-[11px] text-slate-500 pt-1">
-          Base imponible: {fmtPesos(est.baseImponibleRaw)}
-          {est.baseImponibleCapped < est.baseImponibleRaw && ` · topeada a ${fmtPesos(est.baseImponibleCapped)}`}
-        </p>
+        <ReciboBloque titulo="Haberes remunerativos fijos" items={est.fijoItems} subtotal={est.subtotalFijos} />
+        {est.variableItems.length > 0 && (
+          <ReciboBloque titulo="Haberes remunerativos variables" items={est.variableItems} subtotal={est.subtotalVariables} />
+        )}
+        <ReciboBloque titulo="No remunerativos" items={est.noRemItems} subtotal={est.subtotalNoRemunerativo} />
+        <ReciboBloque titulo="Descuentos" items={est.retencionItems} subtotal={est.retenciones} descuento />
+
+        {/* Pie del recibo */}
+        <div className="px-4 py-3 border-t-2 border-dashed border-slate-600/60 bg-slate-900/40 space-y-1.5">
+          <Row label="Total bruto" value={fmtPesos(est.bruto)} />
+          <Row label="Total descuentos" value={`-${fmtPesos(est.retenciones)}`} accent="text-red-300" />
+          <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700/60">
+            <span className="text-sm font-bold text-white uppercase tracking-wide">Neto a cobrar</span>
+            <span className="text-2xl font-bold text-emerald-300 tabular-nums">{fmtPesos(est.netoEstimado)}</span>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            Base imponible: {fmtPesos(est.baseImponibleRaw)}
+            {est.baseImponibleCapped < est.baseImponibleRaw && ` · topeada a ${fmtPesos(est.baseImponibleCapped)}`}
+          </p>
+        </div>
       </div>
 
-      <div className="flex items-start gap-2 rounded-xl bg-slate-800/40 border border-slate-700/40 px-3 py-2.5">
-        <Info size={14} className="text-slate-500 shrink-0 mt-0.5" />
-        <p className="text-[11px] text-slate-400 leading-relaxed">
+      <details className="group rounded-xl bg-slate-800/40 border border-slate-700/40 px-3 py-2.5">
+        <summary className="flex items-center gap-2 cursor-pointer list-none text-xs text-slate-400 select-none">
+          <Info size={14} className="text-slate-500 shrink-0" />
+          <span className="flex-1">¿Qué incluye este cálculo?</span>
+          <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+        </summary>
+        <p className="text-[11px] text-slate-400 leading-relaxed mt-2">
           Estimación. Ganancias y la vianda complementaria IG son estimadas (calibradas a recibos;
           RRHH liquida el valor exacto). No incluye devoluciones/ajustes anuales de Ganancias ni SAC;
           las viandas son un conteo aproximado. Los adicionales y retenciones personales se
           configuran en Configuración → Salario.
         </p>
+      </details>
+    </div>
+  )
+}
+
+function ReciboBloque({ titulo, items, subtotal, descuento }: {
+  titulo: string; items: LineItem[]; subtotal: number; descuento?: boolean
+}) {
+  return (
+    <div className="px-4 py-3 border-b border-slate-700/40 last:border-b-0">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">{titulo}</div>
+      <div className="space-y-1">
+        {items.map((it, i) => {
+          const negativo = descuento || it.monto < 0
+          return (
+            <div key={i} className="flex items-baseline gap-2 text-xs">
+              <span className="text-slate-300 truncate">{it.concepto}</span>
+              <span className="flex-1 border-b border-dotted border-slate-700/80 translate-y-[-3px] min-w-[12px]" />
+              <span className={`tabular-nums shrink-0 ${negativo ? 'text-red-300/90' : 'text-slate-200'}`}>
+                {negativo ? '-' : ''}{fmtPesos(Math.abs(it.monto))}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-700/40 text-xs">
+        <span className="text-slate-400">Subtotal</span>
+        <span className={`font-semibold tabular-nums ${descuento ? 'text-red-300' : 'text-white'}`}>
+          {descuento ? '-' : ''}{fmtPesos(subtotal)}
+        </span>
       </div>
     </div>
   )
@@ -726,41 +808,16 @@ function SinBasico({ convenioActual, onGuardar }: {
   )
 }
 
-function LineSection({ title, icon, items, subtotal, negative }: {
-  title: string; icon: React.ReactNode; items: LineItem[]; subtotal: number; negative?: boolean
-}) {
-  return (
-    <div className="rounded-2xl bg-slate-800/60 border border-slate-700/50 p-4">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5">
-          {icon}
-          <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
-        </div>
-        <span className={`text-sm font-bold ${negative ? 'text-red-300' : 'text-slate-200'}`}>
-          {negative ? '-' : ''}{fmtPesos(subtotal)}
-        </span>
-      </div>
-      <div className="space-y-1">
-        {items.map((it, i) => {
-          const esDescuento = it.monto < 0
-          return (
-            <div key={i} className="flex items-center justify-between text-xs">
-              <span className="text-slate-400 truncate pr-2">{it.concepto}</span>
-              <span className={`tabular-nums shrink-0 ${negative || esDescuento ? 'text-red-300/80' : 'text-slate-300'}`}>
-                {esDescuento ? `-${fmtPesos(Math.abs(it.monto))}` : `${negative ? '-' : ''}${fmtPesos(it.monto)}`}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
+/** Horas con un decimal sólo si hace falta (184 / 7,5). */
+function fmtHs(h: number): string {
+  const v = Math.round(h * 10) / 10
+  return Number.isInteger(v) ? String(v) : v.toFixed(1).replace('.', ',')
 }
 
 function Mini({ label, value, accent = 'text-white' }: { label: string; value: string; accent?: string }) {
   return (
-    <div className="rounded-xl bg-slate-800/80 border border-slate-700/50 px-2.5 py-2">
-      <div className={`text-sm font-bold ${accent}`}>{value}</div>
+    <div className="rounded-xl bg-slate-800/80 border border-slate-700/50 px-2 py-2 min-w-0">
+      <div className={`text-[13px] font-bold tracking-tight tabular-nums whitespace-nowrap ${accent}`}>{value}</div>
       <div className="text-[10px] text-slate-400">{label}</div>
     </div>
   )

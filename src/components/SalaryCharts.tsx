@@ -268,28 +268,3 @@ export function KpiGrid({ items }: { items: { label: string; value: string; acce
   )
 }
 
-// ─── Proyección fin de período ────────────────────────────────────────────────────
-export function ProyeccionCard({ pct, diasTxt, neto, proyectado }: {
-  pct: number; diasTxt: string; neto: number; proyectado: number
-}) {
-  const proyAnim = useCountUp(proyectado)
-  const falta = Math.max(0, proyectado - neto)
-  return (
-    <div className="rounded-2xl bg-gradient-to-br from-violet-900/40 to-slate-800/60 border border-violet-800/40 p-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-sm font-semibold text-slate-200">Proyección fin de período</div>
-          <div className="text-[11px] text-slate-400">{diasTxt}</div>
-        </div>
-        <div className="text-xl font-bold text-white tabular-nums">{fmtPesos(Math.round(proyAnim))}</div>
-      </div>
-      <div className="mt-3 h-2.5 rounded-full bg-slate-700/50 overflow-hidden">
-        <div className="h-full bg-violet-400 rounded-full transition-[width] duration-700" style={{ width: `${Math.round(pct * 100)}%` }} />
-      </div>
-      <div className="flex justify-between mt-2 text-[11px]">
-        <span className="text-slate-400">Cobrado ahora <span className="text-slate-200 font-semibold">{fmtPesos(neto)}</span></span>
-        <span className="text-slate-400">Falta <span className="text-violet-300 font-semibold">{fmtPesos(falta)}</span></span>
-      </div>
-    </div>
-  )
-}
