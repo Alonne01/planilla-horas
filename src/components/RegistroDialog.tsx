@@ -5,7 +5,8 @@ import { TimeDrumPicker } from './TimeDrumPicker'
 import type { RegistroHoras } from '../db/database'
 import { esFeriadoNacional, nombreFeriado } from '../lib/feriados'
 import { esFrancoPorDiagrama, type DiagramaPatternKey } from '../lib/diagrama'
-import { turnoCruzaMedianoche, salidaUltimoTurno, analizarDobleFranja, type LineaTrabajo } from '../lib/calculo-horas'
+import { turnoCruzaMedianoche, salidaUltimoTurno, analizarDobleFranja, calcularHorasDia, type LineaTrabajo } from '../lib/calculo-horas'
+import { filaPlanilla } from '../lib/excel-export'
 
 interface Props {
   fecha: Date
@@ -90,6 +91,21 @@ function clasificarDoble(e1: string, s1: string, e2: string, s2: string): 'noche
   }
   const h1 = horas(e1, s1), h2 = horas(e2, s2)
   return h1.noct + h2.noct >= (h1.total + h2.total) / 2 ? 'noche' : 'dia'
+}
+
+/** Timestamp actual (fuera del componente: sólo se llama al guardar, nunca en el render). */
+function ahoraMs(): number { return Date.now() }
+
+/** Número de la planilla con coma decimal (8 / 8,5). */
+function fmtNum(n: number): string {
+  return String(Math.round(n * 100) / 100).replace('.', ',')
+}
+
+/** Celda de hora de la planilla (horas decimales) → "08:30"; > 24 se deja tal cual (31:00). Vacía → "–". */
+function celdaHora(v: number | null): string {
+  if (v == null) return '–'
+  const h = Math.floor(v), m = Math.round((v - h) * 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
 /** Horas decimales → "5 h" / "7,5 h". */
@@ -299,6 +315,11 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
 
   function handleSave() {
     if (bloqueaGuardar) return  // guarded by UI — button disabled when partial / franjas inválidas
+    onSave(armarRegistro(existing?.id ?? uuid(), existing?.fechaCreacion ?? ahoraMs()))
+  }
+
+  /** Registro tal como quedaría con lo cargado ahora (lo usan Guardar y la vista previa). */
+  function armarRegistro(id: string, fechaCreacion: number): RegistroHoras {
     const horasViajeFinal = isDayOff ? 0
       : lugar === 'Base' ? (viajeActivo ? 1 : 0)
       : viajeModo === 'NO' ? 0
@@ -308,8 +329,8 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
     const kmViajeFinal = (!isDayOff && lugar === 'Campo' && viajeModo === 'OTRO')
       ? (parseFloat(kmManual.replace(',', '.')) || undefined)
       : undefined
-    const reg: RegistroHoras = {
-      id: existing?.id ?? uuid(),
+    return {
+      id,
       fechaMs: fecha.getTime(),
       entradaInicioMs: isDayOff ? null : timeToMs(fecha, e1),
       salidaInicioMs: isDayOff ? null : timeToMs(fecha, s1),
@@ -336,10 +357,16 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
       esVacaciones: isDayOff && subFranco === 'VACACIONES',
       // Guardia on-call SBDP: día de Campo trabajado con un tipo de día elegido (no en ausencias).
       esOnCall: !isDayOff && lugar === 'Campo' && linea === 'SBDP' && tipoDia != null,
-      fechaCreacion: existing?.fechaCreacion ?? Date.now(),
+      fechaCreacion,
     }
-    onSave(reg)
   }
+
+  // Vista previa: horas trabajadas y la fila de la planilla (entró-salió · entró-salió), calculadas
+  // con las MISMAS funciones que el resumen y la exportación.
+  const preview = (hasWork && !bloqueaGuardar && !isDayOff) ? (() => {
+    const r = armarRegistro(existing?.id ?? 'preview', existing?.fechaCreacion ?? 0)
+    return { fila: filaPlanilla(r), horas: calcularHorasDia(r, linea) }
+  })() : null
 
   const closingRef = useRef(false)
   const [isClosing, setIsClosing] = useState(false)
@@ -532,16 +559,8 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
               {errorDoble && (
                 <p className="text-xs text-red-400 leading-snug">{errorDoble}</p>
               )}
-              {analisisDoble && !errorDoble && (
-                <div className="rounded-xl bg-slate-900/50 ring-1 ring-white/[0.06] px-3 py-2.5 space-y-1.5">
-                  <p className="text-[11px] text-slate-400">Así va a la planilla (entró – salió · entró – salió):</p>
-                  <p className="font-mono text-sm text-white">
-                    {e1} – {s1} <span className="text-slate-500">·</span> {e2} – {s2}
-                  </p>
-                  <p className="text-xs text-slate-300">
-                    {fmtH(analisisDoble.horas1)} + {fmtH(analisisDoble.horas2)} = <span className="font-semibold text-white">{fmtH(analisisDoble.totalCrudo)}</span>
-                    {lugar === 'Base' && <span className="text-slate-400"> (− 1 h de almuerzo en Base)</span>}
-                  </p>
+              {analisisDoble && !errorDoble && (analisisDoble.segundaCruzaMedianoche || analisisDoble.superaTope) && (
+                <div className="space-y-1.5">
                   {analisisDoble.segundaCruzaMedianoche && (
                     <p className="text-[11px] text-amber-300/90 leading-snug">
                       La segunda franja termina al día siguiente ({s2}). Esas horas de la madrugada ya quedan contadas acá: no las cargues de nuevo mañana.
@@ -654,6 +673,41 @@ export function RegistroDialog({ fecha, existing, prevDayRegistro, lastWorkedReg
             <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
               <CalendarDays size={12} /> Feriado trabajado — horas al 100%
             </p>
+          )}
+          {/* ── Horas trabajadas + cómo queda la fila en la planilla (entró-salió · entró-salió) ── */}
+          {preview && (
+            <div className="mt-3 rounded-xl bg-slate-900/50 ring-1 ring-white/[0.06] px-3 py-3 animate-[apply-bar-in_220ms_ease_both]">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-xs text-slate-400">Horas trabajadas</p>
+                <p className="text-lg font-bold text-white">{fmtH(preview.horas.horasTrabajadas)}</p>
+              </div>
+              <p className="text-[11px] text-slate-400 text-right -mt-0.5">
+                {[
+                  preview.horas.horasNormales > 0 && `${fmtH(preview.horas.horasNormales)} normales`,
+                  preview.horas.horasAl50 > 0 && `${fmtH(preview.horas.horasAl50)} al 50%`,
+                  preview.horas.horasAl100 > 0 && `${fmtH(preview.horas.horasAl100)} al 100%`,
+                ].filter(Boolean).join(' + ')}
+                {lugar === 'Base' && ' · ya descontada 1 h de almuerzo'}
+              </p>
+              <p className="text-[11px] text-slate-400 mt-2.5 mb-1.5">Así queda en la planilla</p>
+              <div className="grid grid-cols-5 gap-1 text-center">
+                {(['Entró', 'Salió', 'Entró', 'Salió', 'Total'] as const).map((h, i) => (
+                  <div key={i} className={`text-[10px] uppercase tracking-wide ${i === 4 ? 'text-blue-300' : 'text-slate-500'}`}>{h}</div>
+                ))}
+                {[preview.fila.C, preview.fila.D, preview.fila.E, preview.fila.F].map((v, i) => (
+                  <div key={i} className={`rounded-md py-1.5 font-mono text-xs ${v == null ? 'bg-slate-800/60 text-slate-600' : 'bg-slate-700/70 text-white'}`}>
+                    {celdaHora(v)}
+                  </div>
+                ))}
+                <div className="rounded-md py-1.5 font-mono text-xs font-bold bg-blue-600/25 text-blue-100">{fmtNum(preview.fila.G)}</div>
+              </div>
+              {preview.fila.D === 24 && preview.fila.E === 0 && (
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">El turno noche se parte en la medianoche: hasta 24 y desde 00.</p>
+              )}
+              {[preview.fila.D, preview.fila.F].some(v => v != null && v > 24) && (
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">Una salida mayor a 24 significa que termina al día siguiente (ej. 31 = 07:00).</p>
+              )}
+            </div>
           )}
         </div>
 

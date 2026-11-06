@@ -122,6 +122,44 @@ function gWorkedHours(reg: RegistroHoras | undefined): number {
   return capG(rawTurnos(reg) - (reg.lugarTrabajo === 'Base' ? 1 : 0))
 }
 
+/** Salida en horas decimales; si cae antes que la entrada (cruza medianoche) se le suman 24. */
+function salidaDec(entradaMs: number | null | undefined, salidaMs: number | null | undefined): number | null {
+  const e = msToDecimalHours(entradaMs)
+  const raw = msToDecimalHours(salidaMs)
+  if (raw == null) return null
+  return (e != null && raw < e) ? raw + 24 : raw
+}
+
+/**
+ * Fila de la planilla para un día trabajado: C-D = entró-salió (1ª franja), E-F = entró-salió
+ * (2ª franja), en HORAS DECIMALES tal como se escriben en el template, y G = total que da la
+ * fórmula. Es la ÚNICA fuente de verdad de esas celdas: la usan la exportación y la vista previa
+ * del diálogo de carga ("así va a la planilla").
+ *  - Doble franja: cada una en su par; si una cruza medianoche su salida va +24.
+ *  - Una franja que cruza medianoche (turno noche) o guardia on-call completa: se parte en
+ *    [entrada→24] + [0→salida], para que (D-C)+(F-E) dé el total correcto.
+ *  - Una franja normal: sólo C-D; E-F vacías.
+ */
+export interface FilaPlanilla { C: number | null; D: number | null; E: number | null; F: number | null; G: number }
+
+export function filaPlanilla(reg: RegistroHoras): FilaPlanilla {
+  const G = gWorkedHours(reg)
+  const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
+  if (hasTurno2) {
+    return {
+      C: msToDecimalHours(reg.entradaInicioMs), D: salidaDec(reg.entradaInicioMs, reg.salidaInicioMs),
+      E: msToDecimalHours(reg.entradaFinMs),    F: salidaDec(reg.entradaFinMs, reg.salidaFinMs),
+      G,
+    }
+  }
+  const isOvernight = reg.entradaInicioMs != null && reg.salidaInicioMs != null &&
+    (msToDecimalHours(reg.salidaInicioMs)! < msToDecimalHours(reg.entradaInicioMs)! || esOnCallDiaCompleto(reg))
+  if (isOvernight) {
+    return { C: msToDecimalHours(reg.entradaInicioMs), D: 24, E: 0, F: msToDecimalHours(reg.salidaInicioMs), G }
+  }
+  return { C: msToDecimalHours(reg.entradaInicioMs), D: salidaDec(reg.entradaInicioMs, reg.salidaInicioMs), E: null, F: null, G }
+}
+
 /** Reemplaza (o inserta) el valor cacheado <v> de una celda, conservando su fórmula. */
 function setGCachedValue(cellXml: string, value: number): string {
   const v = String(Math.round(value * 100) / 100)
@@ -146,23 +184,9 @@ function cStr(r: string, s: number, v: string): string {
   return `<c r="${r}" s="${s}" t="inlineStr"><is><t>${xmlEsc(v)}</t></is></c>`
 }
 
-/** Time cell → decimal hours; null/undefined → empty */
-function cTime(r: string, s: number, ms: number | null | undefined): string {
-  const dec = msToDecimalHours(ms)
-  return dec != null ? cNum(r, s, dec) : cEmpty(r, s)
-}
-
-/**
- * Salida cell with overnight adjustment.
- * If salidaMs decimal hours < entradaMs decimal hours, it's a cross-midnight shift → add 24.
- * Example: entrada 20:00 (dec=20), salida 08:00 (dec=8) → stored as 32 so Excel formula F-C = 32-20 = 12.
- */
-function cSalida(r: string, s: number, entradaMs: number | null | undefined, salidaMs: number | null | undefined): string {
-  const e = msToDecimalHours(entradaMs)
-  const raw = msToDecimalHours(salidaMs)
-  if (raw == null) return cEmpty(r, s)
-  const dec = (e != null && raw < e) ? raw + 24 : raw
-  return cNum(r, s, dec)
+/** Decimal-hours cell; null → styled empty cell */
+function cDec(r: string, s: number, v: number | null): string {
+  return v != null ? cNum(r, s, v) : cEmpty(r, s)
 }
 
 // ─── Template style indices (determined by inspecting the template ZIP) ────────
@@ -216,18 +240,9 @@ function buildRowParts(
     const isFeriadoTrab = reg.esFeriadoTrabajado && hasWork
 
     if (isFrancoTrab || isFeriadoTrab) {
-      const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
-      const isOvernightFT = !hasTurno2 &&
-        reg.entradaInicioMs != null && reg.salidaInicioMs != null &&
-        msToDecimalHours(reg.salidaInicioMs)! < msToDecimalHours(reg.entradaInicioMs)!
-      const [cC, cD, cE, cF] = hasTurno2
-        ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
-           cTime(`E${n}`, s.E, reg.entradaFinMs),    cSalida(`F${n}`, s.F, reg.entradaFinMs, reg.salidaFinMs)]
-        : isOvernightFT
-        ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cNum(`D${n}`, s.D, 24),
-           cNum(`E${n}`, s.E, 0),                    cTime(`F${n}`, s.F, reg.salidaInicioMs)]
-        : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
-           cEmpty(`E${n}`, s.E),                     cEmpty(`F${n}`, s.F)]
+      const fila = filaPlanilla(reg)
+      const [cC, cD, cE, cF] = [cDec(`C${n}`, s.C, fila.C), cDec(`D${n}`, s.D, fila.D),
+                                cDec(`E${n}`, s.E, fila.E), cDec(`F${n}`, s.F, fila.F)]
       const obsBase = reg.observaciones ?? ''
       const obs = isFrancoTrab
         ? conPrefijoSinDuplicar('franco trabajado', obsBase)
@@ -255,24 +270,10 @@ function buildRowParts(
   }
 
   // ── Normal workday (Base / Campo) ──────────────────────────────────────────
-  const hasTurno2 = reg.entradaFinMs != null && reg.salidaFinMs != null
-  // Overnight single-turno: split into [entrada→24] + [0→salida] so cells
-  // read as "20 | 24" and "0 | 08". Template formula (D-C)+(F-E) still gives
-  // correct total: (24-20)+(8-0)=12 for a 20:00→08:00 shift.
-  // Cruza medianoche cuando la salida cae antes que la entrada (turno noche) o cuando es una
-  // guardia on-call completa (entrada == salida → 24 h). En ambos casos se parte en 00:00:
-  // [entrada→24] + [0→salida], y la fórmula (D-C)+(F-E) da el total correcto.
-  const isOvernight = !hasTurno2 &&
-    reg.entradaInicioMs != null && reg.salidaInicioMs != null &&
-    (msToDecimalHours(reg.salidaInicioMs)! < msToDecimalHours(reg.entradaInicioMs)! || esOnCallDiaCompleto(reg))
-  const [cC, cD, cE, cF] = hasTurno2
-    ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
-       cTime(`E${n}`, s.E, reg.entradaFinMs),    cSalida(`F${n}`, s.F, reg.entradaFinMs, reg.salidaFinMs)]
-    : isOvernight
-    ? [cTime(`C${n}`, s.C, reg.entradaInicioMs), cNum(`D${n}`, s.D, 24),
-       cNum(`E${n}`, s.E, 0),                    cTime(`F${n}`, s.F, reg.salidaInicioMs)]
-    : [cTime(`C${n}`, s.C, reg.entradaInicioMs), cSalida(`D${n}`, s.D, reg.entradaInicioMs, reg.salidaInicioMs),
-       cEmpty(`E${n}`, s.E),                     cEmpty(`F${n}`, s.F)]
+  // C-D / E-F (incluye partir el turno noche en [entrada→24] + [0→salida]): ver filaPlanilla.
+  const fila = filaPlanilla(reg)
+  const [cC, cD, cE, cF] = [cDec(`C${n}`, s.C, fila.C), cDec(`D${n}`, s.D, fila.D),
+                            cDec(`E${n}`, s.E, fila.E), cDec(`F${n}`, s.F, fila.F)]
   let obs = reg.observaciones ?? ''
   if (reg.esFrancoTrabajado) obs = conPrefijoSinDuplicar('franco trabajado', obs)
   else if (reg.esFeriadoTrabajado) obs = conPrefijoSinDuplicar('feriado trabajado', obs)
