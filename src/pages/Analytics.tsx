@@ -128,15 +128,16 @@ export function AnalyticsPage() {
                 <MiniStat icon={<BedDouble size={15} />} label="Pernoctes" value={String(actual.pernoctes)} />
                 <MiniStat icon={<Truck size={15} />} label="Días manejó" value={String(actual.diasManejo)} />
                 <MiniStat icon={<Banknote size={15} />} label="Francos trab." value={String(actual.francosTrabajados)} />
-                <MiniStat icon={<UtensilsCrossed size={15} />} label="Viandas" value={String(actual.viandas)} />
+                <MiniStat icon={<UtensilsCrossed size={15} />} label="Viandas del día" value={String(actual.viandasBase)} />
                 <MiniStat icon={<UtensilsCrossed size={15} />} label="Viandas adic." value={String(actual.viandasAdic)} />
                 {actual.feriadosTrabajados > 0 &&
                   <MiniStat icon={<Sun size={15} />} label="Feriados trab." value={String(actual.feriadosTrabajados)} />}
               </div>
               {actual.viandas > 0 && (
                 <p className="text-[11px] text-slate-500 mt-2 leading-snug">
-                  Viandas: {actual.viandasBase} del día (1 por día trabajado) + {actual.viandasAdic} adicionales
-                  (1 cada 2 hs por encima de 8). Conteo orientativo según las horas cargadas; lo liquida RRHH.
+                  <span className="text-slate-300 font-semibold">Total: {actual.viandas} viandas</span> = {actual.viandasBase} del día
+                  (1 por día trabajado) + {actual.viandasAdic} adicionales (1 cada 2 hs por encima de 8). Conteo
+                  orientativo según las horas cargadas; lo liquida RRHH.
                 </p>
               )}
             </Card>
@@ -318,7 +319,7 @@ function CompareTable({ periodos }: { periodos: PeriodoStats[] }) {
     { label: 'Viaje', get: p => fmt(p.viaje) },
     { label: 'Días trab.', get: p => String(p.diasTrabajados) },
     { label: 'Promedio/día', get: p => `${fmt(p.promedioPorDia)} hs` },
-    { label: 'Viandas', get: p => String(p.viandas) },
+    { label: 'Viandas (total)', get: p => String(p.viandas) },
   ]
   const lastIdx = periodos.length - 1
   return (
