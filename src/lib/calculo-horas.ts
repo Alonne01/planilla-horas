@@ -310,3 +310,19 @@ export function resumenDia(reg: RegistroHoras, linea: LineaTrabajo = 'SURFACE_WE
     proyecto: reg.proyecto ?? '',
   }
 }
+
+/** Jornada a partir de la cual empiezan las horas extra para el conteo de viandas. */
+export const VIANDA_JORNADA_HS = 8
+/** Cada cuántas horas extra corresponde una vianda adicional. */
+export const VIANDA_ADIC_CADA_HS = 2
+
+/**
+ * Viandas que corresponden a un día según las horas trabajadas: 1 por día trabajado (art. 34)
+ * + 1 adicional por cada 2 h por encima de las 8 (12 h → 1 + 2). Coincide con los recibos
+ * (2 adicionales por día de campo de 12 h). Conteo orientativo: lo liquida RRHH.
+ */
+export function viandasDelDia(horasTrabajadas: number): { base: number; adicionales: number } {
+  if (!(horasTrabajadas > 0)) return { base: 0, adicionales: 0 }
+  const extra = Math.max(0, horasTrabajadas - VIANDA_JORNADA_HS)
+  return { base: 1, adicionales: Math.floor(extra / VIANDA_ADIC_CADA_HS + 1e-9) }
+}

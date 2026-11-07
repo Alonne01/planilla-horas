@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { db, type RegistroHoras } from '../db/database'
 import { periodoStart, periodoEnd, MESES_ES } from '../lib/diagrama'
-import { calcularHorasDia, esDiaNoTrabajado, type LineaTrabajo } from '../lib/calculo-horas'
+import { calcularHorasDia, esDiaNoTrabajado, viandasDelDia, type LineaTrabajo } from '../lib/calculo-horas'
 
 const MESES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
@@ -28,6 +28,12 @@ export interface PeriodoStats {
   feriadosTrabajados: number
   diasManejo: number
   pernoctes: number
+  /** Viandas del día (1 por día trabajado) */
+  viandasBase: number
+  /** Viandas adicionales (1 cada 2 h por encima de 8) */
+  viandasAdic: number
+  /** viandasBase + viandasAdic */
+  viandas: number
   promedioPorDia: number
 }
 
@@ -44,6 +50,7 @@ function computePeriodo(mes: number, anio: number, registros: RegistroHoras[], l
   let normales = 0, al50 = 0, al100 = 0, viaje = 0
   let diasTrabajados = 0, diasBase = 0, diasCampo = 0, diasFranco = 0
   let francosTrabajados = 0, feriadosTrabajados = 0, diasManejo = 0, pernoctes = 0
+  let viandasBase = 0, viandasAdic = 0
 
   for (const reg of registros) {
     const h = calcularHorasDia(reg, linea)
@@ -59,6 +66,9 @@ function computePeriodo(mes: number, anio: number, registros: RegistroHoras[], l
       normales += h.horasNormales
       al50 += h.horasAl50
       al100 += h.horasAl100
+      const v = viandasDelDia(h.horasTrabajadas)
+      viandasBase += v.base
+      viandasAdic += v.adicionales
     }
     viaje += reg.horasViaje ?? 0
     if (reg.maneja) diasManejo++
@@ -92,6 +102,9 @@ function computePeriodo(mes: number, anio: number, registros: RegistroHoras[], l
     feriadosTrabajados,
     diasManejo,
     pernoctes,
+    viandasBase,
+    viandasAdic,
+    viandas: viandasBase + viandasAdic,
     promedioPorDia: diasTrabajados > 0 ? total / diasTrabajados : 0,
   }
 }
